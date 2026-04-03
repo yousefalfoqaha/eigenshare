@@ -1,16 +1,21 @@
 package main
 
 import (
-	"eigenshare/backend/utils"
 	"fmt"
 	"log"
+
+	"eigenshare/backend/utils"
 )
 
 func main() {
-	greeting, err := utils.Greeting("Yousef")
+	names := []string{"Abdullah", "Abdelkareem", "Abdelmajeed"}
+
+	greetings, err := utils.Greetings(names)
 	if err != nil {
-		log.Fatal("Error calling function")
+		log.Fatalf("Error making greetings, with given names %v", names)
 	}
 
-	fmt.Println(greeting)
+	for _, greeting := range greetings {
+		fmt.Println(greeting)
+	}
 }

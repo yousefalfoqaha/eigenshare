@@ -15,6 +15,21 @@ func Greeting(name string) (string, error) {
 	return greeting, nil
 }
 
+func Greetings(names []string) (map[string]string, error) {
+	greetings := make(map[string]string, len(names))
+
+	for _, name := range names {
+		greeting, err := Greeting(name)
+		if err != nil {
+			return nil, err
+		}
+
+		greetings[name] = greeting
+	}
+
+	return greetings, nil
+}
+
 func randomGreeting() string {
 	greetings := []string{
 		"Hello %v, hope everything's well!",
