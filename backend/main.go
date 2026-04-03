@@ -1,21 +1,14 @@
 package main
 
 import (
-	"fmt"
-	"log"
-
-	"eigenshare/backend/utils"
+	"eigenshare/backend/web"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	names := []string{"Abdullah", "Abdelkareem", "Abdelmajeed"}
+	router := gin.Default()
 
-	greetings, err := utils.Greetings(names)
-	if err != nil {
-		log.Fatalf("Error making greetings, with given names %v", names)
-	}
+	router.GET("/files", web.GetFiles)
 
-	for _, greeting := range greetings {
-		fmt.Println(greeting)
-	}
+	router.Run("localhost:8080")
 }
