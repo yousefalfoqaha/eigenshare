@@ -1,16 +1,23 @@
 package main
 
 import (
+	"fmt"
+
 	"eigenshare/backend/web"
-	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	router := gin.Default()
+	f1 := &web.File{Title: "hello", Body: []byte("Yessir")}
+	f1.Save()
 
-	router.GET("/files", web.GetFiles)
-	router.POST("/files", web.AddFile)
-	router.GET("/files/:id", web.GetFile)
+	file, _ := f1.Load("hello")
+	fmt.Println(string(file.Body))
 
-	router.Run("localhost:8080")
+	// router := gin.Default()
+	//
+	// router.GET("/files", web.GetGinFiles)
+	// router.POST("/files", web.AddGinFile)
+	// router.GET("/files/:id", web.GetGinFile)
+	//
+	// router.Run("localhost:8080")
 }

@@ -8,23 +8,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type File struct {
+type GinFile struct {
 	ID   int     `json:"id"`
 	Name string  `json:"name"`
 	Size float64 `json:"size"`
 }
 
-var files = []File{
+var files = []GinFile{
 	{ID: 1, Name: "homework.txt", Size: 3119223.54},
 	{ID: 2, Name: "jerash.jpeg", Size: 31.2},
 }
 
-func GetFiles(c *gin.Context) {
+func GetGinFiles(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, files)
 }
 
-func AddFile(c *gin.Context) {
-	var newFile File
+func AddGinFile(c *gin.Context) {
+	var newFile GinFile
 
 	if err := c.BindJSON(&newFile); err != nil {
 		return
@@ -42,8 +42,12 @@ func AddFile(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, newFile)
 }
 
-func GetFile(c *gin.Context) {
-	fileID, _ := strconv.Atoi(c.Param("id"))
+func GetGinFile(c *gin.Context) {
+	fileID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "File ID must be a number."})
+		return
+	}
 
 	for _, file := range files {
 		if file.ID == fileID {
