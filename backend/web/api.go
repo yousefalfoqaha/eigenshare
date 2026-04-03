@@ -1,7 +1,9 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,4 +21,36 @@ var files = []File{
 
 func GetFiles(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, files)
+}
+
+func AddFile(c *gin.Context) {
+	var newFile File
+
+	if err := c.BindJSON(&newFile); err != nil {
+		return
+	}
+
+	for _, file := range files {
+		if file.ID == newFile.ID {
+			message := fmt.Sprintf("A file with ID %v already exists.", file.ID)
+			c.IndentedJSON(http.StatusConflict, gin.H{"message": message})
+			return
+		}
+	}
+
+	files = append(files, newFile)
+	c.IndentedJSON(http.StatusCreated, newFile)
+}
+
+func GetFile(c *gin.Context) {
+	fileID, _ := strconv.Atoi(c.Param("id"))
+
+	for _, file := range files {
+		if file.ID == fileID {
+			c.IndentedJSON(http.StatusFound, file)
+			return
+		}
+	}
+
+	c.IndentedJSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("No file with ID %v found.", fileID)})
 }
