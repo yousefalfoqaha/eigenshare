@@ -1,10 +1,9 @@
 package main
 
 import (
+	"eigenshare/backend/utils"
 	"fmt"
 	"log"
-
-	"eigenshare/backend/utils"
 )
 
 func main() {
