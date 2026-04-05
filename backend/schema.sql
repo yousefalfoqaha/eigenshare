@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS files (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    name    TEXT    NOT NULL UNIQUE,
+    content BLOB    NOT NULL
+);
