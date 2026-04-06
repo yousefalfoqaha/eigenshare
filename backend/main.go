@@ -2,21 +2,23 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	_ "modernc.org/sqlite"
 )
 
 const (
-	FILES_ENDPOINT string = "/files/"
+	FILES_ENDPOINT string = "/files"
 	PORT           int    = 8080
 )
 
 type File struct {
-	Name    string `json:"name"`
-	Content []byte `json:"content"`
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 var db *sql.DB
@@ -52,25 +54,51 @@ func main() {
 
 	fmt.Println("Database schema.sql executed.")
 
-	files, err := getFiles()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /files", filesHandler)
+	mux.HandleFunc("POST /files", uploadHandler)
+}
+
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	x, err := r.MultipartReader()
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	fmt.Printf("files found: %v\n", files)
+	fmt.Fprint(w, x.ReadForm())
+}
+
+func filesHandler(w http.ResponseWriter, r *http.Request) {
+	files, err := getFiles()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	res, err := json.Marshal(files)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprint(w, string(res))
+}
+
+func uploadFile() {
 }
 
 func getFiles() ([]File, error) {
 	var files []File
 
-	rows, err := db.Query("SELECT * FROM files")
+	rows, err := db.Query("SELECT id, name FROM files")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to query database for all files.")
 	}
 
 	for rows.Next() {
 		var f File
-		if err := rows.Scan(&f.Name, &f.Content); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name); err != nil {
 			return nil, fmt.Errorf("Failed to read rows.")
 		}
 		files = append(files, f)

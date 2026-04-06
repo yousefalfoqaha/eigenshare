@@ -3,3 +3,4 @@ CREATE TABLE IF NOT EXISTS files (
     name    TEXT    NOT NULL UNIQUE,
     content BLOB    NOT NULL
 );
+
