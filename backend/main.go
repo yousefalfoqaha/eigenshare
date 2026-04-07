@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -57,16 +58,57 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /files", filesHandler)
 	mux.HandleFunc("POST /files", uploadHandler)
+
+	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+
+type PartSummary struct {
+	Name    string              `json:"name"`
+	Headers map[string][]string `json:"headers"`
+	Size    int64               `json:"size"`
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
-	x, err := r.MultipartReader()
+	multiPart, err := r.MultipartReader()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Fprint(w, x.ReadForm())
+	var summaries []PartSummary
+
+	for {
+		part, err := multiPart.NextPart()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		size, err := io.Copy(io.Discard, part)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		summary := PartSummary{
+			Name:    part.FileName(),
+			Headers: part.Header,
+			Size:    size,
+		}
+		summaries = append(summaries, summary)
+
+		part.Close()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.Encode(summaries)
 }
 
 func filesHandler(w http.ResponseWriter, r *http.Request) {
