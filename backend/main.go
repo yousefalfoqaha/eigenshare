@@ -62,20 +62,12 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
 
-type PartSummary struct {
-	Name    string              `json:"name"`
-	Headers map[string][]string `json:"headers"`
-	Size    int64               `json:"size"`
-}
-
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	reader, err := r.MultipartReader()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	var summaries []PartSummary
 
 	for {
 		part, err := reader.NextPart()
@@ -88,27 +80,23 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		size, err := io.Copy(io.Discard, part)
+		file, err := os.Create("data/" + part.FileName())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		summary := PartSummary{
-			Name:    part.FileName(),
-			Headers: part.Header,
-			Size:    size,
+		_, err = io.Copy(file, part)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		summaries = append(summaries, summary)
 
 		part.Close()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.Encode(summaries)
+	w.WriteHeader(http.StatusCreated)
 }
 
 func filesHandler(w http.ResponseWriter, r *http.Request) {
