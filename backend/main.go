@@ -69,7 +69,7 @@ type PartSummary struct {
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
-	multiPart, err := r.MultipartReader()
+	reader, err := r.MultipartReader()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -78,7 +78,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	var summaries []PartSummary
 
 	for {
-		part, err := multiPart.NextPart()
+		part, err := reader.NextPart()
 		if err == io.EOF {
 			break
 		}
@@ -118,13 +118,9 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := json.Marshal(files)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	fmt.Fprint(w, string(res))
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.Encode(files)
 }
 
 func uploadFile() {
