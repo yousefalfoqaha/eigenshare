@@ -20,6 +20,7 @@ const (
 type File struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+	Size int    `json:"size"`
 }
 
 var db *sql.DB
@@ -69,6 +70,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var upload File
+
 	for {
 		part, err := reader.NextPart()
 		if err == io.EOF {
@@ -87,10 +90,30 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		defer file.Close()
 
-		_, err = io.Copy(file, part)
+		size, err := io.Copy(file, part)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		// check for unique naming -> add filname (n), n being number of same-name files (regex of %filename% (*))
+
+		result, err := db.Exec("INSERT INTO file (name, size) VALUES (?, ?)", part.FileName(), size)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		id, err := result.LastInsertId()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		upload = File{
+			ID:   int(id),
+			Name: part.FileName(),
+			Size: int(size),
 		}
 
 		part.Close()
@@ -98,6 +121,9 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.Encode(upload)
 }
 
 func filesHandler(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +144,7 @@ func uploadFile() {
 func getFiles() ([]File, error) {
 	var files []File
 
-	rows, err := db.Query("SELECT id, name FROM files")
+	rows, err := db.Query("SELECT id, name FROM file")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to query database for all files.")
 	}
