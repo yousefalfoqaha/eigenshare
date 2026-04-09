@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/google/uuid"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -18,7 +20,7 @@ const (
 )
 
 type File struct {
-	ID   int    `json:"id"`
+	ID   string `json:"id"`
 	Name string `json:"name"`
 	Size int    `json:"size"`
 }
@@ -59,8 +61,19 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /files", filesHandler)
 	mux.HandleFunc("POST /files", uploadHandler)
+	mux.HandleFunc("DELETE /files/{id}", removeFile)
 
 	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+
+func removeFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	_, err := db.Exec("DELETE FROM file WHERE id = ?", id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +96,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		file, err := os.Create("data/" + part.FileName())
+		id := uuid.New()
+		file, err := os.Create("data/" + id.String())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -98,20 +112,19 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 		// check for unique naming -> add filname (n), n being number of same-name files (regex of %filename% (*))
 
-		result, err := db.Exec("INSERT INTO file (name, size) VALUES (?, ?)", part.FileName(), size)
+		_, err = db.Exec("INSERT INTO file (id, name, size) VALUES (?, ?, ?)", id.String(), part.FileName(), size)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		id, err := result.LastInsertId()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		upload = File{
-			ID:   int(id),
+			ID:   id.String(),
 			Name: part.FileName(),
 			Size: int(size),
 		}
@@ -141,9 +154,6 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.Encode(files)
-}
-
-func uploadFile() {
 }
 
 func getFiles() ([]File, error) {
