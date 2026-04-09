@@ -69,6 +69,7 @@ func main() {
 func removeFile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
+	os.Remove("data/" + id)
 	_, err := db.Exec("DELETE FROM file WHERE id = ?", id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -118,11 +119,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
 		upload = File{
 			ID:   id.String(),
 			Name: part.FileName(),
@@ -134,6 +130,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.Encode(upload)
@@ -151,6 +148,7 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.Encode(files)
