@@ -133,6 +133,11 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if files == nil {
+		files = []File{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.Encode(files)
@@ -144,14 +149,14 @@ func uploadFile() {
 func getFiles() ([]File, error) {
 	var files []File
 
-	rows, err := db.Query("SELECT id, name FROM file")
+	rows, err := db.Query("SELECT id, name, size FROM file")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to query database for all files.")
 	}
 
 	for rows.Next() {
 		var f File
-		if err := rows.Scan(&f.ID, &f.Name); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name, &f.Size); err != nil {
 			return nil, fmt.Errorf("Failed to read rows.")
 		}
 		files = append(files, f)
