@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,61 +8,25 @@ import (
 	"net/http"
 	"os"
 
+	"eigenshare/backend/share"
+	"eigenshare/backend/storage"
+
 	"github.com/google/uuid"
 
 	_ "modernc.org/sqlite"
 )
 
-const (
-	FILES_ENDPOINT string = "/files"
-	PORT           int    = 8080
-)
-
-type File struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Size int    `json:"size"`
-}
-
-var db *sql.DB
+const PORT int = 8080
 
 func main() {
-	var err error
-	db, err = sql.Open("sqlite", "./data.db")
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	defer db.Close()
+	storage := storage.NewStorage()
+	router := http.NewServeMux()
 
-	db.SetConnMaxLifetime(0)
-	db.SetMaxIdleConns(3)
-	db.SetMaxOpenConns(3)
+	shareRepo := share.NewRepository(storage)
+	shareCont := share.NewController(shareRepo)
+	shareCont.RegisterHandlers(router)
 
-	pingErr := db.Ping()
-	if pingErr != nil {
-		log.Fatal(pingErr)
-	}
-
-	fmt.Println("Connected to database.")
-
-	schema, err := os.ReadFile("schema.sql")
-	if err != nil {
-		log.Fatal("No schema.sql found.")
-	}
-
-	_, err = db.Exec(string(schema))
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-
-	fmt.Println("Database schema.sql executed.")
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /files", filesHandler)
-	mux.HandleFunc("POST /files", uploadHandler)
-	mux.HandleFunc("DELETE /files/{id}", removeFile)
-
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Fatal(http.ListenAndServe(":"+string(PORT), router))
 }
 
 func removeFile(w http.ResponseWriter, r *http.Request) {
