@@ -1,10 +1,11 @@
 CREATE TABLE IF NOT EXISTS file (
-    id      text 	not null primary key,
-    name    text    not null unique,
-    size    INTEGER NOT NULL
+    id    TEXT    NOT NULL PRIMARY KEY,
+    name  TEXT    NOT NULL UNIQUE,
+    size  INTEGER NOT NULL,
+    share TEXT    NOT NULL,
+    FOREIGN KEY (share) REFERENCES share(id)
 );
 
 CREATE TABLE IF NOT EXISTS share (
-	id TEXT NOT NULL PRIMARY_KEY
+    id TEXT NOT NULL PRIMARY KEY
 );
-

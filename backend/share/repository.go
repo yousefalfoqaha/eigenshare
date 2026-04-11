@@ -4,13 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 
-	"eigenshare/backend/file"
 	"eigenshare/backend/storage"
 )
 
 type Repository struct {
-	storage        *storage.Storage
-	fileRepository *file.Repository
+	storage *storage.Storage
 }
 
 func NewRepository(s *storage.Storage) *Repository {
@@ -31,7 +29,7 @@ func (r *Repository) GetAll() ([]Share, error) {
 			return nil, fmt.Errorf("failed to read rows.")
 		}
 
-		fileIds, err := r.fileRepository.GetAllByShareID(s.ID)
+		fileIds, err := r.GetAllFilesByShareID(s.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -62,7 +60,7 @@ func (r *Repository) Get(id string) (*Share, error) {
 		return nil, fmt.Errorf("%v", err)
 	}
 
-	fileIds, err := r.fileRepository.GetAllByShareID(share.ID)
+	fileIds, err := r.GetAllFilesByShareID(share.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -70,4 +68,37 @@ func (r *Repository) Get(id string) (*Share, error) {
 	share.Files = fileIds
 
 	return &share, nil
+}
+
+func (r *Repository) Save(s Share) error {
+	_, err := r.storage.DB.Exec("INSERT INTO share (id) VALUES (?)", s.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *Repository) GetAllFilesByShareID(id string) ([]string, error) {
+	var fileIds []string
+
+	rows, err := r.storage.DB.Query("SELECT id FROM File WHERE share = ?", id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query database for all files.")
+	}
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to read rows.")
+		}
+
+		fileIds = append(fileIds, id)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%v", err)
+	}
+
+	return fileIds, nil
 }

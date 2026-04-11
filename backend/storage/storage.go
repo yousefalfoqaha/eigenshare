@@ -7,10 +7,6 @@ import (
 	"os"
 )
 
-type Storage struct {
-	DB *sql.DB
-}
-
 func NewStorage() *Storage {
 	var db *sql.DB
 
@@ -18,7 +14,6 @@ func NewStorage() *Storage {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	defer db.Close()
 
 	db.SetConnMaxLifetime(0)
 	db.SetMaxIdleConns(5)
