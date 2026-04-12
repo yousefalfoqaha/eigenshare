@@ -1,11 +1,12 @@
 package main
 
 import (
-	"eigenshare/backend/share"
-	"eigenshare/backend/storage"
 	"log"
 	"net/http"
 	"strconv"
+
+	"eigenshare/backend/share"
+	"eigenshare/backend/storage"
 
 	_ "modernc.org/sqlite"
 )
@@ -18,7 +19,8 @@ func main() {
 	router := http.NewServeMux()
 
 	shareRepo := share.NewRepository(storage)
-	shareCont := share.NewController(shareRepo)
+	shareServ := share.NewService(shareRepo)
+	shareCont := share.NewController(shareServ)
 	shareCont.RegisterHandlers(router)
 
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(PORT), router))

@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"os"
+	"regexp"
+
+	"eigenshare/backend/api"
 
 	"github.com/google/uuid"
 )
@@ -17,15 +21,24 @@ func NewService(shareRepository *Repository) *Service {
 	return &Service{shareRepository}
 }
 
+var validShareID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+
 func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	var share Share
 	var files []File
-	tmpDirUUID := uuid.New()
+	tmpDirPath := "data/tmp/" + uuid.New().String()
+	success := false
 
-	tmpDir, err := os.Create("/data/tmp/" + tmpDirUUID.String())
-	if err != nil {
-		return nil, err
+	if err := os.MkdirAll(tmpDirPath, 0o755); err != nil {
+		return nil, api.NewError(http.StatusInternalServerError, "failed to create temporary directory", err)
 	}
+
+	defer func() {
+		os.RemoveAll(tmpDirPath)
+		if !success {
+			os.RemoveAll("data/" + share.ID)
+		}
+	}()
 
 	for {
 		part, err := r.NextPart()
@@ -34,52 +47,57 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 		}
 
 		if err != nil {
-			return nil, err
+			return nil, api.NewError(http.StatusBadRequest, "failed to read multipart data", err)
 		}
 
 		switch part.FormName() {
 		case "metadata":
-			json.NewDecoder(part).Decode(&share)
-			_, err := os.Create("data/" + share.ID)
-			if err != nil {
+			if err := json.NewDecoder(part).Decode(&share); err != nil {
+				return nil, api.NewError(http.StatusBadRequest, "invalid metadata", err)
+			}
+
+			if err := validateShareID(share.ID); err != nil {
 				return nil, err
 			}
 		case "file":
 			fileID := uuid.New()
-			fileDir, err := os.Create(tmpDir.Name() + "/" + fileID.String())
+			fileDir, err := os.Create(tmpDirPath + "/" + fileID.String())
 			if err != nil {
-				return nil, err
+				return nil, api.NewError(http.StatusInternalServerError, "failed to create file", err)
 			}
-
-			// TODO: check for unique naming -> add filname (n), n being number of same-name files (regex of %filename% (*))
 
 			size, err := io.Copy(fileDir, part)
 			if err != nil {
-				return nil, err
+				return nil, api.NewError(http.StatusInternalServerError, "failed to write file", err)
 			}
 
-			file := File{ID: fileID.String(), Name: part.FileName(), Size: int(size)}
-
-			files = append(files, file)
+			files = append(files, File{ID: fileID.String(), Name: part.FileName(), Size: int(size)})
 		}
 
 		part.Close()
 	}
 
-	share = Share{
-		Files: files,
-	}
+	share.Files = files
+	shareDirPath := "data/" + share.ID
 
-	shareDir := "/data/" + share.ID
-
-	if err := os.Rename(tmpDir.Name(), shareDir); err != nil {
-		return nil, err
+	if err := os.Rename(tmpDirPath, shareDirPath); err != nil {
+		return nil, api.NewError(http.StatusInternalServerError, "failed to finalize share directory", err)
 	}
 
 	if err := s.shareRepository.Save(share); err != nil {
-		os.RemoveAll(shareDir)
-		return nil, err
+		return nil, api.NewError(http.StatusInternalServerError, "failed to save share", err)
 	}
 
+	success = true
 	return &share, nil
+}
+
+func validateShareID(id string) error {
+	if id == "" {
+		return api.NewError(http.StatusBadRequest, "share ID is required", nil)
+	}
+	if !validShareID.MatchString(id) {
+		return api.NewError(http.StatusBadRequest, "share ID may only contain letters, numbers, hyphens and underscores (max 64 chars)", nil)
+	}
+	return nil
 }

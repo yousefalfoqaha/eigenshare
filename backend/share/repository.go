@@ -20,13 +20,13 @@ func (r *Repository) GetAll() ([]Share, error) {
 
 	rows, err := r.storage.DB.Query("SELECT id FROM share")
 	if err != nil {
-		return nil, fmt.Errorf("Failed to query database for all files.")
+		return nil, err
 	}
 
 	for rows.Next() {
 		var s Share
 		if err := rows.Scan(&s.ID); err != nil {
-			return nil, fmt.Errorf("failed to read rows.")
+			return nil, err
 		}
 
 		fileIds, err := r.GetAllFilesByShareID(s.ID)
@@ -39,7 +39,7 @@ func (r *Repository) GetAll() ([]Share, error) {
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("%v", err)
+		return nil, err
 	}
 
 	return shares, nil
@@ -51,21 +51,21 @@ func (r *Repository) Get(id string) (*Share, error) {
 	row := r.storage.DB.QueryRow("SELECT id FROM share WHERE id = ?", id)
 	if err := row.Scan(&share.ID); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("Get share by ID %d: no such share", id)
+			return nil, fmt.Errorf("Get share by ID %v: no such share", id)
 		}
 
-		return nil, fmt.Errorf("sharesById %d: %v", id, err)
+		return nil, err
 	}
 	if err := row.Err(); err != nil {
-		return nil, fmt.Errorf("%v", err)
+		return nil, err
 	}
 
-	fileIds, err := r.GetAllFilesByShareID(share.ID)
+	files, err := r.GetAllFilesByShareID(share.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	share.Files = fileIds
+	share.Files = files
 
 	return &share, nil
 }
@@ -76,29 +76,37 @@ func (r *Repository) Save(s Share) error {
 		return err
 	}
 
+	for _, f := range s.Files {
+		_, err := r.storage.DB.Exec(
+			"INSERT INTO file (id, name, size, share_id) VALUES (?, ?, ?, ?)",
+			f.ID, f.Name, f.Size, s.ID,
+		)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func (r *Repository) GetAllFilesByShareID(id string) ([]string, error) {
-	var fileIds []string
-
-	rows, err := r.storage.DB.Query("SELECT id FROM File WHERE share = ?", id)
+func (r *Repository) GetAllFilesByShareID(id string) ([]File, error) {
+	var files []File
+	rows, err := r.storage.DB.Query("SELECT id, name, size FROM File WHERE share_id = ?", id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query database for all files.")
+		return nil, err
 	}
 
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("failed to read rows.")
+		var file File
+		if err := rows.Scan(&file.ID, &file.Name, &file.Size); err != nil {
+			return nil, err
 		}
 
-		fileIds = append(fileIds, id)
+		files = append(files, file)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("%v", err)
+		return nil, err
 	}
 
-	return fileIds, nil
+	return files, nil
 }

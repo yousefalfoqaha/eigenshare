@@ -7,22 +7,27 @@ import (
 )
 
 type Controller struct {
-	shareRepository *Repository
+	shareService *Service
 }
 
-func NewController(shareRepository *Repository) *Controller {
-	return &Controller{shareRepository}
+func NewController(shareService *Service) *Controller {
+	return &Controller{shareService}
 }
 
 func (c *Controller) RegisterHandlers(router *http.ServeMux) {
-	router.HandleFunc("GET /shares", api.MakeHandler(c.getAllSharesHandler))
+	router.HandleFunc("POST /shares", api.MakeHandler(c.share))
 }
 
-func (c *Controller) getAllSharesHandler(w http.ResponseWriter, r *http.Request) error {
-	shares, err := c.shareRepository.GetAll()
+func (c *Controller) share(w http.ResponseWriter, r *http.Request) error {
+	reader, err := r.MultipartReader()
 	if err != nil {
-		return api.Error{Status: http.StatusInternalServerError, Message: "Something went wrong."}
+		return api.NewError(http.StatusInternalServerError, "Failed to get multipart reader", err)
 	}
 
-	return api.JSON(w, http.StatusOK, shares)
+	share, err := c.shareService.share(reader)
+	if err != nil {
+		return err
+	}
+
+	return api.JSON(w, http.StatusCreated, share)
 }
