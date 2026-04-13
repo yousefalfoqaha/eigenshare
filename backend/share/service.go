@@ -28,18 +28,11 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	var share Share
 	var files []File
 	tmpDirPath := "data/tmp/" + uuid.New().String()
-	cleanupData := true
 
 	if err := os.MkdirAll(tmpDirPath, 0o755); err != nil {
 		return nil, err
 	}
-
-	defer func() {
-		os.RemoveAll(tmpDirPath)
-		if cleanupData {
-			os.RemoveAll("data/" + share.ID)
-		}
-	}()
+	defer os.RemoveAll(tmpDirPath)
 
 	for {
 		part, err := r.NextPart()
@@ -86,7 +79,6 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	}
 
 	if exists {
-		cleanupData = false
 		return nil, api.NewError(http.StatusConflict, "Share with ID "+share.ID+" exists", nil)
 	}
 
@@ -95,10 +87,10 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	}
 
 	if err := s.shareRepository.Save(share); err != nil {
+		os.RemoveAll(shareDirPath)
 		return nil, err
 	}
 
-	cleanupData = false
 	return &share, nil
 }
 
