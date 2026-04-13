@@ -1,12 +1,12 @@
 package main
 
 import (
-	"log"
-	"net/http"
-	"strconv"
-
+	"eigenshare/backend/middleware"
 	"eigenshare/backend/share"
 	"eigenshare/backend/storage"
+	"fmt"
+	"net/http"
+	"strconv"
 
 	_ "modernc.org/sqlite"
 )
@@ -23,5 +23,11 @@ func main() {
 	shareCont := share.NewController(shareServ)
 	shareCont.RegisterHandlers(router)
 
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(PORT), router))
+	server := http.Server{
+		Addr:    ":" + strconv.Itoa(PORT),
+		Handler: middleware.Logging(router),
+	}
+
+	fmt.Printf("Server listening on port %v\n", PORT)
+	server.ListenAndServe()
 }

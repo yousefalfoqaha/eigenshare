@@ -48,15 +48,14 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 		}
 
 		if err != nil {
-			return nil, api.NewError(http.StatusBadRequest, "failed to read multipart data", err)
+			return nil, err
 		}
 
 		switch part.FormName() {
 		case "metadata":
 			if err := json.NewDecoder(part).Decode(&share); err != nil {
-				return nil, api.NewError(http.StatusBadRequest, "invalid metadata", err)
+				return nil, err
 			}
-
 			if err := validateShareID(share.ID); err != nil {
 				return nil, err
 			}

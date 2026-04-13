@@ -24,7 +24,7 @@ func NewStorage() *Storage {
 		log.Fatal(pingErr)
 	}
 
-	fmt.Println("Connected to database.")
+	fmt.Println("Connected to database")
 
 	storage := &Storage{DB: db}
 
@@ -44,5 +44,5 @@ func initSchema(s *Storage) {
 		log.Fatal(err.Error())
 	}
 
-	fmt.Println("Database schema.sql executed.")
+	fmt.Println("Initialized database schema")
 }
