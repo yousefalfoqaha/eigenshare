@@ -12,34 +12,37 @@ func NewRepository(s *storage.Storage) *Repository {
 	return &Repository{storage: s}
 }
 
-func (r *Repository) GetAll() ([]Share, error) {
-	var shares []Share
+func (r *Repository) GetAll() ([]ShareSummary, error) {
+	var summaries []ShareSummary
 
-	rows, err := r.storage.DB.Query("SELECT id FROM share")
+	query := `
+		SELECT 
+			s.id, 
+			COUNT(f.id) AS totalFiles, 
+			COALESCE(SUM(f.size), 0) AS totalSize
+		FROM share s
+		LEFT JOIN file f ON s.id = f.share_id
+		GROUP BY s.id`
+
+	rows, err := r.storage.DB.Query(query)
 	if err != nil {
 		return nil, err
 	}
 
 	for rows.Next() {
-		var s Share
-		if err := rows.Scan(&s.ID); err != nil {
+		var s ShareSummary
+		if err := rows.Scan(&s.ID, &s.TotalFiles, &s.TotalSize); err != nil {
 			return nil, err
 		}
 
-		fileIds, err := r.GetAllFilesByShareID(s.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		s.Files = fileIds
-		shares = append(shares, s)
+		summaries = append(summaries, s)
 	}
 
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 
-	return shares, nil
+	return summaries, nil
 }
 
 func (r *Repository) Exists(id string) (bool, error) {
@@ -64,7 +67,7 @@ func (r *Repository) Get(id string) (*Share, error) {
 		return nil, err
 	}
 
-	files, err := r.GetAllFilesByShareID(share.ID)
+	files, err := r.getAllFilesByShareID(share.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +95,7 @@ func (r *Repository) Save(s Share) error {
 	return nil
 }
 
-func (r *Repository) GetAllFilesByShareID(id string) ([]File, error) {
+func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 	var files []File
 	rows, err := r.storage.DB.Query("SELECT id, name, size FROM File WHERE share_id = ?", id)
 	if err != nil {

@@ -15,8 +15,9 @@ func NewController(shareService *Service) *Controller {
 }
 
 func (c *Controller) RegisterHandlers(router *http.ServeMux) {
-	router.HandleFunc("POST /shares", api.MakeHandler(c.createShare))
+	router.HandleFunc("GET /shares", api.MakeHandler(c.getShares))
 	router.HandleFunc("GET /shares/{id}", api.MakeHandler(c.getShare))
+	router.HandleFunc("POST /shares", api.MakeHandler(c.createShare))
 }
 
 func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
@@ -31,6 +32,15 @@ func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	return api.JSON(w, http.StatusCreated, share)
+}
+
+func (c *Controller) getShares(w http.ResponseWriter, _ *http.Request) error {
+	shares, err := c.shareService.getShares()
+	if err != nil {
+		return err
+	}
+
+	return api.JSON(w, http.StatusOK, shares)
 }
 
 func (c *Controller) getShare(w http.ResponseWriter, r *http.Request) error {

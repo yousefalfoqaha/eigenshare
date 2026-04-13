@@ -14,9 +14,9 @@ import (
 const PORT int = 8080
 
 func main() {
-	storage := storage.NewStorage()
-
 	router := http.NewServeMux()
+
+	storage := storage.NewStorage()
 
 	shareRepo := share.NewRepository(storage)
 	shareServ := share.NewService(shareRepo)

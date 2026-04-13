@@ -103,6 +103,15 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	return &share, nil
 }
 
+func (s *Service) getShares() ([]ShareSummary, error) {
+	shares, err := s.shareRepository.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	return shares, nil
+}
+
 func (s *Service) getShare(id string) (*Share, error) {
 	if id == "" {
 		return nil, api.NewError(http.StatusBadRequest, "share ID is required", nil)
