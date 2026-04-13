@@ -1,6 +1,7 @@
 package share
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -27,15 +28,15 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	var share Share
 	var files []File
 	tmpDirPath := "data/tmp/" + uuid.New().String()
-	success := false
+	cleanupData := true
 
 	if err := os.MkdirAll(tmpDirPath, 0o755); err != nil {
-		return nil, api.NewError(http.StatusInternalServerError, "failed to create temporary directory", err)
+		return nil, err
 	}
 
 	defer func() {
 		os.RemoveAll(tmpDirPath)
-		if !success {
+		if cleanupData {
 			os.RemoveAll("data/" + share.ID)
 		}
 	}()
@@ -63,12 +64,12 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 			fileID := uuid.New()
 			fileDir, err := os.Create(tmpDirPath + "/" + fileID.String())
 			if err != nil {
-				return nil, api.NewError(http.StatusInternalServerError, "failed to create file", err)
+				return nil, err
 			}
 
 			size, err := io.Copy(fileDir, part)
 			if err != nil {
-				return nil, api.NewError(http.StatusInternalServerError, "failed to write file", err)
+				return nil, err
 			}
 
 			files = append(files, File{ID: fileID.String(), Name: part.FileName(), Size: int(size)})
@@ -80,16 +81,42 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	share.Files = files
 	shareDirPath := "data/" + share.ID
 
+	exists, err := s.shareRepository.Exists(share.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if exists {
+		cleanupData = false
+		return nil, api.NewError(http.StatusConflict, "Share with ID "+share.ID+" exists", nil)
+	}
+
 	if err := os.Rename(tmpDirPath, shareDirPath); err != nil {
-		return nil, api.NewError(http.StatusInternalServerError, "failed to finalize share directory", err)
+		return nil, err
 	}
 
 	if err := s.shareRepository.Save(share); err != nil {
-		return nil, api.NewError(http.StatusInternalServerError, "failed to save share", err)
+		return nil, err
 	}
 
-	success = true
+	cleanupData = false
 	return &share, nil
+}
+
+func (s *Service) getShare(id string) (*Share, error) {
+	if id == "" {
+		return nil, api.NewError(http.StatusBadRequest, "share ID is required", nil)
+	}
+
+	share, err := s.shareRepository.Get(id)
+	if err == sql.ErrNoRows {
+		return nil, api.NewError(http.StatusNotFound, "No share found", nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return share, nil
 }
 
 func validateShareID(id string) error {

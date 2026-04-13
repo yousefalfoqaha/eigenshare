@@ -1,9 +1,6 @@
 package share
 
 import (
-	"database/sql"
-	"fmt"
-
 	"eigenshare/backend/storage"
 )
 
@@ -45,15 +42,22 @@ func (r *Repository) GetAll() ([]Share, error) {
 	return shares, nil
 }
 
+func (r *Repository) Exists(id string) (bool, error) {
+	var exists bool
+
+	err := r.storage.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM share WHERE id = ?)", id).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
 func (r *Repository) Get(id string) (*Share, error) {
 	var share Share
 
 	row := r.storage.DB.QueryRow("SELECT id FROM share WHERE id = ?", id)
 	if err := row.Scan(&share.ID); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("Get share by ID %v: no such share", id)
-		}
-
 		return nil, err
 	}
 	if err := row.Err(); err != nil {

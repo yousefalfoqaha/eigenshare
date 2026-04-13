@@ -18,16 +18,12 @@ func MakeHandler(h controllerHandleFunc) http.HandlerFunc {
 				if apiErr.Cause != nil {
 					log.Printf("ERROR %d %s %s: %v", apiErr.Status, r.Method, r.URL.Path, apiErr.Cause)
 				}
-				w.WriteHeader(apiErr.Status)
+
+				JSON(w, apiErr.Status, err)
 			} else {
 				log.Printf("ERROR %s %s: %v", r.Method, r.URL.Path, err)
 				w.WriteHeader(http.StatusInternalServerError)
 			}
-
-			w.Header().Set("Content-Type", "application/json")
-			enc := json.NewEncoder(w)
-			enc.SetIndent("", "  ")
-			enc.Encode(err)
 		}
 	}
 }
