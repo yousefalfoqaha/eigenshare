@@ -88,7 +88,7 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 		return nil, err
 	}
 
-	if err := s.shareRepository.Save(share); err != nil {
+	if _, err := s.shareRepository.Save(share); err != nil {
 		os.RemoveAll(shareDirPath)
 		return nil, err
 	}
