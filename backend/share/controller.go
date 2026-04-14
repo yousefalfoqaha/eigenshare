@@ -50,5 +50,5 @@ func (c *Controller) getShare(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	return api.JSON(w, http.StatusCreated, share)
+	return api.JSON(w, http.StatusOK, share)
 }

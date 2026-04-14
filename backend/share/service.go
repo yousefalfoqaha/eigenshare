@@ -49,6 +49,9 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 			if err := json.NewDecoder(part).Decode(&share); err != nil {
 				return nil, err
 			}
+			if share.ID == "" {
+				return nil, api.NewError(http.StatusBadRequest, "Share ID is empty")
+			}
 			if err := validateShareID(share.ID); err != nil {
 				return nil, err
 			}
@@ -68,10 +71,6 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 		}
 
 		part.Close()
-	}
-
-	if share.ID == "" {
-		return nil, api.NewError(http.StatusBadRequest, "Share ID is empty")
 	}
 
 	share.Files = files
