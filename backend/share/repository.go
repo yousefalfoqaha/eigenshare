@@ -1,6 +1,7 @@
 package share
 
 import (
+	"database/sql"
 	"eigenshare/backend/storage"
 )
 
@@ -77,23 +78,43 @@ func (r *Repository) Get(id string) (*Share, error) {
 	return &share, nil
 }
 
-// TODO: make operation transactional
-func (r *Repository) Save(s Share) error {
-	_, err := r.storage.DB.Exec("INSERT INTO share (id) VALUES (?)", s.ID)
+func (r *Repository) makeTransaction(o func(tx *sql.Tx) error) error {
+	tx, err := r.storage.DB.Begin()
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 
-	for _, f := range s.Files {
-		_, err := r.storage.DB.Exec(
-			"INSERT INTO file (id, name, size, share_id) VALUES (?, ?, ?, ?)",
-			f.ID, f.Name, f.Size, s.ID,
-		)
+	if err := o(tx); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *Repository) Save(s Share) (*Share, error) {
+	err := r.makeTransaction(func(tx *sql.Tx) error {
+		_, err := tx.Exec("INSERT INTO share (id) VALUES (?)", s.ID)
 		if err != nil {
 			return err
 		}
+
+		for _, f := range s.Files {
+			_, err := tx.Exec(
+				"INSERT INTO file (id, name, size, share_id) VALUES (?, ?, ?, ?)",
+				f.ID, f.Name, f.Size, s.ID,
+			)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil
+
+	return &s, nil
 }
 
 func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {

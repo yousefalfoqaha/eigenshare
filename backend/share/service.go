@@ -2,14 +2,13 @@ package share
 
 import (
 	"database/sql"
+	"eigenshare/backend/api"
 	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"regexp"
-
-	"eigenshare/backend/api"
 
 	"github.com/google/uuid"
 )
