@@ -1,9 +1,10 @@
 package share
 
 import (
-	"net/http"
-
 	"eigenshare/backend/api"
+	"encoding/json"
+	"io"
+	"net/http"
 )
 
 type Controller struct {
@@ -26,7 +27,31 @@ func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	share, err := c.shareService.share(reader)
+	var shareReq shareRequest
+
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		switch part.FormName() {
+		case "metadata":
+			if err := json.NewDecoder(part).Decode(&shareReq); err != nil {
+				return err
+			}
+		case "file":
+			reader := fileReader{name: part.FileName(), Reader: part}
+			shareReq.fileReaders = append(shareReq.fileReaders, reader)
+		}
+
+		part.Close()
+	}
+
+	share, err := c.shareService.share(shareReq)
 	if err != nil {
 		return err
 	}

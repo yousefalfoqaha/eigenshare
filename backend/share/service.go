@@ -3,9 +3,7 @@ package share
 import (
 	"database/sql"
 	"eigenshare/backend/api"
-	"encoding/json"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"regexp"
@@ -23,7 +21,7 @@ func NewService(shareRepository *Repository) *Service {
 
 var validShareID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
-func (s *Service) share(r *multipart.Reader) (*Share, error) {
+func (s *Service) share(req shareRequest) (*Share, error) {
 	var share Share
 	var files []File
 	tmpDirPath := "data/tmp/" + uuid.New().String()
@@ -33,43 +31,27 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	}
 	defer os.RemoveAll(tmpDirPath)
 
-	for {
-		part, err := r.NextPart()
-		if err == io.EOF {
-			break
-		}
+	if req.ID == "" {
+		return nil, api.NewError(http.StatusBadRequest, "Share ID is empty")
+	}
 
+	if err := validateShareID(share.ID); err != nil {
+		return nil, err
+	}
+
+	for _, r := range req.fileReaders {
+		fileID := uuid.New()
+		fileDir, err := os.Create(tmpDirPath + "/" + fileID.String())
 		if err != nil {
 			return nil, err
 		}
 
-		switch part.FormName() {
-		case "metadata":
-			if err := json.NewDecoder(part).Decode(&share); err != nil {
-				return nil, err
-			}
-			if share.ID == "" {
-				return nil, api.NewError(http.StatusBadRequest, "Share ID is empty")
-			}
-			if err := validateShareID(share.ID); err != nil {
-				return nil, err
-			}
-		case "file":
-			fileID := uuid.New()
-			fileDir, err := os.Create(tmpDirPath + "/" + fileID.String())
-			if err != nil {
-				return nil, err
-			}
-
-			size, err := io.Copy(fileDir, part)
-			if err != nil {
-				return nil, err
-			}
-
-			files = append(files, File{ID: fileID.String(), Name: part.FileName(), Size: int(size)})
+		size, err := io.Copy(fileDir, r)
+		if err != nil {
+			return nil, err
 		}
 
-		part.Close()
+		files = append(files, File{ID: fileID.String(), Name: r.name, Size: int(size)})
 	}
 
 	share.Files = files
