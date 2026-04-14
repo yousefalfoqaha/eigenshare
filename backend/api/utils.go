@@ -7,21 +7,17 @@ import (
 	"net/http"
 )
 
-func NewError(status int, message string, cause error) Error {
-	return Error{Status: status, Message: message, Cause: cause}
+func NewError(status int, message string) Error {
+	return Error{Status: status, Message: message}
 }
 
 func MakeHandler(h controllerHandleFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := h(w, r); err != nil {
 			if apiErr, ok := errors.AsType[Error](err); ok {
-				if apiErr.Cause != nil {
-					log.Printf("ERROR %d %s %s: %v", apiErr.Status, r.Method, r.URL.Path, apiErr.Cause)
-				}
-
 				JSON(w, apiErr.Status, err)
 			} else {
-				log.Printf("ERROR %s %s: %v", r.Method, r.URL.Path, err)
+				log.Printf("ERROR: %v", err)
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		}

@@ -71,7 +71,7 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	}
 
 	if share.ID == "" {
-		return nil, api.NewError(http.StatusBadRequest, "Share ID is empty", nil)
+		return nil, api.NewError(http.StatusBadRequest, "Share ID is empty")
 	}
 
 	share.Files = files
@@ -83,7 +83,7 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 	}
 
 	if exists {
-		return nil, api.NewError(http.StatusConflict, "Share with ID "+share.ID+" exists", nil)
+		return nil, api.NewError(http.StatusConflict, "Share with ID "+share.ID+" exists")
 	}
 
 	if err := os.Rename(tmpDirPath, shareDirPath); err != nil {
@@ -109,12 +109,12 @@ func (s *Service) getShares() ([]ShareSummary, error) {
 
 func (s *Service) getShare(id string) (*Share, error) {
 	if id == "" {
-		return nil, api.NewError(http.StatusBadRequest, "share ID is required", nil)
+		return nil, api.NewError(http.StatusBadRequest, "share ID is required")
 	}
 
 	share, err := s.shareRepository.Get(id)
 	if err == sql.ErrNoRows {
-		return nil, api.NewError(http.StatusNotFound, "No share found", nil)
+		return nil, api.NewError(http.StatusNotFound, "No share found")
 	}
 	if err != nil {
 		return nil, err
@@ -125,10 +125,10 @@ func (s *Service) getShare(id string) (*Share, error) {
 
 func validateShareID(id string) error {
 	if id == "" {
-		return api.NewError(http.StatusBadRequest, "share ID is required", nil)
+		return api.NewError(http.StatusBadRequest, "share ID is required")
 	}
 	if !validShareID.MatchString(id) {
-		return api.NewError(http.StatusBadRequest, "share ID may only contain letters, numbers, hyphens and underscores (max 64 chars)", nil)
+		return api.NewError(http.StatusBadRequest, "share ID may only contain letters, numbers, hyphens and underscores (max 64 chars)")
 	}
 	return nil
 }
