@@ -70,6 +70,10 @@ func (s *Service) share(r *multipart.Reader) (*Share, error) {
 		part.Close()
 	}
 
+	if share.ID == "" {
+		return nil, api.NewError(http.StatusBadRequest, "Share ID is empty", nil)
+	}
+
 	share.Files = files
 	shareDirPath := "data/" + share.ID
 

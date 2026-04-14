@@ -77,6 +77,7 @@ func (r *Repository) Get(id string) (*Share, error) {
 	return &share, nil
 }
 
+// TODO: make operation transactional
 func (r *Repository) Save(s Share) error {
 	_, err := r.storage.DB.Exec("INSERT INTO share (id) VALUES (?)", s.ID)
 	if err != nil {
