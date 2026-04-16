@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>HTML 5 Boilerplate</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div>
+      <form
+        id="file-form"
+        action="localhost:8080/shares"
+        method="POST"
+        enctype="multipart/form-data"
+      >
+        <label for="myFile">Select a file:</label>
+        <input type="file" id="myFile" name="filename" />
+        <input type="submit" value="Upload" />
+      </form>
+    </div>
+    <script src="index.js"></script>
+  </body>
+</html>

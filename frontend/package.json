@@ -1,0 +1,13 @@
+{
+  "name": "cv",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "prettier": "^3.0.0",
+    "live-server": "^1.2.2"
+  },
+  "scripts": {
+    "format": "prettier --write '**/*.html'",
+    "start": "live-server --open=./"
+  }
+}

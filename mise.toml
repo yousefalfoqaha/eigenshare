@@ -1,2 +1,3 @@
 [tools]
 go = "1.26"
+node = { version = "24", postinstall = "corepack enable" }
