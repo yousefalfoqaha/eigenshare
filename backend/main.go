@@ -1,13 +1,12 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
-	"strconv"
-
 	"eigenshare/backend/middleware"
 	"eigenshare/backend/share"
 	"eigenshare/backend/storage"
+	"fmt"
+	"net/http"
+	"strconv"
 
 	_ "modernc.org/sqlite"
 )

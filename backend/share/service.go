@@ -4,10 +4,7 @@ import (
 	"database/sql"
 	"eigenshare/backend/api"
 	"fmt"
-	"io"
-	"math"
 	"net/http"
-	"os"
 	"regexp"
 
 	"github.com/google/uuid"
@@ -27,6 +24,7 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	var share Share
 
 	share.ID = uuid.New().String()
+	share.Handle = req.Handle
 	share.Status = "PENDING"
 
 	var files []File
@@ -37,23 +35,23 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 			return nil, err
 		}
 
-		file := File{ID: fileID, Bitmask: bitmask, Size: f.size}
+		file := File{ID: fileID, Name: f.Name, Bitmask: bitmask, Size: f.Size}
 
 		files = append(files, file)
 	}
 
-	share.ID = files
+	share.Files = files
 
 	if _, err := s.shareRepository.Save(share); err != nil {
 		return nil, err
 	}
 
-	return &savedShare, nil
+	return &share, nil
 }
 
 func createBitmask(fileSize int64) ([]byte, error) {
 	if fileSize <= 0 {
-		return nil, fmt.Println("Invalide file size")
+		return nil, fmt.Errorf("Invalid file size")
 	}
 
 	const CHUNK_SIZE_MB = 10
@@ -62,7 +60,7 @@ func createBitmask(fileSize int64) ([]byte, error) {
 	numChunks := (fileSize + chunkSize - 1) / chunkSize
 	numBytes := (numChunks + 7) / 8
 
-	return make([]byte, numBytes)
+	return make([]byte, numBytes), nil
 }
 
 func (s *Service) getShares() ([]ShareSummary, error) {

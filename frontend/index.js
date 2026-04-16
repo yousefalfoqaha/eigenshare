@@ -14,10 +14,11 @@ function main() {
       files: [{ name: file.name, size: file.size }],
     };
 
+    console.log(body);
     try {
       const response = await fetch(url, {
         method: "POST",
-        body,
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {

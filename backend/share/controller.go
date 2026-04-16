@@ -22,10 +22,11 @@ func (c *Controller) RegisterHandlers(router *http.ServeMux) {
 
 func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 	var shareReq shareRequest
-	err := json.NewDecoder(r.Body).Decode(&user)
+	err := json.NewDecoder(r.Body).Decode(&shareReq)
 	if err != nil {
-		// return HTTP 400 bad request
+		return err
 	}
+
 	share, err := c.shareService.requestShare(shareReq)
 	if err != nil {
 		return err

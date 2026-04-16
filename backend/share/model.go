@@ -9,6 +9,7 @@ type Share struct {
 
 type ShareSummary struct {
 	ID         string `json:"id"`
+	Handle     string `json:"handle"`
 	TotalFiles int    `json:"totalFiles"`
 	TotalSize  int    `json:"totalSize"`
 }
@@ -16,13 +17,13 @@ type ShareSummary struct {
 type File struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
-	Size    int    `json:"size"`
+	Size    int64  `json:"size"`
 	Bitmask []byte `json:"bitmask"`
 }
 
 type fileRequest struct {
 	Name string `json:"name"`
-	Size int    `json:"size"`
+	Size int64  `json:"size"`
 }
 
 type shareRequest struct {
