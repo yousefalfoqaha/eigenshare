@@ -3,12 +3,33 @@ function main() {
 
   if (!form) return;
 
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
-
     const formData = new FormData(form);
     const file = formData.get("filename");
-    console.log("File to upload:", file);
+
+    const url = "http://localhost:8080/shares";
+    const body = {
+      handle: "hello",
+      files: [{ name: file.name, size: file.size }],
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        body,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Response status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      console.log(result);
+    } catch (error) {
+      console.error(error.message);
+    }
   });
 }
 

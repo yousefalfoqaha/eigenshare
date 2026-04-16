@@ -60,8 +60,8 @@ func (r *Repository) Exists(id string) (bool, error) {
 func (r *Repository) Get(id string) (*Share, error) {
 	var share Share
 
-	row := r.storage.DB.QueryRow("SELECT id FROM share WHERE id = ?", id)
-	if err := row.Scan(&share.ID); err != nil {
+	row := r.storage.DB.QueryRow("SELECT id, handle FROM share WHERE id = ?", id)
+	if err := row.Scan(&share.ID, &share.Handle); err != nil {
 		return nil, err
 	}
 	if err := row.Err(); err != nil {
@@ -119,14 +119,14 @@ func (r *Repository) Save(s Share) (*Share, error) {
 
 func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 	var files []File
-	rows, err := r.storage.DB.Query("SELECT id, name, size FROM File WHERE share_id = ?", id)
+	rows, err := r.storage.DB.Query("SELECT id, name, size, bitmask FROM File WHERE share_id = ?", id)
 	if err != nil {
 		return nil, err
 	}
 
 	for rows.Next() {
 		var file File
-		if err := rows.Scan(&file.ID, &file.Name, &file.Size); err != nil {
+		if err := rows.Scan(&file.ID, &file.Name, &file.Size, &file.Bitmask); err != nil {
 			return nil, err
 		}
 

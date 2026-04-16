@@ -3,7 +3,6 @@ package share
 import (
 	"eigenshare/backend/api"
 	"encoding/json"
-	"io"
 	"net/http"
 )
 
@@ -22,36 +21,12 @@ func (c *Controller) RegisterHandlers(router *http.ServeMux) {
 }
 
 func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
-	reader, err := r.MultipartReader()
-	if err != nil {
-		return err
-	}
-
 	var shareReq shareRequest
-
-	for {
-		part, err := reader.NextPart()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		switch part.FormName() {
-		case "metadata":
-			if err := json.NewDecoder(part).Decode(&shareReq); err != nil {
-				return err
-			}
-		case "file":
-			reader := fileReader{name: part.FileName(), Reader: part}
-			shareReq.fileReaders = append(shareReq.fileReaders, reader)
-		}
-
-		part.Close()
+	err := json.NewDecoder(r.Body).Decode(&user)
+	if err != nil {
+		// return HTTP 400 bad request
 	}
-
-	share, err := c.shareService.share(shareReq)
+	share, err := c.shareService.requestShare(shareReq)
 	if err != nil {
 		return err
 	}

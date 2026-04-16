@@ -1,10 +1,10 @@
 package share
 
-import "io"
-
 type Share struct {
-	ID    string `json:"id"`
-	Files []File `json:"files"`
+	ID     string `json:"id"`
+	Handle string `json:"handle"`
+	Status string `json:"status"`
+	Files  []File `json:"files"`
 }
 
 type ShareSummary struct {
@@ -14,17 +14,18 @@ type ShareSummary struct {
 }
 
 type File struct {
-	ID   string `json:"id"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Size    int    `json:"size"`
+	Bitmask []byte `json:"bitmask"`
+}
+
+type fileRequest struct {
 	Name string `json:"name"`
 	Size int    `json:"size"`
 }
 
-type fileReader struct {
-	io.Reader
-	name string
-}
-
 type shareRequest struct {
-	ID          string
-	fileReaders []fileReader
+	Handle string        `json:"handle"`
+	Files  []fileRequest `json:"files"`
 }
