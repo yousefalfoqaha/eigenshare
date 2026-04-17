@@ -30,13 +30,12 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	var files []File
 	for _, f := range req.Files {
 		fileID := uuid.New().String()
-		bitmask, err := createBitmask(f.Size)
+		bitmask, numChunks, err := createBitmask(f.Size)
 		if err != nil {
 			return nil, err
 		}
 
-		file := File{ID: fileID, Name: f.Name, Bitmask: bitmask, Size: f.Size}
-
+		file := File{ID: fileID, Name: f.Name, Chunks: numChunks, Bitmask: bitmask, Size: f.Size}
 		files = append(files, file)
 	}
 
@@ -49,18 +48,18 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	return &share, nil
 }
 
-func createBitmask(fileSize int64) ([]byte, error) {
+func createBitmask(fileSize int64) ([]byte, int, error) {
 	if fileSize <= 0 {
-		return nil, fmt.Errorf("Invalid file size")
+		return nil, 0, fmt.Errorf("Invalid file size")
 	}
 
-	const CHUNK_SIZE_MB = 10
+	const CHUNK_SIZE_MB = 5
 	var chunkSize int64 = 1024 * 1024 * CHUNK_SIZE_MB
 
 	numChunks := (fileSize + chunkSize - 1) / chunkSize
 	numBytes := (numChunks + 7) / 8
 
-	return make([]byte, numBytes), nil
+	return make([]byte, numBytes), int(numChunks), nil
 }
 
 func (s *Service) getShares() ([]ShareSummary, error) {

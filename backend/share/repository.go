@@ -20,6 +20,7 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 		SELECT 
 			s.id, 
 			s.handle,
+			s.status,
 			COUNT(f.id) AS totalFiles, 
 			COALESCE(SUM(f.size), 0) AS totalSize
 		FROM share s
@@ -33,7 +34,7 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 
 	for rows.Next() {
 		var s ShareSummary
-		if err := rows.Scan(&s.ID, &s.Handle, &s.TotalFiles, &s.TotalSize); err != nil {
+		if err := rows.Scan(&s.ID, &s.Handle, &s.Status, &s.TotalFiles, &s.TotalSize); err != nil {
 			return nil, err
 		}
 
@@ -61,8 +62,8 @@ func (r *Repository) Exists(id string) (bool, error) {
 func (r *Repository) Get(id string) (*Share, error) {
 	var share Share
 
-	row := r.storage.DB.QueryRow("SELECT id, handle FROM share WHERE id = ?", id)
-	if err := row.Scan(&share.ID, &share.Handle); err != nil {
+	row := r.storage.DB.QueryRow("SELECT id, handle, status FROM share WHERE id = ?", id)
+	if err := row.Scan(&share.ID, &share.Handle, &share.Status); err != nil {
 		return nil, err
 	}
 	if err := row.Err(); err != nil {
@@ -95,15 +96,15 @@ func (r *Repository) makeTransaction(o func(tx *sql.Tx) error) error {
 
 func (r *Repository) Save(s Share) (*Share, error) {
 	err := r.makeTransaction(func(tx *sql.Tx) error {
-		_, err := tx.Exec("INSERT INTO share (id, handle) VALUES (?, ?)", s.ID, s.Handle)
+		_, err := tx.Exec("INSERT INTO share (id, handle, status) VALUES (?, ?, ?)", s.ID, s.Handle, s.Status)
 		if err != nil {
 			return err
 		}
 
 		for _, f := range s.Files {
 			_, err := tx.Exec(
-				"INSERT INTO file (id, name, size, bitmask, share_id) VALUES (?, ?, ?, ?, ?)",
-				f.ID, f.Name, f.Size, f.Bitmask, s.ID,
+				"INSERT INTO file (id, name, size, bitmask, chunks, share_id) VALUES (?, ?, ?, ?, ?, ?)",
+				f.ID, f.Name, f.Size, f.Bitmask, f.Chunks, s.ID,
 			)
 			if err != nil {
 				return err
@@ -120,14 +121,14 @@ func (r *Repository) Save(s Share) (*Share, error) {
 
 func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 	var files []File
-	rows, err := r.storage.DB.Query("SELECT id, name, size, bitmask FROM file WHERE share_id = ?", id)
+	rows, err := r.storage.DB.Query("SELECT id, name, size, bitmask, chunks FROM file WHERE share_id = ?", id)
 	if err != nil {
 		return nil, err
 	}
 
 	for rows.Next() {
 		var file File
-		if err := rows.Scan(&file.ID, &file.Name, &file.Size, &file.Bitmask); err != nil {
+		if err := rows.Scan(&file.ID, &file.Name, &file.Size, &file.Bitmask, &file.Chunks); err != nil {
 			return nil, err
 		}
 
