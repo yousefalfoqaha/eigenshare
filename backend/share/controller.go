@@ -4,14 +4,11 @@ import (
 	"eigenshare/backend/api"
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 type Controller struct {
-	shareService *Service
-}
-
-func NewController(shareService *Service) *Controller {
-	return &Controller{shareService}
+	ShareService *Service
 }
 
 func (c *Controller) RegisterHandlers(router *http.ServeMux) {
@@ -27,7 +24,7 @@ func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	share, err := c.shareService.requestShare(shareReq)
+	share, err := c.ShareService.requestShare(shareReq)
 	if err != nil {
 		return err
 	}
@@ -35,8 +32,31 @@ func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 	return api.JSON(w, http.StatusCreated, share)
 }
 
+func (c *Controller) uploadChunk(w http.ResponseWriter, r *http.Request) error {
+	shareId := r.URL.Query().Get("shareId")
+
+	fileIndex, err := strconv.Atoi(r.Header.Get("X-File-Index"))
+	if err != nil {
+		return err
+	}
+
+	chunkIndex, err := strconv.Atoi(r.Header.Get("X-Chunk-Index"))
+	if err != nil {
+		return err
+	}
+
+	err = c.ShareService.uploadChunk(shareId, fileIndex, chunkIndex, r.Body)
+	if err != nil {
+		return err
+	}
+
+	w.WriteHeader(http.StatusOK)
+
+	return nil
+}
+
 func (c *Controller) getShares(w http.ResponseWriter, _ *http.Request) error {
-	shares, err := c.shareService.getShares()
+	shares, err := c.ShareService.getShares()
 	if err != nil {
 		return err
 	}
@@ -46,7 +66,7 @@ func (c *Controller) getShares(w http.ResponseWriter, _ *http.Request) error {
 
 func (c *Controller) getShare(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
-	share, err := c.shareService.getShare(id)
+	share, err := c.ShareService.getShare(id)
 	if err != nil {
 		return err
 	}

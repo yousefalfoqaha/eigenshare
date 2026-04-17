@@ -18,9 +18,9 @@ func main() {
 
 	storage := storage.NewStorage()
 
-	shareRepo := share.NewRepository(storage)
-	shareServ := share.NewService(shareRepo)
-	shareCont := share.NewController(shareServ)
+	shareRepo := &share.Repository{Storage: storage}
+	shareServ := &share.Service{ShareRepository: shareRepo}
+	shareCont := &share.Controller{ShareService: shareServ}
 	shareCont.RegisterHandlers(router)
 
 	server := http.Server{

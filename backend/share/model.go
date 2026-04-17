@@ -16,19 +16,9 @@ type ShareSummary struct {
 }
 
 type File struct {
-	ID      string `json:"id"`
+	Index   int    `json:"index"`
 	Name    string `json:"name"`
 	Size    int64  `json:"size"`
 	Chunks  int    `json:"chunks"`
 	Bitmask []byte `json:"bitmask"`
-}
-
-type fileRequest struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
-}
-
-type shareRequest struct {
-	Handle string        `json:"handle"`
-	Files  []fileRequest `json:"files"`
 }

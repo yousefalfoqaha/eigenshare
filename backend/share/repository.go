@@ -6,11 +6,7 @@ import (
 )
 
 type Repository struct {
-	storage *storage.Storage
-}
-
-func NewRepository(s *storage.Storage) *Repository {
-	return &Repository{storage: s}
+	Storage *storage.Storage
 }
 
 func (r *Repository) GetAll() ([]ShareSummary, error) {
@@ -27,7 +23,7 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 		LEFT JOIN file f ON s.id = f.share_id
 		GROUP BY s.id`
 
-	rows, err := r.storage.DB.Query(query)
+	rows, err := r.Storage.DB.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +47,7 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 func (r *Repository) Exists(id string) (bool, error) {
 	var exists bool
 
-	err := r.storage.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM share WHERE id = ?)", id).Scan(&exists)
+	err := r.Storage.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM share WHERE id = ?)", id).Scan(&exists)
 	if err != nil {
 		return false, err
 	}
@@ -62,7 +58,7 @@ func (r *Repository) Exists(id string) (bool, error) {
 func (r *Repository) Get(id string) (*Share, error) {
 	var share Share
 
-	row := r.storage.DB.QueryRow("SELECT id, handle, status FROM share WHERE id = ?", id)
+	row := r.Storage.DB.QueryRow("SELECT id, handle, status FROM share WHERE id = ?", id)
 	if err := row.Scan(&share.ID, &share.Handle, &share.Status); err != nil {
 		return nil, err
 	}
@@ -81,7 +77,7 @@ func (r *Repository) Get(id string) (*Share, error) {
 }
 
 func (r *Repository) makeTransaction(o func(tx *sql.Tx) error) error {
-	tx, err := r.storage.DB.Begin()
+	tx, err := r.Storage.DB.Begin()
 	if err != nil {
 		return err
 	}
@@ -103,8 +99,8 @@ func (r *Repository) Save(s Share) (*Share, error) {
 
 		for _, f := range s.Files {
 			_, err := tx.Exec(
-				"INSERT INTO file (id, name, size, bitmask, chunks, share_id) VALUES (?, ?, ?, ?, ?, ?)",
-				f.ID, f.Name, f.Size, f.Bitmask, f.Chunks, s.ID,
+				"INSERT INTO file (name, size, bitmask, chunks, index, share_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				f.Name, f.Size, f.Bitmask, f.Chunks, f.Index, s.ID,
 			)
 			if err != nil {
 				return err
@@ -121,14 +117,14 @@ func (r *Repository) Save(s Share) (*Share, error) {
 
 func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 	var files []File
-	rows, err := r.storage.DB.Query("SELECT id, name, size, bitmask, chunks FROM file WHERE share_id = ?", id)
+	rows, err := r.Storage.DB.Query("SELECT name, size, bitmask, chunks, index FROM file WHERE share_id = ?", id)
 	if err != nil {
 		return nil, err
 	}
 
 	for rows.Next() {
 		var file File
-		if err := rows.Scan(&file.ID, &file.Name, &file.Size, &file.Bitmask, &file.Chunks); err != nil {
+		if err := rows.Scan(&file.Name, &file.Size, &file.Bitmask, &file.Chunks, &file.Index); err != nil {
 			return nil, err
 		}
 

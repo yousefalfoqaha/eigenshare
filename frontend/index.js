@@ -14,7 +14,7 @@ function main() {
 
     const body = {
       handle: "hello",
-      files: [{ name: file.name, size: file.size }],
+      files: [{ name: file.name, size: file.size, index: 0 }],
     };
 
     let share;
@@ -54,7 +54,6 @@ async function uploadFileSequentially(share, file, index) {
           headers: {
             "Content-Type": "application/octet-stream",
             "X-Chunk-Index": chunkIndex.toString(),
-            "X-File-Name": file.name,
             "x-File-Index": index.toString(),
           },
         },
