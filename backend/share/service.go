@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -16,7 +16,10 @@ type Service struct {
 	ShareRepository *Repository
 }
 
-var validShareHandle = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+const (
+	TMP_PATH   = "data/tmp"
+	CHUNK_SIZE = 5 * 1024 * 1024
+)
 
 func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chunk io.Reader) error {
 	if shareId == "" {
@@ -28,78 +31,110 @@ func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chu
 		return api.NewError(http.StatusNotFound, "No share found")
 	}
 
-	file := new(File)
-
-	for _, f := range share.Files {
+	var file *File
+	for i, f := range share.Files {
 		if f.Index == fileIndex {
-			*file = f
+			file = &share.Files[i]
 			break
 		}
 	}
-
 	if file == nil {
 		return api.NewError(http.StatusNotFound, "No file found")
 	}
+
+	filePath := filepath.Join(TMP_PATH, share.ID, strconv.Itoa(file.Index))
+	f, err := os.OpenFile(filePath, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	offset := int64(chunkIndex) * CHUNK_SIZE
+	if _, err = f.Seek(offset, io.SeekStart); err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(f, io.LimitReader(chunk, CHUNK_SIZE)); err != nil {
+		return err
+	}
+
+	if err := file.markChunkUploaded(chunkIndex); err != nil {
+		return err
+	}
+
+	share.Status = "UPLOADING"
+
+	if _, err := s.ShareRepository.Save(*share); err != nil {
+		file.rollbackChunk(chunkIndex)
+		return err
+	}
+
+	return nil
 }
 
 func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	var share Share
 
 	share.ID = uuid.New().String()
-	share.Handle = req.Handle
 	share.Status = "PENDING"
 
-	var files []File
-	var totalSize int64 = 0
-
-	tmpPath := filepath.Join("data/tmp/", share.ID)
-
-	err := os.Mkdir(tmpPath, 0o77)
+	err := share.setShareHandle(req.Handle)
 	if err != nil {
+		return nil, api.NewError(http.StatusBadRequest, err.Error())
+	}
+
+	sharePath := filepath.Join(TMP_PATH, share.ID)
+	if err := os.MkdirAll(sharePath, 0755); err != nil {
 		return nil, err
 	}
+
+	var success bool
+	defer func() {
+		if !success {
+			os.RemoveAll(sharePath)
+		}
+	}()
+
+	var files []File
+	var totalSize int64
 
 	for _, f := range req.Files {
 		totalSize += f.Size
 
 		file := File{Index: f.Index, Name: f.Name, Size: f.Size}
+		if err := file.createBitmask(); err != nil {
+			return nil, err
+		}
 
-		err := file.createBitmask()
+		osFile, err := os.Create(filepath.Join(sharePath, strconv.Itoa(f.Index)))
 		if err != nil {
 			return nil, err
 		}
 
-		osFile, err := os.Create(filepath.Join(tmpPath, string(f.Index)))
-		if err != nil {
-			return nil, err
-		}
-
-		if err := osFile.Truncate(f.Size); err != nil {
-			osFile.Close()
-			return nil, err
-		}
+		truncErr := osFile.Truncate(f.Size)
 		osFile.Close()
+		if truncErr != nil {
+			return nil, truncErr
+		}
 
 		files = append(files, file)
 	}
 
 	share.Files = files
 
+	// TODO: implement max size check
+	_ = totalSize
+
 	if _, err := s.ShareRepository.Save(share); err != nil {
-		os.RemoveAll(tmpPath)
 		return nil, err
 	}
 
+	success = true
 	return &share, nil
 }
 
 func (s *Service) getShares() ([]ShareSummary, error) {
-	shares, err := s.ShareRepository.GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	return shares, nil
+	return s.ShareRepository.GetAll()
 }
 
 func (s *Service) getShare(id string) (*Share, error) {
@@ -116,14 +151,4 @@ func (s *Service) getShare(id string) (*Share, error) {
 	}
 
 	return share, nil
-}
-
-func validateShareID(handle string) error {
-	if handle == "" {
-		return api.NewError(http.StatusBadRequest, "share handle is required")
-	}
-	if !validShareHandle.MatchString(handle) {
-		return api.NewError(http.StatusBadRequest, "share handle may only contain letters, numbers, hyphens and underscores (max 64 chars)")
-	}
-	return nil
 }

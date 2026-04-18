@@ -1,11 +1,12 @@
 CREATE TABLE IF NOT EXISTS file (
-    id       TEXT    NOT NULL PRIMARY KEY,
     name     TEXT    NOT NULL,
     size     INTEGER NOT NULL,
     bitmask  BLOB,
+    `index`  INTEGER NOT NULL,
     chunks   INTEGER,
     share_id TEXT    NOT NULL,
-    FOREIGN KEY (share_id) REFERENCES share(id)
+    PRIMARY KEY (share_id, `index`),
+    FOREIGN KEY (share_id) REFERENCES share(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS share (

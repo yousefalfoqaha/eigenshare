@@ -15,6 +15,7 @@ func (c *Controller) RegisterHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /shares", api.MakeHandler(c.getShares))
 	router.HandleFunc("GET /shares/{id}", api.MakeHandler(c.getShare))
 	router.HandleFunc("POST /shares", api.MakeHandler(c.createShare))
+	router.HandleFunc("POST /shares/upload", api.MakeHandler(c.uploadChunk))
 }
 
 func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {

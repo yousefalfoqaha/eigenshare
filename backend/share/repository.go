@@ -17,23 +17,22 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 			s.id, 
 			s.handle,
 			s.status,
-			COUNT(f.id) AS totalFiles, 
+			COUNT(f.` + "`index`" + `) AS totalFiles, 
 			COALESCE(SUM(f.size), 0) AS totalSize
 		FROM share s
 		LEFT JOIN file f ON s.id = f.share_id
-		GROUP BY s.id`
-
+		GROUP BY s.id, s.handle, s.status`
 	rows, err := r.Storage.DB.Query(query)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var s ShareSummary
 		if err := rows.Scan(&s.ID, &s.Handle, &s.Status, &s.TotalFiles, &s.TotalSize); err != nil {
 			return nil, err
 		}
-
 		summaries = append(summaries, s)
 	}
 
@@ -99,7 +98,7 @@ func (r *Repository) Save(s Share) (*Share, error) {
 
 		for _, f := range s.Files {
 			_, err := tx.Exec(
-				"INSERT INTO file (name, size, bitmask, chunks, index, share_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				"INSERT INTO file (name, size, bitmask, chunks, `index`, share_id) VALUES (?, ?, ?, ?, ?, ?)",
 				f.Name, f.Size, f.Bitmask, f.Chunks, f.Index, s.ID,
 			)
 			if err != nil {
@@ -117,7 +116,7 @@ func (r *Repository) Save(s Share) (*Share, error) {
 
 func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 	var files []File
-	rows, err := r.Storage.DB.Query("SELECT name, size, bitmask, chunks, index FROM file WHERE share_id = ?", id)
+	rows, err := r.Storage.DB.Query("SELECT name, size, bitmask, chunks, `index` FROM file WHERE share_id = ?", id)
 	if err != nil {
 		return nil, err
 	}
