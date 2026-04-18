@@ -3,10 +3,10 @@ package share
 import (
 	"database/sql"
 	"eigenshare/backend/api"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 
 	"github.com/google/uuid"
@@ -51,30 +51,39 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 
 	var files []File
 	var totalSize int64 = 0
-	for _, f := range req.Files {
-		bitmask, numChunks, err := createBitmask(f.Size)
-		if err != nil {
-			return nil, err
-		}
 
-		totalSize += f.Size
-
-		file := File{Index: f.Index, Name: f.Name, Chunks: numChunks, Bitmask: bitmask, Size: f.Size}
-		files = append(files, file)
-	}
-
-	share.Files = files
-	tmpPath := "data/tmp/" + share.ID
+	tmpPath := filepath.Join("data/tmp/", share.ID)
 
 	err := os.Mkdir(tmpPath, 0o77)
 	if err != nil {
 		return nil, err
 	}
 
-	err = os.Truncate(tmpPath, totalSize)
-	if err != nil {
-		return nil, err
+	for _, f := range req.Files {
+		totalSize += f.Size
+
+		file := File{Index: f.Index, Name: f.Name, Size: f.Size}
+
+		err := file.createBitmask()
+		if err != nil {
+			return nil, err
+		}
+
+		osFile, err := os.Create(filepath.Join(tmpPath, string(f.Index)))
+		if err != nil {
+			return nil, err
+		}
+
+		if err := osFile.Truncate(f.Size); err != nil {
+			osFile.Close()
+			return nil, err
+		}
+		osFile.Close()
+
+		files = append(files, file)
 	}
+
+	share.Files = files
 
 	if _, err := s.ShareRepository.Save(share); err != nil {
 		os.RemoveAll(tmpPath)
@@ -82,20 +91,6 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	}
 
 	return &share, nil
-}
-
-func createBitmask(fileSize int64) ([]byte, int, error) {
-	if fileSize <= 0 {
-		return nil, 0, fmt.Errorf("Invalid file size")
-	}
-
-	const CHUNK_SIZE_MB = 5
-	var chunkSize int64 = 1024 * 1024 * CHUNK_SIZE_MB
-
-	numChunks := (fileSize + chunkSize - 1) / chunkSize
-	numBytes := (numChunks + 7) / 8
-
-	return make([]byte, numBytes), int(numChunks), nil
 }
 
 func (s *Service) getShares() ([]ShareSummary, error) {
