@@ -2,8 +2,8 @@
 
 INPUT="$1"
 CHUNK_SIZE=$((5 * 1024 * 1024))
-# HANDLE="test-$RANDOM"
-HANDLE="test-duplicate"
+HANDLE="test-$RANDOM"
+# HANDLE="test-duplicate"
 
 if [ -d "$INPUT" ]; then
   FILE="/tmp/$(basename $INPUT).zip"
