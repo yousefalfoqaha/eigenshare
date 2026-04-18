@@ -3,6 +3,7 @@ package share
 import (
 	"eigenshare/backend/api"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 )
@@ -35,6 +36,7 @@ func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 
 func (c *Controller) uploadChunk(w http.ResponseWriter, r *http.Request) error {
 	shareId := r.URL.Query().Get("shareId")
+	fmt.Println(shareId)
 
 	fileIndex, err := strconv.Atoi(r.Header.Get("X-File-Index"))
 	if err != nil {

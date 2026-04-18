@@ -8,8 +8,6 @@ import (
 )
 
 func NewStorage() *Storage {
-	var db *sql.DB
-
 	db, err := sql.Open("sqlite", "./data.db")
 	if err != nil {
 		log.Fatal(err.Error())
@@ -19,15 +17,17 @@ func NewStorage() *Storage {
 	db.SetMaxIdleConns(5)
 	db.SetMaxOpenConns(10)
 
-	pingErr := db.Ping()
-	if pingErr != nil {
-		log.Fatal(pingErr)
+	if err := db.Ping(); err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := db.Exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;"); err != nil {
+		log.Fatal(err)
 	}
 
 	fmt.Println("Connected to database")
 
 	storage := &Storage{DB: db}
-
 	initSchema(storage)
 
 	return storage

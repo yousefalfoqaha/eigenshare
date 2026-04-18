@@ -23,12 +23,15 @@ const (
 
 func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chunk io.Reader) error {
 	if shareId == "" {
-		return api.NewError(http.StatusBadRequest, "Invalid share ID")
+		return api.NewError(http.StatusBadRequest, "Share ID is empty")
 	}
 
 	share, err := s.ShareRepository.Get(shareId)
-	if err != nil {
+	if err == sql.ErrNoRows {
 		return api.NewError(http.StatusNotFound, "No share found")
+	}
+	if err != nil {
+		return err
 	}
 
 	var file *File
@@ -81,6 +84,14 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	err := share.setShareHandle(req.Handle)
 	if err != nil {
 		return nil, api.NewError(http.StatusBadRequest, err.Error())
+	}
+
+	exists, err := s.ShareRepository.HandleExists(share.Handle)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, api.NewError(http.StatusConflict, "Handle "+share.Handle+" exists")
 	}
 
 	sharePath := filepath.Join(TMP_PATH, share.ID)

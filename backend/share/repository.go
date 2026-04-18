@@ -54,6 +54,17 @@ func (r *Repository) Exists(id string) (bool, error) {
 	return exists, nil
 }
 
+func (r *Repository) HandleExists(handle string) (bool, error) {
+	var exists bool
+
+	err := r.Storage.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM share WHERE handle = ?)", handle).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
 func (r *Repository) Get(id string) (*Share, error) {
 	var share Share
 
@@ -91,11 +102,17 @@ func (r *Repository) makeTransaction(o func(tx *sql.Tx) error) error {
 
 func (r *Repository) Save(s Share) (*Share, error) {
 	err := r.makeTransaction(func(tx *sql.Tx) error {
-		_, err := tx.Exec("INSERT INTO share (id, handle, status) VALUES (?, ?, ?)", s.ID, s.Handle, s.Status)
+		_, err := tx.Exec("DELETE FROM share WHERE id = ?", s.ID)
 		if err != nil {
 			return err
 		}
-
+		_, err = tx.Exec(
+			"INSERT INTO share (id, handle, status) VALUES (?, ?, ?)",
+			s.ID, s.Handle, s.Status,
+		)
+		if err != nil {
+			return err
+		}
 		for _, f := range s.Files {
 			_, err := tx.Exec(
 				"INSERT INTO file (name, size, bitmask, chunks, `index`, share_id) VALUES (?, ?, ?, ?, ?, ?)",
@@ -110,7 +127,6 @@ func (r *Repository) Save(s Share) (*Share, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return &s, nil
 }
 
