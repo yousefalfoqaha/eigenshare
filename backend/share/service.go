@@ -3,6 +3,7 @@ package share
 import (
 	"database/sql"
 	"eigenshare/backend/api"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -32,6 +33,10 @@ func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chu
 	}
 	if err != nil {
 		return err
+	}
+
+	if share.Status == STATUS_COMPLETE {
+		return api.NewError(http.StatusConflict, "Share is already complete")
 	}
 
 	var file *File
@@ -65,10 +70,9 @@ func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chu
 		return err
 	}
 
-	share.Status = "UPLOADING"
+	share.Status = STATUS_UPLOADING
 
 	if _, err := s.ShareRepository.Save(*share); err != nil {
-		file.rollbackChunk(chunkIndex)
 		return err
 	}
 
@@ -79,19 +83,11 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	var share Share
 
 	share.ID = uuid.New().String()
-	share.Status = "PENDING"
+	share.Status = STATUS_PENDING
 
-	err := share.setShareHandle(req.Handle)
+	err := share.setHandle(req.Handle)
 	if err != nil {
 		return nil, api.NewError(http.StatusBadRequest, err.Error())
-	}
-
-	exists, err := s.ShareRepository.HandleExists(share.Handle)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, api.NewError(http.StatusConflict, "Handle "+share.Handle+" exists")
 	}
 
 	sharePath := filepath.Join(TMP_PATH, share.ID)
@@ -112,7 +108,16 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	for _, f := range req.Files {
 		totalSize += f.Size
 
-		file := File{Index: f.Index, Name: f.Name, Size: f.Size}
+		var file File
+		if err := file.setName(f.Name); err != nil {
+			return nil, api.NewError(http.StatusBadRequest, err.Error())
+		}
+		if err := file.setSize(f.Size); err != nil {
+			return nil, api.NewError(http.StatusBadRequest, err.Error())
+		}
+		if err := file.setIndex(f.Index); err != nil {
+			return nil, api.NewError(http.StatusBadRequest, err.Error())
+		}
 		if err := file.createBitmask(); err != nil {
 			return nil, err
 		}
@@ -137,6 +142,10 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	_ = totalSize
 
 	if _, err := s.ShareRepository.Save(share); err != nil {
+		if errors.Is(err, ErrHandleExists) {
+			return nil, api.NewError(http.StatusConflict, err.Error())
+		}
+
 		return nil, err
 	}
 
