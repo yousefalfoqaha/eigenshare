@@ -11,17 +11,17 @@ const (
 	STATUS_COMPLETE  = "COMPLETE"
 )
 
+var (
+	validShareHandle = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+	validFileName    = regexp.MustCompile(`^[^/\\\x00]{1,255}$`)
+)
+
 type Share struct {
 	ID     string `json:"id"`
 	Handle string `json:"handle"`
 	Status string `json:"status"`
 	Files  []File `json:"files"`
 }
-
-var (
-	validShareHandle = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
-	validFileName    = regexp.MustCompile(`^[^/\\\x00]{1,255}$`)
-)
 
 func (s *Share) setHandle(handle string) error {
 	if handle == "" {

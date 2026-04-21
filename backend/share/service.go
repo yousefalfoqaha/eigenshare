@@ -66,13 +66,19 @@ func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chu
 		return err
 	}
 
-	if err := file.markChunkUploaded(chunkIndex); err != nil {
-		return err
-	}
+	err = s.ShareRepository.makeTransaction(func(tx *sql.Tx) error {
+		if err := file.markChunkUploaded(chunkIndex); err != nil {
+			return err
+		}
 
-	share.Status = STATUS_UPLOADING
+		share.Status = STATUS_UPLOADING
+		if _, err := s.ShareRepository.Save(*share, tx); err != nil {
+			return err
+		}
 
-	if _, err := s.ShareRepository.Save(*share); err != nil {
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 
@@ -141,11 +147,18 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	// TODO: implement max size check
 	_ = totalSize
 
-	if _, err := s.ShareRepository.Save(share); err != nil {
-		if errors.Is(err, ErrHandleExists) {
-			return nil, api.NewError(http.StatusConflict, err.Error())
+	err = s.ShareRepository.makeTransaction(func(tx *sql.Tx) error {
+		if _, err := s.ShareRepository.Save(share, tx); err != nil {
+			if errors.Is(err, ErrHandleExists) {
+				return api.NewError(http.StatusConflict, err.Error())
+			}
+
+			return err
 		}
 
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 

@@ -80,49 +80,42 @@ func (r *Repository) makeTransaction(o func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-func (r *Repository) Save(s Share) (*Share, error) {
-	err := r.makeTransaction(func(tx *sql.Tx) error {
-		var exists bool
+func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
+	var exists bool
 
-		err := tx.QueryRow(
-			"SELECT EXISTS(SELECT 1 FROM share WHERE handle = ? AND id != ?)",
-			s.Handle, s.ID,
-		).Scan(&exists)
-		if err != nil {
-			return err
-		}
-
-		if exists {
-			return fmt.Errorf("%w: %s", ErrHandleExists, s.Handle)
-		}
-
-		_, err = tx.Exec("DELETE FROM share WHERE id = ?", s.ID)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.Exec(
-			"INSERT INTO share (id, handle, status) VALUES (?, ?, ?)",
-			s.ID, s.Handle, s.Status,
-		)
-		if err != nil {
-			return err
-		}
-
-		for _, f := range s.Files {
-			_, err := tx.Exec(
-				"INSERT INTO file (name, size, bitmask, chunks, `index`, share_id) VALUES (?, ?, ?, ?, ?, ?)",
-				f.Name, f.Size, f.Bitmask, f.Chunks, f.Index, s.ID,
-			)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
+	err := tx.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM share WHERE handle = ? AND id != ?)",
+		s.Handle, s.ID,
+	).Scan(&exists)
 	if err != nil {
 		return nil, err
+	}
+
+	if exists {
+		return nil, fmt.Errorf("%w: %s", ErrHandleExists, s.Handle)
+	}
+
+	_, err = tx.Exec("DELETE FROM share WHERE id = ?", s.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec(
+		"INSERT INTO share (id, handle, status) VALUES (?, ?, ?)",
+		s.ID, s.Handle, s.Status,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, f := range s.Files {
+		_, err := tx.Exec(
+			"INSERT INTO file (name, size, bitmask, chunks, `index`, share_id) VALUES (?, ?, ?, ?, ?, ?)",
+			f.Name, f.Size, f.Bitmask, f.Chunks, f.Index, s.ID,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &s, nil
