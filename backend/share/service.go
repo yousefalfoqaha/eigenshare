@@ -17,11 +17,6 @@ type Service struct {
 	ShareRepository *Repository
 }
 
-const (
-	TMP_PATH   = "data/tmp"
-	CHUNK_SIZE = 5 * 1024 * 1024
-)
-
 func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chunk io.Reader) error {
 	if shareId == "" {
 		return api.NewError(http.StatusBadRequest, "Share ID is empty")
