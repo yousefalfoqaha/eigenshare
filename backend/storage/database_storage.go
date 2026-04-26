@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-func NewStorage() *Storage {
+func NewDatabaseStorage() *DatabaseStorage {
 	db, err := sql.Open("sqlite", "./data.db")
 	if err != nil {
 		log.Fatal(err.Error())
@@ -27,13 +27,13 @@ func NewStorage() *Storage {
 
 	fmt.Println("Connected to database")
 
-	storage := &Storage{DB: db}
+	storage := &DatabaseStorage{DB: db}
 	initSchema(storage)
 
 	return storage
 }
 
-func initSchema(s *Storage) {
+func initSchema(s *DatabaseStorage) {
 	schema, err := os.ReadFile("schema.sql")
 	if err != nil {
 		log.Fatal("No schema.sql found.")

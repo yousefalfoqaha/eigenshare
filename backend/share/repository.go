@@ -10,7 +10,11 @@ import (
 var ErrHandleExists = errors.New("handle already exists")
 
 type Repository struct {
-	Storage *storage.Storage
+	storage *storage.DatabaseStorage
+}
+
+func NewRepository(db *storage.DatabaseStorage) *Repository {
+	return &Repository{storage: db}
 }
 
 func (r *Repository) GetAll() ([]ShareSummary, error) {
@@ -27,7 +31,7 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 		LEFT JOIN file f ON s.id = f.share_id
 		GROUP BY s.id, s.handle, s.status`
 
-	rows, err := r.Storage.DB.Query(query)
+	rows, err := r.storage.DB.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +55,7 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 func (r *Repository) Get(id string) (*Share, error) {
 	var share Share
 
-	row := r.Storage.DB.QueryRow("SELECT id, handle, status FROM share WHERE id = ?", id)
+	row := r.storage.DB.QueryRow("SELECT id, handle, status FROM share WHERE id = ?", id)
 	if err := row.Scan(&share.ID, &share.Handle, &share.Status); err != nil {
 		return nil, err
 	}
@@ -67,7 +71,7 @@ func (r *Repository) Get(id string) (*Share, error) {
 }
 
 func (r *Repository) makeTransaction(o func(tx *sql.Tx) error) error {
-	tx, err := r.Storage.DB.Begin()
+	tx, err := r.storage.DB.Begin()
 	if err != nil {
 		return err
 	}
@@ -124,7 +128,7 @@ func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
 func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 	var files []File
 
-	rows, err := r.Storage.DB.Query("SELECT name, size, bitmask, chunks, `index` FROM file WHERE share_id = ?", id)
+	rows, err := r.storage.DB.Query("SELECT name, size, bitmask, chunks, `index` FROM file WHERE share_id = ?", id)
 	if err != nil {
 		return nil, err
 	}

@@ -8,7 +8,11 @@ import (
 )
 
 type Controller struct {
-	ShareService *Service
+	shareService *Service
+}
+
+func NewController(svc *Service) *Controller {
+	return &Controller{shareService: svc}
 }
 
 func (c *Controller) RegisterHandlers(router *http.ServeMux) {
@@ -25,7 +29,7 @@ func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	share, err := c.ShareService.requestShare(shareReq)
+	share, err := c.shareService.requestShare(shareReq)
 	if err != nil {
 		return err
 	}
@@ -46,7 +50,7 @@ func (c *Controller) uploadChunk(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	err = c.ShareService.uploadChunk(shareId, fileIndex, chunkIndex, r.Body)
+	err = c.shareService.uploadChunk(shareId, fileIndex, chunkIndex, r.Body)
 	if err != nil {
 		return err
 	}
@@ -57,7 +61,7 @@ func (c *Controller) uploadChunk(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) getShares(w http.ResponseWriter, _ *http.Request) error {
-	shares, err := c.ShareService.getShares()
+	shares, err := c.shareService.getShares()
 	if err != nil {
 		return err
 	}
@@ -67,7 +71,7 @@ func (c *Controller) getShares(w http.ResponseWriter, _ *http.Request) error {
 
 func (c *Controller) getShare(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
-	share, err := c.ShareService.getShare(id)
+	share, err := c.shareService.getShare(id)
 	if err != nil {
 		return err
 	}

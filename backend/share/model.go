@@ -5,12 +5,6 @@ import (
 	"regexp"
 )
 
-const (
-	STATUS_PENDING   = "PENDING"
-	STATUS_UPLOADING = "UPLOADING"
-	STATUS_COMPLETE  = "COMPLETE"
-)
-
 var (
 	validShareHandle = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 	validFileName    = regexp.MustCompile(`^[^/\\\x00]{1,255}$`)

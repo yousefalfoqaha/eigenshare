@@ -2,6 +2,6 @@ package storage
 
 import "database/sql"
 
-type Storage struct {
+type DatabaseStorage struct {
 	DB *sql.DB
 }

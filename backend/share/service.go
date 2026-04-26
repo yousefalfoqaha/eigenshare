@@ -3,6 +3,7 @@ package share
 import (
 	"database/sql"
 	"eigenshare/backend/api"
+	"eigenshare/backend/storage"
 	"errors"
 	"io"
 	"net/http"
@@ -14,15 +15,25 @@ import (
 )
 
 type Service struct {
-	ShareRepository *Repository
+	shareRepository *Repository
+	localStorage    *storage.LocalStorage
+	uploadManager   *UploadManager
 }
 
-func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chunk io.Reader) error {
-	if shareId == "" {
+func NewService(repo *Repository, ls *storage.LocalStorage, um *UploadManager) *Service {
+	return &Service{
+		shareRepository: repo,
+		localStorage:    ls,
+		uploadManager:   um,
+	}
+}
+
+func (s *Service) uploadChunk(shareID string, fileIndex int, chunkIndex int, chunk io.Reader) error {
+	if shareID == "" {
 		return api.NewError(http.StatusBadRequest, "Share ID is empty")
 	}
 
-	share, err := s.ShareRepository.Get(shareId)
+	share, err := s.shareRepository.Get(shareID)
 	if err == sql.ErrNoRows {
 		return api.NewError(http.StatusNotFound, "No share found")
 	}
@@ -45,37 +56,12 @@ func (s *Service) uploadChunk(shareId string, fileIndex int, chunkIndex int, chu
 		return api.NewError(http.StatusNotFound, "No file found")
 	}
 
-	filePath := filepath.Join(TMP_PATH, share.ID, strconv.Itoa(file.Index))
-	f, err := os.OpenFile(filePath, os.O_RDWR, 0644)
+	err = s.localStorage.WriteChunk(shareID, fileIndex, chunkIndex, chunk)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	offset := int64(chunkIndex) * CHUNK_SIZE
-	if _, err = f.Seek(offset, io.SeekStart); err != nil {
-		return err
-	}
-
-	if _, err := io.Copy(f, io.LimitReader(chunk, CHUNK_SIZE)); err != nil {
-		return err
-	}
-
-	err = s.ShareRepository.makeTransaction(func(tx *sql.Tx) error {
-		if err := file.markChunkUploaded(chunkIndex); err != nil {
-			return err
-		}
-
-		share.Status = STATUS_UPLOADING
-		if _, err := s.ShareRepository.Save(*share, tx); err != nil {
-			return err
-		}
-
-		return nil
-	})
-	if err != nil {
-		return err
-	}
+	s.uploadManager.UploadChunk(shareID, fileIndex, chunkIndex)
 
 	return nil
 }
@@ -142,8 +128,8 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	// TODO: implement max size check
 	_ = totalSize
 
-	err = s.ShareRepository.makeTransaction(func(tx *sql.Tx) error {
-		if _, err := s.ShareRepository.Save(share, tx); err != nil {
+	err = s.shareRepository.makeTransaction(func(tx *sql.Tx) error {
+		if _, err := s.shareRepository.Save(share, tx); err != nil {
 			if errors.Is(err, ErrHandleExists) {
 				return api.NewError(http.StatusConflict, err.Error())
 			}
@@ -162,7 +148,7 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 }
 
 func (s *Service) getShares() ([]ShareSummary, error) {
-	return s.ShareRepository.GetAll()
+	return s.shareRepository.GetAll()
 }
 
 func (s *Service) getShare(id string) (*Share, error) {
@@ -170,7 +156,7 @@ func (s *Service) getShare(id string) (*Share, error) {
 		return nil, api.NewError(http.StatusBadRequest, "share ID is required")
 	}
 
-	share, err := s.ShareRepository.Get(id)
+	share, err := s.shareRepository.Get(id)
 	if err == sql.ErrNoRows {
 		return nil, api.NewError(http.StatusNotFound, "No share found")
 	}

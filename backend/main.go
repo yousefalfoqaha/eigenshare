@@ -11,16 +11,21 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const PORT int = 8080
+const (
+	PORT       int = 8080
+	CHUNK_SIZE     = 1024 * 1024 * 5
+)
 
 func main() {
 	router := http.NewServeMux()
 
-	storage := storage.NewStorage()
+	databaseStorage := storage.NewDatabaseStorage()
+	localStorage := storage.NewLocalStorage("data/tmp", int64(CHUNK_SIZE))
 
-	shareRepo := &share.Repository{Storage: storage}
-	shareServ := &share.Service{ShareRepository: shareRepo}
-	shareCont := &share.Controller{ShareService: shareServ}
+	shareRepo := share.NewRepository(databaseStorage)
+	uploadManager := share.NewUploadManager()
+	shareServ := share.NewService(shareRepo, localStorage, uploadManager)
+	shareCont := share.NewController(shareServ)
 	shareCont.RegisterHandlers(router)
 
 	server := http.Server{

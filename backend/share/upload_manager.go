@@ -84,7 +84,7 @@ func (m *UploadManager) TrackShareUpload(share Share) {
 
 func (m *UploadManager) UploadChunk(shareID string, fileIndex int, chunkIndex int) {
 	key := FileKey{ShareID: shareID, FileIndex: fileIndex}
-	m.uploadChunkEvents <- UploadChunkEvent{FileKey: key, ChunkIndex: chunkIndex}
+	m.uploadChunkEvents <- UploadChunkEvent{FileKey: key, ChunkIndex: chunkIndex, ResultChan: make(chan ChunkResult, 1)}
 }
 
 func (m *UploadManager) handleRegisterShare(reg RegisterShareEvent) {
@@ -94,8 +94,9 @@ func (m *UploadManager) handleRegisterShare(reg RegisterShareEvent) {
 
 		key := FileKey{ShareID: reg.Share.ID, FileIndex: f.Index}
 		m.uploading[key] = &FileUploadState{
-			Bitmask:     make(Bitset, numBytes),
-			TotalChunks: int(numChunks),
+			Bitmask:        make(Bitset, numBytes),
+			TotalChunks:    int(numChunks),
+			ChunksUploaded: 0,
 		}
 	}
 }
