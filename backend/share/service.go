@@ -105,9 +105,6 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 		if err := file.setIndex(f.Index); err != nil {
 			return nil, api.NewError(http.StatusBadRequest, err.Error())
 		}
-		if err := file.createBitmask(); err != nil {
-			return nil, err
-		}
 
 		osFile, err := os.Create(filepath.Join(sharePath, strconv.Itoa(f.Index)))
 		if err != nil {

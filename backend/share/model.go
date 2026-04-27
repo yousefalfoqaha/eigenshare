@@ -39,11 +39,9 @@ type ShareSummary struct {
 }
 
 type File struct {
-	Index   int    `json:"index"`
-	Name    string `json:"name"`
-	Size    int64  `json:"size"`
-	Chunks  int    `json:"chunks"`
-	Bitmask []byte `json:"bitmask"`
+	Index int    `json:"index"`
+	Name  string `json:"name"`
+	Size  int64  `json:"size"`
 }
 
 func (f *File) setName(name string) error {
@@ -75,41 +73,6 @@ func (f *File) setIndex(index int) error {
 	}
 
 	f.Index = index
-
-	return nil
-}
-
-func (f *File) createBitmask() error {
-	if f.Size <= 0 {
-		return fmt.Errorf("Invalid file size")
-	}
-
-	const CHUNK_SIZE_MB = 5
-	var chunkSize int64 = 1024 * 1024 * CHUNK_SIZE_MB
-
-	numChunks := (f.Size + chunkSize - 1) / chunkSize
-	numBytes := (numChunks + 7) / 8
-
-	f.Bitmask = make([]byte, numBytes)
-	f.Chunks = int(numChunks)
-
-	return nil
-}
-
-func (f *File) markChunkUploaded(index int) error {
-	if index >= f.Chunks || index < 0 {
-		return fmt.Errorf("chunk index %d out of bounds", index)
-	}
-
-	bitmaskIndex := index / 8
-	bitOffset := index % 8
-	mask := byte(1 << bitOffset)
-
-	if f.Bitmask[bitmaskIndex]&mask != 0 {
-		return fmt.Errorf("Chunk %d was already uploaded", index)
-	}
-
-	f.Bitmask[bitmaskIndex] |= mask
 
 	return nil
 }

@@ -114,8 +114,8 @@ func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
 
 	for _, f := range s.Files {
 		_, err := tx.Exec(
-			"INSERT INTO file (name, size, bitmask, chunks, `index`, share_id) VALUES (?, ?, ?, ?, ?, ?)",
-			f.Name, f.Size, f.Bitmask, f.Chunks, f.Index, s.ID,
+			"INSERT INTO file (name, size, `index`, share_id) VALUES (?, ?, ?, ?)",
+			f.Name, f.Size, f.Index, s.ID,
 		)
 		if err != nil {
 			return nil, err
@@ -128,7 +128,7 @@ func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
 func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 	var files []File
 
-	rows, err := r.storage.DB.Query("SELECT name, size, bitmask, chunks, `index` FROM file WHERE share_id = ?", id)
+	rows, err := r.storage.DB.Query("SELECT name, size, `index` FROM file WHERE share_id = ?", id)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 
 	for rows.Next() {
 		var file File
-		if err := rows.Scan(&file.Name, &file.Size, &file.Bitmask, &file.Chunks, &file.Index); err != nil {
+		if err := rows.Scan(&file.Name, &file.Size, &file.Index); err != nil {
 			return nil, err
 		}
 		files = append(files, file)
