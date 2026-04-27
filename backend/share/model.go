@@ -17,17 +17,19 @@ type Share struct {
 	Files  []File `json:"files"`
 }
 
-func (s *Share) setHandle(handle string) error {
+func NewShare(id, handle string) (*Share, error) {
 	if handle == "" {
-		return fmt.Errorf("share handle is required")
+		return nil, fmt.Errorf("share handle is required")
 	}
 	if !validShareHandle.MatchString(handle) {
-		return fmt.Errorf("share handle may only contain letters, numbers, hyphens and underscores (max 64 chars)")
+		return nil, fmt.Errorf("share handle may only contain letters, numbers, hyphens and underscores (max 64 chars)")
 	}
 
-	s.Handle = handle
-
-	return nil
+	return &Share{
+		ID:     id,
+		Handle: handle,
+		Status: STATUS_PENDING,
+	}, nil
 }
 
 type ShareSummary struct {
@@ -44,35 +46,23 @@ type File struct {
 	Size  int64  `json:"size"`
 }
 
-func (f *File) setName(name string) error {
+func NewFile(name string, size int64, index int) (*File, error) {
 	if name == "" {
-		return fmt.Errorf("file name is required")
+		return nil, fmt.Errorf("file name is required")
 	}
 	if !validFileName.MatchString(name) {
-		return fmt.Errorf("file name is invalid")
+		return nil, fmt.Errorf("file name is invalid")
 	}
-
-	f.Name = name
-
-	return nil
-}
-
-func (f *File) setSize(size int64) error {
 	if size <= 0 {
-		return fmt.Errorf("file size must be greater than 0")
+		return nil, fmt.Errorf("file size must be greater than 0")
 	}
-
-	f.Size = size
-
-	return nil
-}
-
-func (f *File) setIndex(index int) error {
 	if index < 0 {
-		return fmt.Errorf("file index must be greater than or equal to 0")
+		return nil, fmt.Errorf("file index must be greater than or equal to 0")
 	}
 
-	f.Index = index
-
-	return nil
+	return &File{
+		Index: index,
+		Name:  name,
+		Size:  size,
+	}, nil
 }

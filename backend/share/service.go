@@ -7,9 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -61,31 +58,42 @@ func (s *Service) uploadChunk(shareID string, fileIndex int, chunkIndex int, chu
 		return err
 	}
 
-	s.uploadManager.UploadChunk(shareID, fileIndex, chunkIndex)
+	isComplete, err := s.uploadManager.UploadChunk(shareID, fileIndex, chunkIndex)
+	if err != nil {
+		return err
+	}
+
+	if !isComplete {
+		return nil
+	}
+
+	err = s.shareRepository.makeTransaction(func(tx *sql.Tx) error {
+		share.Status = STATUS_COMPLETE
+
+		if _, err := s.shareRepository.Save(*share, tx); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func (s *Service) requestShare(req shareRequest) (*Share, error) {
-	var share Share
-
-	share.ID = uuid.New().String()
-	share.Status = STATUS_PENDING
-
-	err := share.setHandle(req.Handle)
+	share, err := NewShare(uuid.New().String(), req.Handle)
 	if err != nil {
 		return nil, api.NewError(http.StatusBadRequest, err.Error())
-	}
-
-	sharePath := filepath.Join(TMP_PATH, share.ID)
-	if err := os.MkdirAll(sharePath, 0755); err != nil {
-		return nil, err
 	}
 
 	var success bool
 	defer func() {
 		if !success {
-			os.RemoveAll(sharePath)
+			s.localStorage.RemoveShareFolder(share.ID)
+			s.uploadManager.UntrackShareUpload(share.ID)
 		}
 	}()
 
@@ -93,31 +101,13 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	var totalSize int64
 
 	for _, f := range req.Files {
-		totalSize += f.Size
-
-		var file File
-		if err := file.setName(f.Name); err != nil {
-			return nil, api.NewError(http.StatusBadRequest, err.Error())
-		}
-		if err := file.setSize(f.Size); err != nil {
-			return nil, api.NewError(http.StatusBadRequest, err.Error())
-		}
-		if err := file.setIndex(f.Index); err != nil {
-			return nil, api.NewError(http.StatusBadRequest, err.Error())
-		}
-
-		osFile, err := os.Create(filepath.Join(sharePath, strconv.Itoa(f.Index)))
+		file, err := NewFile(f.Name, f.Size, f.Index)
 		if err != nil {
-			return nil, err
+			return nil, api.NewError(http.StatusBadRequest, err.Error())
 		}
 
-		truncErr := osFile.Truncate(f.Size)
-		osFile.Close()
-		if truncErr != nil {
-			return nil, truncErr
-		}
-
-		files = append(files, file)
+		totalSize += file.Size
+		files = append(files, *file)
 	}
 
 	share.Files = files
@@ -125,8 +115,22 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	// TODO: implement max size check
 	_ = totalSize
 
+	if err := s.localStorage.CreateShareFolder(share.ID); err != nil {
+		return nil, err
+	}
+
+	for _, f := range files {
+		if err := s.localStorage.CreateFile(share.ID, f.Index, f.Size); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.uploadManager.TrackShareUpload(*share); err != nil {
+		return nil, err
+	}
+
 	err = s.shareRepository.makeTransaction(func(tx *sql.Tx) error {
-		if _, err := s.shareRepository.Save(share, tx); err != nil {
+		if _, err := s.shareRepository.Save(*share, tx); err != nil {
 			if errors.Is(err, ErrHandleExists) {
 				return api.NewError(http.StatusConflict, err.Error())
 			}
@@ -141,7 +145,7 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	}
 
 	success = true
-	return &share, nil
+	return share, nil
 }
 
 func (s *Service) getShares() ([]ShareSummary, error) {
