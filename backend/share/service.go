@@ -58,12 +58,12 @@ func (s *Service) uploadChunk(shareID string, fileIndex int, chunkIndex int, chu
 		return err
 	}
 
-	isComplete, err := s.uploadManager.UploadChunk(shareID, fileIndex, chunkIndex)
+	chunksUploaded, totalChunks, err := s.uploadManager.UploadChunk(shareID, fileIndex, chunkIndex)
 	if err != nil {
 		return err
 	}
 
-	if !isComplete {
+	if chunksUploaded < totalChunks {
 		return nil
 	}
 
@@ -166,4 +166,9 @@ func (s *Service) getShare(id string) (*Share, error) {
 	}
 
 	return share, nil
+}
+
+func (s *Service) getUploadStatus(id string) (*ShareUploadStatus, error) {
+	status := s.uploadManager.GetShareUploadStatus(id)
+	return &status, nil
 }

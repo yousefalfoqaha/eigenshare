@@ -27,43 +27,41 @@ type FileUploadState struct {
 	ChunksUploaded int
 }
 
-type ChunkResult struct {
-	IsComplete bool
-	Err        error
+type FileStatus struct {
+	ChunksUploaded int
+	TotalChunks    int
+	Err            error
 }
 
 type UploadChunkEvent struct {
 	FileKey    FileKey
 	ChunkIndex int
-	ResultChan chan ChunkResult
+	FileStatus chan FileStatus
 }
 
 func (e *UploadChunkEvent) Fail(err error) {
-	e.ResultChan <- ChunkResult{IsComplete: false, Err: err}
+	e.FileStatus <- FileStatus{Err: err}
 }
 
-func (e *UploadChunkEvent) Success(isComplete bool) {
-	e.ResultChan <- ChunkResult{IsComplete: isComplete, Err: nil}
-}
-
-type RegisterResult struct {
-	Err error
+func (e *UploadChunkEvent) SendResult(chunksUploaded, totalChunks int) {
+	e.FileStatus <- FileStatus{ChunksUploaded: chunksUploaded, TotalChunks: totalChunks}
 }
 
 type RegisterShareEvent struct {
-	Share      Share
-	ResultChan chan RegisterResult
+	Share Share
+	Err   chan error
 }
 
 type UnregisterShareEvent struct {
-	ShareID    string
-	ResultChan chan RegisterResult
+	ShareID string
+	Err     chan error
 }
 
 type UploadManager struct {
 	uploadChunkEvents     chan UploadChunkEvent
 	registerShareEvents   chan RegisterShareEvent
 	unregisterShareEvents chan UnregisterShareEvent
+	getUploadStatusEvents chan GetUploadStatusEvent
 	uploading             map[FileKey]*FileUploadState
 }
 
@@ -72,6 +70,7 @@ func NewUploadManager() *UploadManager {
 		uploadChunkEvents:     make(chan UploadChunkEvent, 1000),
 		registerShareEvents:   make(chan RegisterShareEvent, 100),
 		unregisterShareEvents: make(chan UnregisterShareEvent, 100),
+		getUploadStatusEvents: make(chan GetUploadStatusEvent, 100),
 		uploading:             make(map[FileKey]*FileUploadState),
 	}
 
@@ -88,37 +87,54 @@ func (m *UploadManager) run() {
 		case unreg := <-m.unregisterShareEvents:
 			m.handleUnregisterShare(unreg)
 		case e := <-m.uploadChunkEvents:
-			isComplete, err := m.handleUploadChunk(e)
-			if err != nil {
-				e.Fail(err)
-				continue
-			}
-
-			e.Success(isComplete)
+			m.handleUploadChunk(e)
+		case e := <-m.getUploadStatusEvents:
+			m.handleGetUploadStatus(e)
 		}
 	}
 }
 
 func (m *UploadManager) TrackShareUpload(share Share) error {
-	resultChan := make(chan RegisterResult, 1)
-	m.registerShareEvents <- RegisterShareEvent{Share: share, ResultChan: resultChan}
-	return (<-resultChan).Err
+	err := make(chan error, 1)
+	m.registerShareEvents <- RegisterShareEvent{Share: share, Err: err}
+	return <-err
 }
 
 func (m *UploadManager) UntrackShareUpload(shareID string) {
-	resultChan := make(chan RegisterResult, 1)
-	m.unregisterShareEvents <- UnregisterShareEvent{ShareID: shareID, ResultChan: resultChan}
-	<-resultChan
+	err := make(chan error, 1)
+	m.unregisterShareEvents <- UnregisterShareEvent{ShareID: shareID, Err: err}
+	<-err
 }
 
-func (m *UploadManager) UploadChunk(shareID string, fileIndex int, chunkIndex int) (bool, error) {
+func (m *UploadManager) UploadChunk(shareID string, fileIndex int, chunkIndex int) (int, int, error) {
 	key := FileKey{ShareID: shareID, FileIndex: fileIndex}
-	resultChan := make(chan ChunkResult, 1)
+	fileStatus := make(chan FileStatus, 1)
 
-	m.uploadChunkEvents <- UploadChunkEvent{FileKey: key, ChunkIndex: chunkIndex, ResultChan: resultChan}
-	result := <-resultChan
+	m.uploadChunkEvents <- UploadChunkEvent{FileKey: key, ChunkIndex: chunkIndex, FileStatus: fileStatus}
+	result := <-fileStatus
 
-	return result.IsComplete, result.Err
+	return result.ChunksUploaded, result.TotalChunks, result.Err
+}
+
+type FileUploadStatus struct {
+	FileIndex      int
+	ChunksUploaded int
+	TotalChunks    int
+}
+
+type ShareUploadStatus struct {
+	Files []FileUploadStatus
+}
+
+type GetUploadStatusEvent struct {
+	ShareID string
+	Status  chan ShareUploadStatus
+}
+
+func (m *UploadManager) GetShareUploadStatus(shareID string) ShareUploadStatus {
+	status := make(chan ShareUploadStatus, 1)
+	m.getUploadStatusEvents <- GetUploadStatusEvent{ShareID: shareID, Status: status}
+	return <-status
 }
 
 func (m *UploadManager) handleRegisterShare(reg RegisterShareEvent) {
@@ -134,7 +150,7 @@ func (m *UploadManager) handleRegisterShare(reg RegisterShareEvent) {
 		}
 	}
 
-	reg.ResultChan <- RegisterResult{Err: nil}
+	reg.Err <- nil
 }
 
 func (m *UploadManager) handleUnregisterShare(unreg UnregisterShareEvent) {
@@ -144,29 +160,46 @@ func (m *UploadManager) handleUnregisterShare(unreg UnregisterShareEvent) {
 		}
 	}
 
-	unreg.ResultChan <- RegisterResult{Err: nil}
+	unreg.Err <- nil
 }
 
-func (m *UploadManager) handleUploadChunk(e UploadChunkEvent) (bool, error) {
+func (m *UploadManager) handleUploadChunk(e UploadChunkEvent) {
 	state, ok := m.uploading[e.FileKey]
 	if !ok {
-		return false, fmt.Errorf("upload state for share %s, file %d not found", e.FileKey.ShareID, e.FileKey.FileIndex)
+		e.Fail(fmt.Errorf("upload state for share %s, file %d not found", e.FileKey.ShareID, e.FileKey.FileIndex))
+		return
 	}
 	if e.ChunkIndex >= state.TotalChunks || e.ChunkIndex < 0 {
-		return false, fmt.Errorf("chunk index %d out of bounds", e.ChunkIndex)
+		e.Fail(fmt.Errorf("chunk index %d out of bounds", e.ChunkIndex))
+		return
 	}
 	if state.Bitmask.IsSet(e.ChunkIndex) {
-		return false, fmt.Errorf("chunk %d was already uploaded", e.ChunkIndex)
+		e.Fail(fmt.Errorf("chunk %d was already uploaded", e.ChunkIndex))
+		return
 	}
 
 	state.Bitmask.Set(e.ChunkIndex)
 	state.ChunksUploaded++
 
-	isComplete := state.ChunksUploaded == state.TotalChunks
-
-	if isComplete {
+	if state.ChunksUploaded == state.TotalChunks {
 		delete(m.uploading, e.FileKey)
 	}
 
-	return isComplete, nil
+	e.SendResult(state.ChunksUploaded, state.TotalChunks)
+}
+
+func (m *UploadManager) handleGetUploadStatus(e GetUploadStatusEvent) {
+	var statuses []FileUploadStatus
+
+	for key, state := range m.uploading {
+		if key.ShareID == e.ShareID {
+			statuses = append(statuses, FileUploadStatus{
+				FileIndex:      key.FileIndex,
+				ChunksUploaded: state.ChunksUploaded,
+				TotalChunks:    state.TotalChunks,
+			})
+		}
+	}
+
+	e.Status <- ShareUploadStatus{Files: statuses}
 }
