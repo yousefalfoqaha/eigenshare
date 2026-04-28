@@ -13,14 +13,14 @@ import (
 
 type Service struct {
 	shareRepository *Repository
-	localStorage    *storage.LocalStorage
+	fileStorage     *storage.FileStorage
 	uploadManager   *UploadManager
 }
 
-func NewService(repo *Repository, ls *storage.LocalStorage, um *UploadManager) *Service {
+func NewService(repo *Repository, ls *storage.FileStorage, um *UploadManager) *Service {
 	return &Service{
 		shareRepository: repo,
-		localStorage:    ls,
+		fileStorage:     ls,
 		uploadManager:   um,
 	}
 }
@@ -53,7 +53,7 @@ func (s *Service) uploadChunk(shareID string, fileIndex int, chunkIndex int, chu
 		return api.NewError(http.StatusNotFound, "No file found")
 	}
 
-	err = s.localStorage.WriteChunk(shareID, fileIndex, chunkIndex, chunk)
+	err = s.fileStorage.WriteChunk(shareID, fileIndex, chunkIndex, chunk)
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	var success bool
 	defer func() {
 		if !success {
-			s.localStorage.RemoveShareFolder(share.ID)
+			s.fileStorage.RemoveShareFolder(share.ID)
 			s.uploadManager.UntrackShareUpload(share.ID)
 		}
 	}()
@@ -115,12 +115,12 @@ func (s *Service) requestShare(req shareRequest) (*Share, error) {
 	// TODO: implement max size check
 	_ = totalSize
 
-	if err := s.localStorage.CreateShareFolder(share.ID); err != nil {
+	if err := s.fileStorage.CreateShareFolder(share.ID); err != nil {
 		return nil, err
 	}
 
 	for _, f := range files {
-		if err := s.localStorage.CreateFile(share.ID, f.Index, f.Size); err != nil {
+		if err := s.fileStorage.CreateFile(share.ID, f.Index, f.Size); err != nil {
 			return nil, err
 		}
 	}
@@ -168,7 +168,7 @@ func (s *Service) getShare(id string) (*Share, error) {
 	return share, nil
 }
 
-func (s *Service) getUploadStatus(id string) (*ShareUploadStatus, error) {
+func (s *Service) getUploadStatus(id string) (*shareUploadStatus, error) {
 	status := s.uploadManager.GetShareUploadStatus(id)
 	return &status, nil
 }

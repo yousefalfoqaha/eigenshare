@@ -7,23 +7,23 @@ import (
 	"strconv"
 )
 
-type LocalStorage struct {
+type FileStorage struct {
 	tmpDir    string
 	chunkSize int64
 }
 
-func NewLocalStorage(tmpDir string, chunkSize int64) *LocalStorage {
-	return &LocalStorage{
+func NewFileStorage(tmpDir string, chunkSize int64) *FileStorage {
+	return &FileStorage{
 		tmpDir:    tmpDir,
 		chunkSize: chunkSize,
 	}
 }
 
-func (s *LocalStorage) CreateShareFolder(shareID string) error {
+func (s *FileStorage) CreateShareFolder(shareID string) error {
 	return os.MkdirAll(filepath.Join(s.tmpDir, shareID), 0755)
 }
 
-func (s *LocalStorage) CreateFile(shareID string, fileIndex int, size int64) error {
+func (s *FileStorage) CreateFile(shareID string, fileIndex int, size int64) error {
 	filePath := filepath.Join(s.tmpDir, shareID, strconv.Itoa(fileIndex))
 	f, err := os.Create(filePath)
 	if err != nil {
@@ -38,11 +38,11 @@ func (s *LocalStorage) CreateFile(shareID string, fileIndex int, size int64) err
 	return f.Close()
 }
 
-func (s *LocalStorage) RemoveShareFolder(shareID string) error {
+func (s *FileStorage) RemoveShareFolder(shareID string) error {
 	return os.RemoveAll(filepath.Join(s.tmpDir, shareID))
 }
 
-func (s *LocalStorage) WriteChunk(shareID string, fileIndex int, chunkIndex int, chunkReader io.Reader) error {
+func (s *FileStorage) WriteChunk(shareID string, fileIndex int, chunkIndex int, chunkReader io.Reader) error {
 	filePath := filepath.Join(s.tmpDir, shareID, strconv.Itoa(fileIndex))
 	f, err := os.OpenFile(filePath, os.O_RDWR, 0644)
 	if err != nil {

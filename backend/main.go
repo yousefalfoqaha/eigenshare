@@ -12,19 +12,20 @@ import (
 )
 
 const (
-	PORT       int = 8080
-	CHUNK_SIZE     = 1024 * 1024 * 5
+	PORT          int = 8080
+	CHUNK_SIZE        = int64(1024 * 1024 * 5)
+	DATA_TMP_PATH     = "data/tmp"
 )
 
 func main() {
 	router := http.NewServeMux()
 
 	databaseStorage := storage.NewDatabaseStorage()
-	localStorage := storage.NewLocalStorage("data/tmp", int64(CHUNK_SIZE))
+	fileStorage := storage.NewFileStorage(DATA_TMP_PATH, CHUNK_SIZE)
 
 	shareRepo := share.NewRepository(databaseStorage)
-	uploadManager := share.NewUploadManager()
-	shareServ := share.NewService(shareRepo, localStorage, uploadManager)
+	uploadManager := share.NewUploadManager(CHUNK_SIZE)
+	shareServ := share.NewService(shareRepo, fileStorage, uploadManager)
 	shareCont := share.NewController(shareServ)
 	shareCont.RegisterHandlers(router)
 
