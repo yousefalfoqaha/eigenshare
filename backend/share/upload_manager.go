@@ -14,9 +14,9 @@ type fileUploadState struct {
 }
 
 type chunkUploadResult struct {
-	ChunksUploaded int
-	TotalChunks    int
-	Err            error
+	UploadedShareChunks int
+	TotalShareChunks    int
+	Err                 error
 }
 
 type fileUploadStatus struct {
@@ -87,7 +87,7 @@ func (m *UploadManager) run() {
 				e.ResultChan <- chunkUploadResult{Err: err}
 				continue
 			}
-			e.ResultChan <- chunkUploadResult{ChunksUploaded: chunksUploaded, TotalChunks: totalChunks}
+			e.ResultChan <- chunkUploadResult{UploadedShareChunks: chunksUploaded, TotalShareChunks: totalChunks}
 		case e := <-m.getUploadStatusEvents:
 			e.Status <- m.handleGetUploadStatus(e.ShareID)
 		}
@@ -113,7 +113,7 @@ func (m *UploadManager) UploadChunk(shareID string, fileIndex int, chunkIndex in
 	m.uploadChunkEvents <- uploadChunkEvent{FileKey: key, ChunkIndex: chunkIndex, ResultChan: resultChan}
 	result := <-resultChan
 
-	return result.ChunksUploaded, result.TotalChunks, result.Err
+	return result.UploadedShareChunks, result.TotalShareChunks, result.Err
 }
 
 func (m *UploadManager) GetShareUploadStatus(shareID string) shareUploadStatus {
@@ -163,11 +163,19 @@ func (m *UploadManager) handleUploadChunk(e uploadChunkEvent) (int, int, error) 
 	state.Bitmask.Set(e.ChunkIndex)
 	state.ChunksUploaded++
 
-	if state.ChunksUploaded == state.TotalChunks {
-		delete(m.uploading, e.FileKey)
+	var totalShareChunks int
+	var totalUploadedShareChunks int
+
+	for k, v := range m.uploading {
+		if k.ShareID != e.FileKey.ShareID {
+			continue
+		}
+
+		totalShareChunks += v.TotalChunks
+		totalUploadedShareChunks += v.ChunksUploaded
 	}
 
-	return state.ChunksUploaded, state.TotalChunks, nil
+	return totalShareChunks, totalUploadedShareChunks, nil
 }
 
 func (m *UploadManager) handleGetUploadStatus(shareID string) shareUploadStatus {

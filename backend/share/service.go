@@ -80,6 +80,8 @@ func (s *Service) uploadChunk(shareID string, fileIndex int, chunkIndex int, chu
 		return err
 	}
 
+	s.uploadManager.UntrackShareUpload(shareID)
+
 	return nil
 }
 
