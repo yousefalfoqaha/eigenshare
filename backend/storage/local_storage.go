@@ -9,14 +9,21 @@ import (
 
 type FileStorage struct {
 	tmpDir    string
+	dataDir   string
 	chunkSize int64
 }
 
-func NewFileStorage(tmpDir string, chunkSize int64) *FileStorage {
-	return &FileStorage{
-		tmpDir:    tmpDir,
-		chunkSize: chunkSize,
+func NewFileStorage(dataDir string, tmpDir string, chunkSize int64) *FileStorage {
+	return &FileStorage{dataDir, tmpDir, chunkSize}
+}
+
+func (s *FileStorage) PersistShareFolder(shareID string) error {
+	err := os.Rename(filepath.Join(s.tmpDir, shareID), filepath.Join(s.dataDir, shareID))
+	if err != nil {
+		return err
 	}
+
+	return nil
 }
 
 func (s *FileStorage) CreateShareFolder(shareID string) error {

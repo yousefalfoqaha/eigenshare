@@ -104,7 +104,12 @@ func (m *UploadManager) UntrackShareUpload(shareID string) {
 func (m *UploadManager) UploadChunk(shareID string, fileIndex int, chunkIndex int) (int, int, error) {
 	resultChan := make(chan chunkUploadResult, 1)
 
-	m.uploadChunkEvents <- uploadChunkEvent{ShareID: shareID, FileIndex: fileIndex, ChunkIndex: chunkIndex, ResultChan: resultChan}
+	m.uploadChunkEvents <- uploadChunkEvent{
+		ShareID:    shareID,
+		FileIndex:  fileIndex,
+		ChunkIndex: chunkIndex,
+		ResultChan: resultChan,
+	}
 	result := <-resultChan
 
 	return result.UploadedShareChunks, result.TotalShareChunks, result.Err
@@ -157,13 +162,12 @@ func (m *UploadManager) handleUploadChunk(e uploadChunkEvent) (int, int, error) 
 	if e.ChunkIndex >= fs.TotalChunks || e.ChunkIndex < 0 {
 		return 0, 0, fmt.Errorf("chunk index %d out of bounds", e.ChunkIndex)
 	}
-	if fs.Bitmask.IsSet(e.ChunkIndex) {
-		return 0, 0, fmt.Errorf("chunk %d was already uploaded", e.ChunkIndex)
-	}
 
-	fs.Bitmask.Set(e.ChunkIndex)
-	fs.ChunksUploaded++
-	state.LastActivityAt = time.Now()
+	if !fs.Bitmask.IsSet(e.ChunkIndex) {
+		fs.Bitmask.Set(e.ChunkIndex)
+		fs.ChunksUploaded++
+		state.LastActivityAt = time.Now()
+	}
 
 	var totalChunks int
 	var chunksUploaded int

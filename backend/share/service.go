@@ -67,13 +67,26 @@ func (s *Service) uploadChunk(shareID string, fileIndex int, chunkIndex int, chu
 		return nil
 	}
 
+	var success bool
+	defer func() {
+		if !success {
+			_ = s.shareRepository.UpdateStatus(shareID, STATUS_UPLOADING)
+		}
+	}()
+
 	err = s.shareRepository.UpdateStatus(shareID, STATUS_COMPLETE)
+	if err != nil {
+		return err
+	}
+
+	err = s.fileStorage.PersistShareFolder(shareID)
 	if err != nil {
 		return err
 	}
 
 	s.uploadManager.UntrackShareUpload(shareID)
 
+	success = true
 	return nil
 }
 
