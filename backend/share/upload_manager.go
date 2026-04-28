@@ -1,16 +1,20 @@
 package share
 
-import "fmt"
-
-type fileKey struct {
-	ShareID   string
-	FileIndex int
-}
+import (
+	"fmt"
+	"time"
+)
 
 type fileUploadState struct {
-	Bitmask        Bitset
-	TotalChunks    int
-	ChunksUploaded int
+	FileIndex      int    `json:"fileIndex"`
+	Bitmask        Bitset `json:"-"`
+	TotalChunks    int    `json:"totalChunks"`
+	ChunksUploaded int    `json:"chunksUploaded"`
+}
+
+type shareUploadState struct {
+	Files          []fileUploadState `json:"files"`
+	LastActivityAt time.Time         `json:"-"`
 }
 
 type chunkUploadResult struct {
@@ -19,18 +23,9 @@ type chunkUploadResult struct {
 	Err                 error
 }
 
-type fileUploadStatus struct {
-	FileIndex      int `json:"fileIndex"`
-	ChunksUploaded int `json:"chunksUploaded"`
-	TotalChunks    int `json:"totalChunks"`
-}
-
-type shareUploadStatus struct {
-	Files []fileUploadStatus `json:"files"`
-}
-
 type uploadChunkEvent struct {
-	FileKey    fileKey
+	ShareID    string
+	FileIndex  int
 	ChunkIndex int
 	ResultChan chan chunkUploadResult
 }
@@ -47,7 +42,7 @@ type unregisterShareEvent struct {
 
 type getUploadStatusEvent struct {
 	ShareID string
-	Status  chan shareUploadStatus
+	Status  chan shareUploadState
 }
 
 type UploadManager struct {
@@ -55,7 +50,7 @@ type UploadManager struct {
 	registerShareEvents   chan registerShareEvent
 	unregisterShareEvents chan unregisterShareEvent
 	getUploadStatusEvents chan getUploadStatusEvent
-	uploading             map[fileKey]*fileUploadState
+	uploading             map[string]*shareUploadState
 	chunkSize             int64
 }
 
@@ -65,7 +60,7 @@ func NewUploadManager(chunkSize int64) *UploadManager {
 		registerShareEvents:   make(chan registerShareEvent, 100),
 		unregisterShareEvents: make(chan unregisterShareEvent, 100),
 		getUploadStatusEvents: make(chan getUploadStatusEvent, 100),
-		uploading:             make(map[fileKey]*fileUploadState),
+		uploading:             make(map[string]*shareUploadState),
 		chunkSize:             chunkSize,
 	}
 
@@ -107,89 +102,85 @@ func (m *UploadManager) UntrackShareUpload(shareID string) {
 }
 
 func (m *UploadManager) UploadChunk(shareID string, fileIndex int, chunkIndex int) (int, int, error) {
-	key := fileKey{ShareID: shareID, FileIndex: fileIndex}
 	resultChan := make(chan chunkUploadResult, 1)
 
-	m.uploadChunkEvents <- uploadChunkEvent{FileKey: key, ChunkIndex: chunkIndex, ResultChan: resultChan}
+	m.uploadChunkEvents <- uploadChunkEvent{ShareID: shareID, FileIndex: fileIndex, ChunkIndex: chunkIndex, ResultChan: resultChan}
 	result := <-resultChan
 
 	return result.UploadedShareChunks, result.TotalShareChunks, result.Err
 }
 
-func (m *UploadManager) GetShareUploadStatus(shareID string) shareUploadStatus {
-	status := make(chan shareUploadStatus, 1)
+func (m *UploadManager) GetShareUploadStatus(shareID string) shareUploadState {
+	status := make(chan shareUploadState, 1)
 	m.getUploadStatusEvents <- getUploadStatusEvent{ShareID: shareID, Status: status}
 	return <-status
 }
 
 func (m *UploadManager) handleRegisterShare(reg registerShareEvent) error {
-	for _, f := range reg.Share.Files {
-		numChunks := (f.Size + m.chunkSize - 1) / m.chunkSize
+	files := make([]fileUploadState, len(reg.Share.Files))
+
+	for i := range reg.Share.Files {
+		numChunks := (reg.Share.Files[i].Size + m.chunkSize - 1) / m.chunkSize
 		numBytes := (numChunks + 7) / 8
 
-		key := fileKey{ShareID: reg.Share.ID, FileIndex: f.Index}
-		m.uploading[key] = &fileUploadState{
+		files[reg.Share.Files[i].Index] = fileUploadState{
+			FileIndex:      reg.Share.Files[i].Index,
 			Bitmask:        make(Bitset, numBytes),
 			TotalChunks:    int(numChunks),
 			ChunksUploaded: 0,
 		}
 	}
 
+	m.uploading[reg.Share.ID] = &shareUploadState{
+		Files:          files,
+		LastActivityAt: time.Now(),
+	}
+
 	return nil
 }
 
 func (m *UploadManager) handleUnregisterShare(unreg unregisterShareEvent) error {
-	for key := range m.uploading {
-		if key.ShareID == unreg.ShareID {
-			delete(m.uploading, key)
-		}
-	}
-
+	delete(m.uploading, unreg.ShareID)
 	return nil
 }
 
 func (m *UploadManager) handleUploadChunk(e uploadChunkEvent) (int, int, error) {
-	state, ok := m.uploading[e.FileKey]
+	state, ok := m.uploading[e.ShareID]
 	if !ok {
-		return 0, 0, fmt.Errorf("upload state for share %s, file %d not found", e.FileKey.ShareID, e.FileKey.FileIndex)
+		return 0, 0, fmt.Errorf("upload state for share %s not found", e.ShareID)
 	}
-	if e.ChunkIndex >= state.TotalChunks || e.ChunkIndex < 0 {
+	if e.FileIndex < 0 || e.FileIndex >= len(state.Files) {
+		return 0, 0, fmt.Errorf("file index %d out of bounds", e.FileIndex)
+	}
+
+	fs := &state.Files[e.FileIndex]
+	if e.ChunkIndex >= fs.TotalChunks || e.ChunkIndex < 0 {
 		return 0, 0, fmt.Errorf("chunk index %d out of bounds", e.ChunkIndex)
 	}
-	if state.Bitmask.IsSet(e.ChunkIndex) {
+	if fs.Bitmask.IsSet(e.ChunkIndex) {
 		return 0, 0, fmt.Errorf("chunk %d was already uploaded", e.ChunkIndex)
 	}
 
-	state.Bitmask.Set(e.ChunkIndex)
-	state.ChunksUploaded++
+	fs.Bitmask.Set(e.ChunkIndex)
+	fs.ChunksUploaded++
+	state.LastActivityAt = time.Now()
 
-	var totalShareChunks int
-	var totalUploadedShareChunks int
+	var totalChunks int
+	var chunksUploaded int
 
-	for k, v := range m.uploading {
-		if k.ShareID != e.FileKey.ShareID {
-			continue
-		}
-
-		totalShareChunks += v.TotalChunks
-		totalUploadedShareChunks += v.ChunksUploaded
+	for _, f := range state.Files {
+		totalChunks += f.TotalChunks
+		chunksUploaded += f.ChunksUploaded
 	}
 
-	return totalShareChunks, totalUploadedShareChunks, nil
+	return chunksUploaded, totalChunks, nil
 }
 
-func (m *UploadManager) handleGetUploadStatus(shareID string) shareUploadStatus {
-	var statuses []fileUploadStatus
-
-	for key, state := range m.uploading {
-		if key.ShareID == shareID {
-			statuses = append(statuses, fileUploadStatus{
-				FileIndex:      key.FileIndex,
-				ChunksUploaded: state.ChunksUploaded,
-				TotalChunks:    state.TotalChunks,
-			})
-		}
+func (m *UploadManager) handleGetUploadStatus(shareID string) shareUploadState {
+	state, ok := m.uploading[shareID]
+	if !ok {
+		return shareUploadState{}
 	}
 
-	return shareUploadStatus{Files: statuses}
+	return *state
 }

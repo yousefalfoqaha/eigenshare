@@ -17,10 +17,10 @@ type Service struct {
 	uploadManager   *UploadManager
 }
 
-func NewService(repo *Repository, ls *storage.FileStorage, um *UploadManager) *Service {
+func NewService(repo *Repository, fs *storage.FileStorage, um *UploadManager) *Service {
 	return &Service{
 		shareRepository: repo,
-		fileStorage:     ls,
+		fileStorage:     fs,
 		uploadManager:   um,
 	}
 }
@@ -67,15 +67,7 @@ func (s *Service) uploadChunk(shareID string, fileIndex int, chunkIndex int, chu
 		return nil
 	}
 
-	err = s.shareRepository.makeTransaction(func(tx *sql.Tx) error {
-		share.Status = STATUS_COMPLETE
-
-		if _, err := s.shareRepository.Save(*share, tx); err != nil {
-			return err
-		}
-
-		return nil
-	})
+	err = s.shareRepository.UpdateStatus(shareID, STATUS_COMPLETE)
 	if err != nil {
 		return err
 	}
@@ -170,7 +162,7 @@ func (s *Service) getShare(id string) (*Share, error) {
 	return share, nil
 }
 
-func (s *Service) getUploadStatus(id string) (*shareUploadStatus, error) {
+func (s *Service) getUploadStatus(id string) (*shareUploadState, error) {
 	status := s.uploadManager.GetShareUploadStatus(id)
 	return &status, nil
 }

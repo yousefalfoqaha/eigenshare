@@ -99,11 +99,6 @@ func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
 		return nil, fmt.Errorf("%w: %s", ErrHandleExists, s.Handle)
 	}
 
-	_, err = tx.Exec("DELETE FROM share WHERE id = ?", s.ID)
-	if err != nil {
-		return nil, err
-	}
-
 	_, err = tx.Exec(
 		"INSERT INTO share (id, handle, status) VALUES (?, ?, ?)",
 		s.ID, s.Handle, s.Status,
@@ -123,6 +118,11 @@ func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
 	}
 
 	return &s, nil
+}
+
+func (r *Repository) UpdateStatus(id string, status string) error {
+	_, err := r.storage.DB.Exec("UPDATE share SET status = ? WHERE id = ?", status, id)
+	return err
 }
 
 func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
