@@ -1,20 +1,21 @@
-package share
+package upload
 
 import (
+	"eigenshare/backend/share"
 	"fmt"
 	"time"
 )
 
 type fileUploadState struct {
-	FileIndex      int    `json:"fileIndex"`
-	Bitmask        Bitset `json:"-"`
-	TotalChunks    int    `json:"totalChunks"`
-	ChunksUploaded int    `json:"chunksUploaded"`
+	FileIndex      int
+	Bitmask        Bitset
+	TotalChunks    int
+	ChunksUploaded int
 }
 
 type shareUploadState struct {
-	Files          []fileUploadState `json:"files"`
-	LastActivityAt time.Time         `json:"-"`
+	Files          []fileUploadState
+	LastActivityAt time.Time
 }
 
 type chunkUploadResult struct {
@@ -31,7 +32,7 @@ type uploadChunkEvent struct {
 }
 
 type registerShareEvent struct {
-	Share Share
+	Share share.Share
 	Err   chan error
 }
 
@@ -42,7 +43,7 @@ type unregisterShareEvent struct {
 
 type getUploadStatusEvent struct {
 	ShareID string
-	Status  chan shareUploadState
+	Status  chan UploadStatus
 }
 
 type UploadManager struct {
@@ -63,7 +64,6 @@ func NewUploadManager(chunkSize int64) *UploadManager {
 		uploading:             make(map[string]*shareUploadState),
 		chunkSize:             chunkSize,
 	}
-
 	go m.run()
 
 	return m
@@ -89,9 +89,9 @@ func (m *UploadManager) run() {
 	}
 }
 
-func (m *UploadManager) TrackShareUpload(share Share) error {
+func (m *UploadManager) TrackShareUpload(sh share.Share) error {
 	err := make(chan error, 1)
-	m.registerShareEvents <- registerShareEvent{Share: share, Err: err}
+	m.registerShareEvents <- registerShareEvent{Share: sh, Err: err}
 	return <-err
 }
 
@@ -115,8 +115,8 @@ func (m *UploadManager) UploadChunk(shareID string, fileIndex int, chunkIndex in
 	return result.UploadedShareChunks, result.TotalShareChunks, result.Err
 }
 
-func (m *UploadManager) GetShareUploadStatus(shareID string) shareUploadState {
-	status := make(chan shareUploadState, 1)
+func (m *UploadManager) GetShareUploadStatus(shareID string) UploadStatus {
+	status := make(chan UploadStatus, 1)
 	m.getUploadStatusEvents <- getUploadStatusEvent{ShareID: shareID, Status: status}
 	return <-status
 }
@@ -180,11 +180,20 @@ func (m *UploadManager) handleUploadChunk(e uploadChunkEvent) (int, int, error) 
 	return chunksUploaded, totalChunks, nil
 }
 
-func (m *UploadManager) handleGetUploadStatus(shareID string) shareUploadState {
+func (m *UploadManager) handleGetUploadStatus(shareID string) UploadStatus {
 	state, ok := m.uploading[shareID]
 	if !ok {
-		return shareUploadState{}
+		return UploadStatus{}
 	}
 
-	return *state
+	fileStatuses := make([]FileUploadStatus, len(state.Files))
+	for i, f := range state.Files {
+		fileStatuses[i] = FileUploadStatus{
+			FileIndex:      f.FileIndex,
+			TotalChunks:    f.TotalChunks,
+			ChunksUploaded: f.ChunksUploaded,
+		}
+	}
+
+	return UploadStatus{Files: fileStatuses}
 }

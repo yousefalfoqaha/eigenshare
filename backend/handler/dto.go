@@ -1,4 +1,4 @@
-package share
+package handler
 
 type fileRequest struct {
 	Index int    `json:"index"`

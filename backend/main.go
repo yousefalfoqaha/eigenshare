@@ -1,9 +1,12 @@
 package main
 
 import (
+	"eigenshare/backend/handler"
 	"eigenshare/backend/middleware"
-	"eigenshare/backend/share"
+	"eigenshare/backend/repository"
+	"eigenshare/backend/service"
 	"eigenshare/backend/storage"
+	"eigenshare/backend/upload"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -26,11 +29,11 @@ func main() {
 	databaseStorage := storage.NewDatabaseStorage()
 	fileStorage := storage.NewFileStorage(DATA_PATH, DATA_TMP_PATH, CHUNK_SIZE)
 
-	shareRepo := share.NewRepository(databaseStorage)
-	uploadManager := share.NewUploadManager(CHUNK_SIZE)
-	shareServ := share.NewService(shareRepo, fileStorage, uploadManager)
-	shareCont := share.NewController(shareServ)
-	shareCont.RegisterHandlers(router)
+	shareRepo := repository.NewShareRepository(databaseStorage)
+	uploadManager := upload.NewUploadManager(CHUNK_SIZE)
+	shareService := service.NewShareService(shareRepo, fileStorage, uploadManager)
+	shareController := handler.NewShareController(shareService)
+	shareController.RegisterHandlers(router)
 
 	server := http.Server{
 		Addr:    ":" + strconv.Itoa(PORT),

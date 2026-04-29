@@ -17,7 +17,7 @@ type Share struct {
 	Files  []File `json:"files"`
 }
 
-func NewShare(id, handle string) (*Share, error) {
+func NewShare(id, handle string, status string) (*Share, error) {
 	if handle == "" {
 		return nil, fmt.Errorf("share handle is required")
 	}
@@ -28,7 +28,7 @@ func NewShare(id, handle string) (*Share, error) {
 	return &Share{
 		ID:     id,
 		Handle: handle,
-		Status: STATUS_PENDING,
+		Status: status,
 	}, nil
 }
 

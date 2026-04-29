@@ -1,25 +1,22 @@
-package share
+package repository
 
 import (
 	"database/sql"
+	"eigenshare/backend/share"
 	"eigenshare/backend/storage"
-	"errors"
 	"fmt"
 )
 
-var ErrHandleExists = errors.New("handle already exists")
-
-type Repository struct {
+type ShareRepository struct {
 	storage *storage.DatabaseStorage
 }
 
-func NewRepository(db *storage.DatabaseStorage) *Repository {
-	return &Repository{storage: db}
+func NewShareRepository(db *storage.DatabaseStorage) *ShareRepository {
+	return &ShareRepository{storage: db}
 }
 
-func (r *Repository) GetAll() ([]ShareSummary, error) {
-	var summaries []ShareSummary
-
+func (r *ShareRepository) GetAll() ([]share.ShareSummary, error) {
+	var summaries []share.ShareSummary
 	query := `
 		SELECT 
 			s.id, 
@@ -38,7 +35,7 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var s ShareSummary
+		var s share.ShareSummary
 		if err := rows.Scan(&s.ID, &s.Handle, &s.Status, &s.TotalFiles, &s.TotalSize); err != nil {
 			return nil, err
 		}
@@ -52,25 +49,51 @@ func (r *Repository) GetAll() ([]ShareSummary, error) {
 	return summaries, nil
 }
 
-func (r *Repository) Get(id string) (*Share, error) {
-	var share Share
+func (r *ShareRepository) GetAllUploadingShares() ([]string, error) {
+	var ids []string
+	query := `SELECT id FROM share WHERE status = UPLOADING`
 
-	row := r.storage.DB.QueryRow("SELECT id, handle, status FROM share WHERE id = ?", id)
-	if err := row.Scan(&share.ID, &share.Handle, &share.Status); err != nil {
+	rows, err := r.storage.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+
+		ids = append(ids, id)
+	}
+
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 
-	files, err := r.getAllFilesByShareID(share.ID)
+	return ids, nil
+}
+
+func (r *ShareRepository) Get(id string) (*share.Share, error) {
+	var sh share.Share
+
+	row := r.storage.DB.QueryRow("SELECT id, handle, status FROM share WHERE id = ?", id)
+	if err := row.Scan(&sh.ID, &sh.Handle, &sh.Status); err != nil {
+		return nil, err
+	}
+
+	files, err := r.getAllFilesByShareID(sh.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	share.Files = files
+	sh.Files = files
 
-	return &share, nil
+	return &sh, nil
 }
 
-func (r *Repository) makeTransaction(o func(tx *sql.Tx) error) error {
+func (r *ShareRepository) MakeTransaction(o func(tx *sql.Tx) error) error {
 	tx, err := r.storage.DB.Begin()
 	if err != nil {
 		return err
@@ -84,7 +107,7 @@ func (r *Repository) makeTransaction(o func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
+func (r *ShareRepository) Save(s share.Share, tx *sql.Tx) (*share.Share, error) {
 	var exists bool
 
 	err := tx.QueryRow(
@@ -96,7 +119,7 @@ func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
 	}
 
 	if exists {
-		return nil, fmt.Errorf("%w: %s", ErrHandleExists, s.Handle)
+		return nil, fmt.Errorf("%w: %s", share.ErrHandleExists, s.Handle)
 	}
 
 	_, err = tx.Exec(
@@ -120,13 +143,13 @@ func (r *Repository) Save(s Share, tx *sql.Tx) (*Share, error) {
 	return &s, nil
 }
 
-func (r *Repository) UpdateStatus(id string, status string) error {
+func (r *ShareRepository) UpdateStatus(id string, status string) error {
 	_, err := r.storage.DB.Exec("UPDATE share SET status = ? WHERE id = ?", status, id)
 	return err
 }
 
-func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
-	var files []File
+func (r *ShareRepository) getAllFilesByShareID(id string) ([]share.File, error) {
+	var files []share.File
 
 	rows, err := r.storage.DB.Query("SELECT name, size, `index` FROM file WHERE share_id = ?", id)
 	if err != nil {
@@ -135,7 +158,7 @@ func (r *Repository) getAllFilesByShareID(id string) ([]File, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var file File
+		var file share.File
 		if err := rows.Scan(&file.Name, &file.Size, &file.Index); err != nil {
 			return nil, err
 		}

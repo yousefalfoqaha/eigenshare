@@ -1,0 +1,186 @@
+package service
+
+import (
+	"database/sql"
+	"eigenshare/backend/api"
+	"eigenshare/backend/repository"
+	"eigenshare/backend/share"
+	"eigenshare/backend/storage"
+	"eigenshare/backend/upload"
+	"errors"
+	"io"
+	"net/http"
+
+	"github.com/google/uuid"
+)
+
+type ShareService struct {
+	shareRepository *repository.ShareRepository
+	fileStorage     *storage.FileStorage
+	uploadManager   *upload.UploadManager
+}
+
+func NewShareService(repo *repository.ShareRepository, fs *storage.FileStorage, um *upload.UploadManager) *ShareService {
+	return &ShareService{
+		shareRepository: repo,
+		fileStorage:     fs,
+		uploadManager:   um,
+	}
+}
+
+func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int, chunk io.Reader) error {
+	if shareID == "" {
+		return api.NewError(http.StatusBadRequest, "Share ID is empty")
+	}
+
+	sh, err := s.shareRepository.Get(shareID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return api.NewError(http.StatusNotFound, "No share found")
+		}
+
+		return err
+	}
+
+	if sh.Status == share.STATUS_COMPLETE {
+		return api.NewError(http.StatusConflict, "Share is already complete")
+	}
+
+	var file *share.File
+	for i, f := range sh.Files {
+		if f.Index == fileIndex {
+			file = &sh.Files[i]
+			break
+		}
+	}
+	if file == nil {
+		return api.NewError(http.StatusNotFound, "No file found")
+	}
+
+	err = s.fileStorage.WriteChunk(shareID, fileIndex, chunkIndex, chunk)
+	if err != nil {
+		return err
+	}
+
+	chunksUploaded, totalChunks, err := s.uploadManager.UploadChunk(shareID, fileIndex, chunkIndex)
+	if err != nil {
+		return err
+	}
+
+	if chunksUploaded < totalChunks {
+		return nil
+	}
+
+	var success bool
+	defer func() {
+		if !success {
+			_ = s.shareRepository.UpdateStatus(shareID, share.STATUS_UPLOADING)
+		}
+	}()
+
+	err = s.shareRepository.UpdateStatus(shareID, share.STATUS_COMPLETE)
+	if err != nil {
+		return err
+	}
+
+	err = s.fileStorage.PersistShareFolder(shareID)
+	if err != nil {
+		return err
+	}
+
+	s.uploadManager.UntrackShareUpload(shareID)
+
+	success = true
+	return nil
+}
+
+type CreateShareParams struct {
+	Handle string
+	Files  []CreateFileParams
+}
+
+type CreateFileParams struct {
+	Name  string
+	Size  int64
+	Index int
+}
+
+func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, error) {
+	sh, err := share.NewShare(uuid.New().String(), params.Handle, share.STATUS_PENDING)
+	if err != nil {
+		return nil, api.NewError(http.StatusBadRequest, err.Error())
+	}
+
+	var success bool
+	defer func() {
+		if !success {
+			s.fileStorage.RemoveShareFolder(sh.ID)
+			s.uploadManager.UntrackShareUpload(sh.ID)
+		}
+	}()
+
+	if err := s.fileStorage.CreateShareFolder(sh.ID); err != nil {
+		return nil, err
+	}
+
+	for _, f := range params.Files {
+		file, err := share.NewFile(f.Name, f.Size, f.Index)
+		if err != nil {
+			return nil, api.NewError(http.StatusBadRequest, err.Error())
+		}
+
+		sh.Files = append(sh.Files, *file)
+
+		if err := s.fileStorage.CreateFile(sh.ID, f.Index, f.Size); err != nil {
+			return nil, err
+		}
+
+	}
+
+	if err := s.uploadManager.TrackShareUpload(*sh); err != nil {
+		return nil, err
+	}
+
+	err = s.shareRepository.MakeTransaction(func(tx *sql.Tx) error {
+		if _, err := s.shareRepository.Save(*sh, tx); err != nil {
+			if errors.Is(err, share.ErrHandleExists) {
+				return api.NewError(http.StatusConflict, err.Error())
+			}
+
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	success = true
+	return sh, nil
+}
+
+func (s *ShareService) GetShares() ([]share.ShareSummary, error) {
+	return s.shareRepository.GetAll()
+}
+
+func (s *ShareService) GetShare(id string) (*share.Share, error) {
+	if id == "" {
+		return nil, api.NewError(http.StatusBadRequest, "share ID is required")
+	}
+
+	sh, err := s.shareRepository.Get(id)
+	if err == sql.ErrNoRows {
+		return nil, api.NewError(http.StatusNotFound, "No share found")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return sh, nil
+}
+
+func (s *ShareService) GetUploadStatus(id string) (*upload.UploadStatus, error) {
+	status := s.uploadManager.GetShareUploadStatus(id)
+	return &status, nil
+}

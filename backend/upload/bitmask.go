@@ -1,4 +1,4 @@
-package share
+package upload
 
 type Bitset []byte
 
