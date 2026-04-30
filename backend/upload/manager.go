@@ -24,11 +24,10 @@ type chunkUploadResult struct {
 	Err                 error
 }
 
-type uploadChunkEvent struct {
+type markChunkEvent struct {
 	ShareID    string
 	FileIndex  int
 	ChunkIndex int
-	ResultChan chan chunkUploadResult
 }
 
 type registerShareEvent struct {
@@ -47,7 +46,7 @@ type getUploadStatusEvent struct {
 }
 
 type UploadManager struct {
-	uploadChunkEvents     chan uploadChunkEvent
+	markChunkEvents       chan markChunkEvent
 	registerShareEvents   chan registerShareEvent
 	unregisterShareEvents chan unregisterShareEvent
 	getUploadStatusEvents chan getUploadStatusEvent
@@ -57,7 +56,7 @@ type UploadManager struct {
 
 func NewUploadManager(chunkSize int64) *UploadManager {
 	m := &UploadManager{
-		uploadChunkEvents:     make(chan uploadChunkEvent, 1000),
+		markChunkEvents:       make(chan markChunkEvent, 1000),
 		registerShareEvents:   make(chan registerShareEvent, 100),
 		unregisterShareEvents: make(chan unregisterShareEvent, 100),
 		getUploadStatusEvents: make(chan getUploadStatusEvent, 100),
@@ -76,13 +75,8 @@ func (m *UploadManager) run() {
 			reg.Err <- m.handleRegisterShare(reg)
 		case unreg := <-m.unregisterShareEvents:
 			unreg.Err <- m.handleUnregisterShare(unreg)
-		case e := <-m.uploadChunkEvents:
-			chunksUploaded, totalChunks, err := m.handleUploadChunk(e)
-			if err != nil {
-				e.ResultChan <- chunkUploadResult{Err: err}
-				continue
-			}
-			e.ResultChan <- chunkUploadResult{UploadedShareChunks: chunksUploaded, TotalShareChunks: totalChunks}
+		case e := <-m.markChunkEvents:
+			m.handleUploadChunk(e)
 		case e := <-m.getUploadStatusEvents:
 			e.Status <- m.handleGetUploadStatus(e.ShareID)
 		}
@@ -101,18 +95,12 @@ func (m *UploadManager) UntrackShareUpload(shareID string) {
 	<-err
 }
 
-func (m *UploadManager) UploadChunk(shareID string, fileIndex int, chunkIndex int) (int, int, error) {
-	resultChan := make(chan chunkUploadResult, 1)
-
-	m.uploadChunkEvents <- uploadChunkEvent{
+func (m *UploadManager) MarkChunk(shareID string, fileIndex int, chunkIndex int) {
+	m.markChunkEvents <- markChunkEvent{
 		ShareID:    shareID,
 		FileIndex:  fileIndex,
 		ChunkIndex: chunkIndex,
-		ResultChan: resultChan,
 	}
-	result := <-resultChan
-
-	return result.UploadedShareChunks, result.TotalShareChunks, result.Err
 }
 
 func (m *UploadManager) GetShareUploadStatus(shareID string) UploadStatus {
@@ -149,7 +137,7 @@ func (m *UploadManager) handleUnregisterShare(unreg unregisterShareEvent) error 
 	return nil
 }
 
-func (m *UploadManager) handleUploadChunk(e uploadChunkEvent) (int, int, error) {
+func (m *UploadManager) handleUploadChunk(e markChunkEvent) (int, int, error) {
 	state, ok := m.uploading[e.ShareID]
 	if !ok {
 		return 0, 0, fmt.Errorf("upload state for share %s not found", e.ShareID)

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -67,4 +68,16 @@ func (s *FileStorage) WriteChunk(shareID string, fileIndex int, chunkIndex int, 
 	}
 
 	return nil
+}
+
+func (s *FileStorage) IsSharePersisted(shareID string) (bool, error) {
+	if shareID == "" {
+		return false, errors.New("Share ID is empty")
+	}
+	_, err := os.Stat(filepath.Join(s.dataDir, shareID))
+	if !os.IsExist(err) {
+		return false, nil
+	}
+
+	return true, nil
 }

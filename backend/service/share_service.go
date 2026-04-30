@@ -46,6 +46,10 @@ func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int
 		return api.NewError(http.StatusConflict, "Share is already complete")
 	}
 
+	if sh.Status == share.STATUS_PENDING {
+		// TODO
+	}
+
 	var file *share.File
 	for i, f := range sh.Files {
 		if f.Index == fileIndex {
@@ -62,35 +66,8 @@ func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int
 		return err
 	}
 
-	chunksUploaded, totalChunks, err := s.uploadManager.UploadChunk(shareID, fileIndex, chunkIndex)
-	if err != nil {
-		return err
-	}
+	s.uploadManager.MarkChunk(shareID, fileIndex, chunkIndex)
 
-	if chunksUploaded < totalChunks {
-		return nil
-	}
-
-	var success bool
-	defer func() {
-		if !success {
-			_ = s.shareRepository.UpdateStatus(shareID, share.STATUS_UPLOADING)
-		}
-	}()
-
-	err = s.shareRepository.UpdateStatus(shareID, share.STATUS_COMPLETE)
-	if err != nil {
-		return err
-	}
-
-	err = s.fileStorage.PersistShareFolder(shareID)
-	if err != nil {
-		return err
-	}
-
-	s.uploadManager.UntrackShareUpload(shareID)
-
-	success = true
 	return nil
 }
 
@@ -106,7 +83,7 @@ type CreateFileParams struct {
 }
 
 func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, error) {
-	sh, err := share.NewShare(uuid.New().String(), params.Handle, share.STATUS_PENDING)
+	sh, err := share.NewShare(uuid.New().String(), params.Handle, share.STATUS_UPLOADING)
 	if err != nil {
 		return nil, api.NewError(http.StatusBadRequest, err.Error())
 	}
