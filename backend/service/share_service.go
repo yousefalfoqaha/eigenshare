@@ -18,13 +18,15 @@ type ShareService struct {
 	shareRepository *repository.ShareRepository
 	fileStorage     *storage.FileStorage
 	uploadTracker   *upload.UploadTracker
+	shareWorker     *UploadWorker
 }
 
-func NewShareService(repo *repository.ShareRepository, fs *storage.FileStorage, um *upload.UploadTracker) *ShareService {
+func NewShareService(repo *repository.ShareRepository, fs *storage.FileStorage, ut *upload.UploadTracker, sw *UploadWorker) *ShareService {
 	return &ShareService{
 		shareRepository: repo,
 		fileStorage:     fs,
-		uploadTracker:   um,
+		uploadTracker:   ut,
+		shareWorker:     sw,
 	}
 }
 
@@ -42,12 +44,8 @@ func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int
 		return err
 	}
 
-	if sh.Status == share.STATUS_COMPLETE {
-		return api.NewError(http.StatusConflict, "Share is already complete")
-	}
-
-	if sh.Status == share.STATUS_PENDING {
-		// TODO
+	if sh.Status != share.STATUS_UPLOADING {
+		return api.NewError(http.StatusConflict, "Share is not uploading")
 	}
 
 	var file *share.File
@@ -160,4 +158,57 @@ func (s *ShareService) GetShare(id string) (*share.Share, error) {
 func (s *ShareService) GetUploadStatus(id string) (*upload.ShareUploadStatus, error) {
 	status := s.uploadTracker.GetShareUploadStatus(id)
 	return &status, nil
+}
+
+func (s *ShareService) ResumeShare(shareID string) (*share.Share, error) {
+	if shareID == "" {
+		return nil, api.NewError(http.StatusBadRequest, "Share ID is required")
+	}
+
+	sh, err := s.shareRepository.Get(shareID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, api.NewError(http.StatusNotFound, "No share found")
+		}
+		return nil, err
+	}
+
+	if sh.Status != share.STATUS_PENDING {
+		return nil, api.NewError(http.StatusConflict, "Share is not in pending state")
+	}
+
+	if err := s.shareWorker.RequestStatusUpdate(shareID, share.STATUS_UPLOADING); err != nil {
+		return nil, err
+	}
+
+	sh.Status = share.STATUS_UPLOADING
+	return sh, nil
+}
+
+func (s *ShareService) Download(shareID string, fileIndex int) (string, error) {
+	if shareID == "" {
+		return "", api.NewError(http.StatusBadRequest, "Share ID is required")
+	}
+
+	sh, err := s.shareRepository.Get(shareID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", api.NewError(http.StatusNotFound, "No share found")
+		}
+		return "", err
+	}
+
+	if sh.Status == share.STATUS_COMPLETE {
+		return s.fileStorage.ShareFilePath(sh.ID, fileIndex), nil
+	}
+
+	if sh.Status == share.STATUS_UPLOADING && s.uploadTracker.IsShareComplete(shareID) {
+		if err := s.shareWorker.RequestStatusUpdate(shareID, share.STATUS_COMPLETE); err != nil {
+			return "", err
+		}
+
+		return s.fileStorage.ShareFilePath(sh.ID, fileIndex), nil
+	}
+
+	return "", api.NewError(http.StatusConflict, "Share is not yet complete")
 }

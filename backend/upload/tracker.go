@@ -3,6 +3,7 @@ package upload
 import (
 	"eigenshare/backend/share"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -18,113 +19,45 @@ type shareUploadState struct {
 	LastActivityAt time.Time
 }
 
-type markChunkResult struct {
-	MarkedShareChunks   int
-	ExpectedShareChunks int
-	Err                 error
-}
-
-type markChunkEvent struct {
-	ShareID    string
-	FileIndex  int
-	ChunkIndex int
-}
-
-type trackShareEvent struct {
-	Share share.Share
-	Err   chan error
-}
-
-type untrackShareEvent struct {
-	ShareID string
-	Err     chan error
-}
-
-type getUploadStatusEvent struct {
-	ShareID string
-	Status  chan ShareUploadStatus
-}
-
 type UploadTracker struct {
-	markChunkEvents       chan markChunkEvent
-	trackShareEvents      chan trackShareEvent
-	untrackShareEvents    chan untrackShareEvent
-	getUploadStatusEvents chan getUploadStatusEvent
-	uploading             map[string]*shareUploadState
-	chunkSize             int64
+	mu        sync.Mutex
+	uploading map[string]*shareUploadState
+	chunkSize int64
 }
 
 func NewUploadTracker(chunkSize int64) *UploadTracker {
-	m := &UploadTracker{
-		markChunkEvents:       make(chan markChunkEvent, 1000),
-		trackShareEvents:      make(chan trackShareEvent, 100),
-		untrackShareEvents:    make(chan untrackShareEvent, 100),
-		getUploadStatusEvents: make(chan getUploadStatusEvent, 100),
-		uploading:             make(map[string]*shareUploadState),
-		chunkSize:             chunkSize,
-	}
-	go m.run()
-
-	return m
-}
-
-func (m *UploadTracker) run() {
-	for {
-		select {
-		case reg := <-m.trackShareEvents:
-			reg.Err <- m.handleTrackShare(reg)
-		case unreg := <-m.untrackShareEvents:
-			unreg.Err <- m.handleUntrackShare(unreg)
-		case e := <-m.markChunkEvents:
-			m.handleUploadChunk(e)
-		case e := <-m.getUploadStatusEvents:
-			e.Status <- m.handleGetUploadStatus(e.ShareID)
-		}
+	return &UploadTracker{
+		uploading: make(map[string]*shareUploadState),
+		chunkSize: chunkSize,
 	}
 }
 
 func (m *UploadTracker) TrackShareUpload(sh share.Share) error {
-	err := make(chan error, 1)
-	m.trackShareEvents <- trackShareEvent{Share: sh, Err: err}
-	return <-err
-}
-
-func (m *UploadTracker) UntrackShareUpload(shareID string) {
-	err := make(chan error, 1)
-	m.untrackShareEvents <- untrackShareEvent{ShareID: shareID, Err: err}
-	<-err
-}
-
-func (m *UploadTracker) MarkChunk(shareID string, fileIndex int, chunkIndex int) {
-	m.markChunkEvents <- markChunkEvent{
-		ShareID:    shareID,
-		FileIndex:  fileIndex,
-		ChunkIndex: chunkIndex,
-	}
-}
-
-func (m *UploadTracker) GetShareUploadStatus(shareID string) ShareUploadStatus {
-	status := make(chan ShareUploadStatus, 1)
-	m.getUploadStatusEvents <- getUploadStatusEvent{ShareID: shareID, Status: status}
-	return <-status
-}
-
-func (m *UploadTracker) handleTrackShare(reg trackShareEvent) error {
-	files := make([]fileUploadState, len(reg.Share.Files))
-
-	for i := range reg.Share.Files {
-		numChunks := (reg.Share.Files[i].Size + m.chunkSize - 1) / m.chunkSize
-		numBytes := (numChunks + 7) / 8
-
-		files[reg.Share.Files[i].Index] = fileUploadState{
-			FileIndex:      reg.Share.Files[i].Index,
-			Bitmask:        make(Bitset, numBytes),
-			ExpectedChunks: int(numChunks),
-			ChunksUploaded: 0,
+	for i, f := range sh.Files {
+		if f.Index != i {
+			return fmt.Errorf("file index %d out of order: expected %d", f.Index, i)
 		}
 	}
 
-	m.uploading[reg.Share.ID] = &shareUploadState{
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.uploading[sh.ID]; exists {
+		return nil
+	}
+
+	files := make([]fileUploadState, len(sh.Files))
+	for i := range sh.Files {
+		numChunks := (sh.Files[i].Size + m.chunkSize - 1) / m.chunkSize
+		numBytes := (numChunks + 7) / 8
+		files[i] = fileUploadState{
+			FileIndex:      sh.Files[i].Index,
+			Bitmask:        make(Bitset, numBytes),
+			ExpectedChunks: int(numChunks),
+		}
+	}
+
+	m.uploading[sh.ID] = &shareUploadState{
 		Files:          files,
 		LastActivityAt: time.Now(),
 	}
@@ -132,43 +65,40 @@ func (m *UploadTracker) handleTrackShare(reg trackShareEvent) error {
 	return nil
 }
 
-func (m *UploadTracker) handleUntrackShare(unreg untrackShareEvent) error {
-	delete(m.uploading, unreg.ShareID)
-	return nil
+func (m *UploadTracker) UntrackShareUpload(shareID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.uploading, shareID)
 }
 
-func (m *UploadTracker) handleUploadChunk(e markChunkEvent) (int, int, error) {
-	state, ok := m.uploading[e.ShareID]
+func (m *UploadTracker) MarkChunk(shareID string, fileIndex int, chunkIndex int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, ok := m.uploading[shareID]
 	if !ok {
-		return 0, 0, fmt.Errorf("upload state for share %s not found", e.ShareID)
+		return
 	}
-	if e.FileIndex < 0 || e.FileIndex >= len(state.Files) {
-		return 0, 0, fmt.Errorf("file index %d out of bounds", e.FileIndex)
-	}
-
-	fs := &state.Files[e.FileIndex]
-	if e.ChunkIndex >= fs.ExpectedChunks || e.ChunkIndex < 0 {
-		return 0, 0, fmt.Errorf("chunk index %d out of bounds", e.ChunkIndex)
+	if fileIndex < 0 || fileIndex >= len(state.Files) {
+		return
 	}
 
-	if !fs.Bitmask.IsSet(e.ChunkIndex) {
-		fs.Bitmask.Set(e.ChunkIndex)
+	fs := &state.Files[fileIndex]
+	if chunkIndex < 0 || chunkIndex >= fs.ExpectedChunks {
+		return
+	}
+
+	if !fs.Bitmask.IsSet(chunkIndex) {
+		fs.Bitmask.Set(chunkIndex)
 		fs.ChunksUploaded++
 		state.LastActivityAt = time.Now()
 	}
-
-	var expectedChunks int
-	var chunksUploaded int
-
-	for _, f := range state.Files {
-		expectedChunks += f.ExpectedChunks
-		chunksUploaded += f.ChunksUploaded
-	}
-
-	return chunksUploaded, expectedChunks, nil
 }
 
-func (m *UploadTracker) handleGetUploadStatus(shareID string) ShareUploadStatus {
+func (m *UploadTracker) GetShareUploadStatus(shareID string) ShareUploadStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	state, ok := m.uploading[shareID]
 	if !ok {
 		return ShareUploadStatus{}
@@ -184,4 +114,65 @@ func (m *UploadTracker) handleGetUploadStatus(shareID string) ShareUploadStatus 
 	}
 
 	return ShareUploadStatus{Files: fileStatuses, LastActivityAt: state.LastActivityAt}
+}
+
+func (m *UploadTracker) IsShareComplete(shareID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state, ok := m.uploading[shareID]
+	if !ok {
+		return false
+	}
+	for _, f := range state.Files {
+		if f.ChunksUploaded != f.ExpectedChunks {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (m *UploadTracker) GetTrackedShareIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ids := make([]string, 0, len(m.uploading))
+	for id := range m.uploading {
+		ids = append(ids, id)
+	}
+
+	return ids
+}
+
+func (m *UploadTracker) GetStaleShareIDs(since time.Duration) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	cutoff := time.Now().Add(-since)
+	var stale []string
+	for id, state := range m.uploading {
+		if state.LastActivityAt.Before(cutoff) {
+			stale = append(stale, id)
+		}
+	}
+	return stale
+}
+
+func (m *UploadTracker) GetOrphanedShareIDs(knownIDs []string) []string {
+	knownSet := make(map[string]bool, len(knownIDs))
+	for _, id := range knownIDs {
+		knownSet[id] = true
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var orphans []string
+	for id := range m.uploading {
+		if !knownSet[id] {
+			orphans = append(orphans, id)
+		}
+	}
+	return orphans
 }

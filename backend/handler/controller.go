@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"eigenshare/backend/api"
 	"eigenshare/backend/service"
 	"encoding/json"
 	"net/http"
@@ -18,9 +19,11 @@ func NewShareController(svc *service.ShareService) *ShareController {
 func (c *ShareController) RegisterHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /shares", MakeHandler(c.getShares))
 	router.HandleFunc("GET /shares/{id}", MakeHandler(c.getShare))
+	router.HandleFunc("GET /shares/{id}/download", MakeHandler(c.download))
 	router.HandleFunc("GET /shares/{id}/upload-status", MakeHandler(c.getUploadStatus))
 	router.HandleFunc("POST /shares", MakeHandler(c.createShare))
-	router.HandleFunc("POST /shares/upload", MakeHandler(c.uploadChunk))
+	router.HandleFunc("POST /shares/{id}/upload", MakeHandler(c.uploadChunk))
+	router.HandleFunc("POST /shares/{id}/resume", MakeHandler(c.resumeShare))
 }
 
 func (c *ShareController) createShare(w http.ResponseWriter, r *http.Request) error {
@@ -51,25 +54,23 @@ func (c *ShareController) createShare(w http.ResponseWriter, r *http.Request) er
 }
 
 func (c *ShareController) uploadChunk(w http.ResponseWriter, r *http.Request) error {
-	shareId := r.URL.Query().Get("shareId")
+	shareID := r.PathValue("id")
 
-	fileIndex, err := strconv.Atoi(r.Header.Get("X-File-Index"))
+	fileIndex, err := strconv.Atoi(r.URL.Query().Get("fileIndex"))
 	if err != nil {
+		return api.NewError(http.StatusBadRequest, "invalid fileIndex")
+	}
+
+	chunkIndex, err := strconv.Atoi(r.URL.Query().Get("chunkIndex"))
+	if err != nil {
+		return api.NewError(http.StatusBadRequest, "invalid chunkIndex")
+	}
+
+	if err := c.shareService.UploadChunk(shareID, fileIndex, chunkIndex, r.Body); err != nil {
 		return err
 	}
 
-	chunkIndex, err := strconv.Atoi(r.Header.Get("X-Chunk-Index"))
-	if err != nil {
-		return err
-	}
-
-	err = c.shareService.UploadChunk(shareId, fileIndex, chunkIndex, r.Body)
-	if err != nil {
-		return err
-	}
-
-	w.WriteHeader(http.StatusOK)
-
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -100,4 +101,31 @@ func (c *ShareController) getUploadStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	return JSON(w, http.StatusOK, status)
+}
+
+func (c *ShareController) download(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+
+	fileIndex, err := strconv.Atoi(r.URL.Query().Get("fileIndex"))
+	if err != nil {
+		return err
+	}
+
+	filePath, err := c.shareService.Download(id, fileIndex)
+	if err != nil {
+		return err
+	}
+
+	http.ServeFile(w, r, filePath)
+	return nil
+}
+
+func (c *ShareController) resumeShare(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	sh, err := c.shareService.ResumeShare(id)
+	if err != nil {
+		return err
+	}
+
+	return JSON(w, http.StatusOK, sh)
 }

@@ -38,12 +38,13 @@ func (s *FileStorage) CreateFile(shareID string, fileIndex int, size int64) erro
 		return err
 	}
 
+	defer f.Close()
+
 	if err := f.Truncate(size); err != nil {
-		f.Close()
 		return err
 	}
 
-	return f.Close()
+	return nil
 }
 
 func (s *FileStorage) RemoveShareFolder(shareID string) error {
@@ -72,12 +73,20 @@ func (s *FileStorage) WriteChunk(shareID string, fileIndex int, chunkIndex int, 
 
 func (s *FileStorage) IsSharePersisted(shareID string) (bool, error) {
 	if shareID == "" {
-		return false, errors.New("Share ID is empty")
+		return false, errors.New("share ID is empty")
 	}
+
 	_, err := os.Stat(filepath.Join(s.dataDir, shareID))
-	if !os.IsExist(err) {
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
 		return false, nil
 	}
 
-	return true, nil
+	return false, err
+}
+
+func (s *FileStorage) ShareFilePath(shareID string, fileIndex int) string {
+	return filepath.Join(s.dataDir, shareID, strconv.Itoa(fileIndex))
 }

@@ -6,95 +6,184 @@ import (
 	"eigenshare/backend/share"
 	"eigenshare/backend/storage"
 	"eigenshare/backend/upload"
+	"fmt"
 	"log"
 	"time"
 )
 
-type completeShareEvent struct {
+type updateShareStatusEvent struct {
 	ShareID string
+	Status  string
 	Err     chan error
 }
 
 type UploadWorker struct {
-	interval        int
+	interval        time.Duration
+	staleTimeout    time.Duration
 	shareRepository *repository.ShareRepository
 	uploadTracker   *upload.UploadTracker
 	fileStorage     *storage.FileStorage
 
-	completeShareEvents chan completeShareEvent
+	updateShareStatusEvents chan updateShareStatusEvent
 }
 
 func NewUploadWorker(
-	ctx context.Context,
-	interval int,
+	interval time.Duration,
+	staleTimeout time.Duration,
 	shareRepository *repository.ShareRepository,
 	uploadTracker *upload.UploadTracker,
 	fileStorage *storage.FileStorage,
 ) *UploadWorker {
 	w := &UploadWorker{
-		interval:        interval,
-		shareRepository: shareRepository,
-		uploadTracker:   uploadTracker,
-		fileStorage:     fileStorage,
-
-		completeShareEvents: make(chan completeShareEvent, 10),
+		interval:                interval,
+		staleTimeout:            staleTimeout,
+		shareRepository:         shareRepository,
+		uploadTracker:           uploadTracker,
+		fileStorage:             fileStorage,
+		updateShareStatusEvents: make(chan updateShareStatusEvent, 10),
 	}
-	go w.run(ctx)
 
 	return w
 }
 
-func (w *UploadWorker) run(ctx context.Context) {
-	ticker := time.NewTicker(time.Duration(w.interval) * time.Millisecond)
-	uploadingIDs, err := w.shareRepository.GetAllUploadingShares()
-	if err != nil {
-		log.Printf("%v", err)
-	}
+func (w *UploadWorker) Run(ctx context.Context) {
+	ticker := time.NewTicker(w.interval)
 
 	for {
 		select {
 		case <-ctx.Done():
 			ticker.Stop()
 			return
-		case e := <-w.completeShareEvents:
-			err := w.completeShare(e.ShareID)
-			if err != nil {
+		case e := <-w.updateShareStatusEvents:
+			err := w.handleUpdateShareStatus(e.ShareID, e.Status)
+			if e.Err != nil {
 				e.Err <- err
 			}
 		case <-ticker.C:
-			w.scanUploadingShares(uploadingIDs)
+			go w.scan()
 		}
 	}
 }
 
-func (w *UploadWorker) completeShare(id string) error {
-	err := w.shareRepository.UpdateStatus(id, share.STATUS_COMPLETE)
+func (w *UploadWorker) RequestStatusUpdate(shareID string, status string) error {
+	err := make(chan error, 1)
+	w.updateShareStatusEvents <- updateShareStatusEvent{ShareID: shareID, Status: status, Err: err}
+	return <-err
+}
+
+func (w *UploadWorker) handleUpdateShareStatus(shareID string, status string) error {
+	switch status {
+	case share.STATUS_COMPLETE:
+		return w.completeShare(shareID)
+	case share.STATUS_PENDING:
+		return w.staleShare(shareID)
+	case share.STATUS_UPLOADING:
+		return w.resumeShare(shareID)
+	default:
+		log.Printf("unknown status transition: %s -> %s", shareID, status)
+		return nil
+	}
+}
+
+func (w *UploadWorker) completeShare(shareID string) error {
+	persisted, err := w.fileStorage.IsSharePersisted(shareID)
 	if err != nil {
 		return err
 	}
 
+	if !persisted {
+		if err := w.fileStorage.PersistShareFolder(shareID); err != nil {
+			return err
+		}
+	}
+
+	rowsAffected, err := w.shareRepository.UpdateStatus(shareID, share.STATUS_COMPLETE, share.STATUS_UPLOADING)
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		log.Printf("share %s already transitioned to COMPLETE", shareID)
+	}
+
+	w.uploadTracker.UntrackShareUpload(shareID)
+
 	return nil
 }
 
-func (w *UploadWorker) scanUploadingShares(uploadingIDs []string) error {
-	for _, id := range uploadingIDs {
-		progress := w.uploadTracker.GetShareUploadStatus(id)
-		isStale := time.Since(progress.LastActivityAt) > 5*time.Minute
-		isComplete := w.shareIsComplete(progress)
-
-		if isComplete {
-			w.completeShareEvents <- completeShareEvent{ShareID: id}
-		}
+func (w *UploadWorker) staleShare(shareID string) error {
+	rowsAffected, err := w.shareRepository.UpdateStatus(shareID, share.STATUS_PENDING, share.STATUS_UPLOADING)
+	if err != nil {
+		return err
 	}
+
+	if rowsAffected == 0 {
+		return nil
+	}
+
+	w.uploadTracker.UntrackShareUpload(shareID)
+
+	return nil
 }
 
-func (w *UploadWorker) shareIsComplete(progress upload.ShareUploadStatus) bool {
-	var markedChunks int
-	var expectedChunks int
-	for _, f := range progress.Files {
-		markedChunks += f.MarkedChunks
-		expectedChunks += f.ExpectedChunks
+func (w *UploadWorker) resumeShare(shareID string) error {
+	rowsAffected, err := w.shareRepository.UpdateStatus(shareID, share.STATUS_UPLOADING, share.STATUS_PENDING)
+	if err != nil {
+		return err
 	}
 
-	return markedChunks == expectedChunks
+	if rowsAffected == 0 {
+		return fmt.Errorf("share %s is no longer in pending state", shareID)
+	}
+
+	sh, err := w.shareRepository.Get(shareID)
+	if err != nil {
+		return err
+	}
+
+	return w.uploadTracker.TrackShareUpload(*sh)
+}
+
+func (w *UploadWorker) scan() {
+	trackedIDs := w.uploadTracker.GetTrackedShareIDs()
+	staleIDs := w.uploadTracker.GetStaleShareIDs(w.staleTimeout)
+	uploadingIDs, err := w.shareRepository.GetAllUploadingShares()
+	if err != nil {
+		log.Printf("error fetching uploading shares: %v", err)
+		return
+	}
+
+	for _, id := range trackedIDs {
+		if w.uploadTracker.IsShareComplete(id) {
+			w.updateShareStatusEvents <- updateShareStatusEvent{ShareID: id, Status: share.STATUS_COMPLETE}
+		}
+	}
+
+	for _, id := range staleIDs {
+		w.updateShareStatusEvents <- updateShareStatusEvent{ShareID: id, Status: share.STATUS_PENDING}
+	}
+
+	orphanedIDs := w.uploadTracker.GetOrphanedShareIDs(uploadingIDs)
+	for _, id := range orphanedIDs {
+		persisted, err := w.fileStorage.IsSharePersisted(id)
+		if err != nil {
+			log.Printf("error checking if share %s is persisted: %v", id, err)
+			continue
+		}
+
+		if persisted {
+			w.updateShareStatusEvents <- updateShareStatusEvent{ShareID: id, Status: share.STATUS_COMPLETE}
+			continue
+		}
+
+		sh, err := w.shareRepository.Get(id)
+		if err != nil {
+			log.Printf("error fetching orphaned share %s: %v", id, err)
+			continue
+		}
+
+		if err := w.uploadTracker.TrackShareUpload(*sh); err != nil {
+			log.Printf("error re-tracking share %s: %v", id, err)
+		}
+	}
 }

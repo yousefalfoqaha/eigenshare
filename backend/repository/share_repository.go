@@ -51,9 +51,9 @@ func (r *ShareRepository) GetAll() ([]share.ShareSummary, error) {
 
 func (r *ShareRepository) GetAllUploadingShares() ([]string, error) {
 	var ids []string
-	query := `SELECT id FROM share WHERE status = UPLOADING`
+	query := `SELECT id FROM share WHERE status = ?`
 
-	rows, err := r.storage.DB.Query(query)
+	rows, err := r.storage.DB.Query(query, share.STATUS_UPLOADING)
 	if err != nil {
 		return nil, err
 	}
@@ -143,15 +143,18 @@ func (r *ShareRepository) Save(s share.Share, tx *sql.Tx) (*share.Share, error) 
 	return &s, nil
 }
 
-func (r *ShareRepository) UpdateStatus(id string, status string) error {
-	_, err := r.storage.DB.Exec("UPDATE share SET status = ? WHERE id = ?", status, id)
-	return err
+func (r *ShareRepository) UpdateStatus(id string, newStatus string, expectedStatus string) (int64, error) {
+	result, err := r.storage.DB.Exec("UPDATE share SET status = ? WHERE id = ? AND status = ?", newStatus, id, expectedStatus)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (r *ShareRepository) getAllFilesByShareID(id string) ([]share.File, error) {
 	var files []share.File
-
-	rows, err := r.storage.DB.Query("SELECT name, size, `index` FROM file WHERE share_id = ?", id)
+	rows, err := r.storage.DB.Query(
+		"SELECT name, size, `index` FROM file WHERE share_id = ? ORDER BY `index`", id)
 	if err != nil {
 		return nil, err
 	}
@@ -165,9 +168,5 @@ func (r *ShareRepository) getAllFilesByShareID(id string) ([]share.File, error) 
 		files = append(files, file)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return files, nil
+	return files, rows.Err()
 }
