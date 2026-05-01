@@ -17,14 +17,14 @@ import (
 type ShareService struct {
 	shareRepository *repository.ShareRepository
 	fileStorage     *storage.FileStorage
-	uploadManager   *upload.UploadManager
+	uploadTracker   *upload.UploadTracker
 }
 
-func NewShareService(repo *repository.ShareRepository, fs *storage.FileStorage, um *upload.UploadManager) *ShareService {
+func NewShareService(repo *repository.ShareRepository, fs *storage.FileStorage, um *upload.UploadTracker) *ShareService {
 	return &ShareService{
 		shareRepository: repo,
 		fileStorage:     fs,
-		uploadManager:   um,
+		uploadTracker:   um,
 	}
 }
 
@@ -66,7 +66,7 @@ func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int
 		return err
 	}
 
-	s.uploadManager.MarkChunk(shareID, fileIndex, chunkIndex)
+	s.uploadTracker.MarkChunk(shareID, fileIndex, chunkIndex)
 
 	return nil
 }
@@ -92,7 +92,7 @@ func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, err
 	defer func() {
 		if !success {
 			s.fileStorage.RemoveShareFolder(sh.ID)
-			s.uploadManager.UntrackShareUpload(sh.ID)
+			s.uploadTracker.UntrackShareUpload(sh.ID)
 		}
 	}()
 
@@ -114,7 +114,7 @@ func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, err
 
 	}
 
-	if err := s.uploadManager.TrackShareUpload(*sh); err != nil {
+	if err := s.uploadTracker.TrackShareUpload(*sh); err != nil {
 		return nil, err
 	}
 
@@ -157,7 +157,7 @@ func (s *ShareService) GetShare(id string) (*share.Share, error) {
 	return sh, nil
 }
 
-func (s *ShareService) GetUploadStatus(id string) (*upload.UploadStatus, error) {
-	status := s.uploadManager.GetShareUploadStatus(id)
+func (s *ShareService) GetUploadStatus(id string) (*upload.ShareUploadStatus, error) {
+	status := s.uploadTracker.GetShareUploadStatus(id)
 	return &status, nil
 }

@@ -1,11 +1,14 @@
 package upload
 
+import "time"
+
 type FileUploadStatus struct {
 	FileIndex      int `json:"fileIndex"`
-	TotalChunks    int `json:"totalChunks"`
-	ChunksUploaded int `json:"chunksUploaded"`
+	ExpectedChunks int `json:"totalChunks"`
+	MarkedChunks   int `json:"chunksUploaded"`
 }
 
-type UploadStatus struct {
-	Files []FileUploadStatus `json:"files"`
+type ShareUploadStatus struct {
+	Files          []FileUploadStatus `json:"files"`
+	LastActivityAt time.Time          `json:"lastActivityAt"`
 }
