@@ -64,7 +64,10 @@ func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int
 		return err
 	}
 
-	s.uploadTracker.MarkChunk(shareID, fileIndex, chunkIndex)
+	err = s.uploadTracker.MarkChunk(*sh, fileIndex, chunkIndex)
+	if err == upload.ErrNotTracked {
+		s.uploadTracker.TrackUploadProgress(*sh)
+	}
 
 	return nil
 }

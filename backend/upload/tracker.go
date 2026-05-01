@@ -75,21 +75,21 @@ func (m *UploadTracker) UntrackUploadProgress(shareID string) {
 	delete(m.uploading, shareID)
 }
 
-func (m *UploadTracker) MarkChunk(shareID string, fileIndex int, chunkIndex int) {
+func (m *UploadTracker) MarkChunk(share share.Share, fileIndex int, chunkIndex int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	state, ok := m.uploading[shareID]
+	state, ok := m.uploading[share.ID]
 	if !ok {
-		return
+		return ErrNotTracked
 	}
 	if fileIndex < 0 || fileIndex >= len(state.Files) {
-		return
+		return errors.New("File index out of bounds")
 	}
 
 	fs := &state.Files[fileIndex]
 	if chunkIndex < 0 || chunkIndex >= fs.ExpectedChunks {
-		return
+		return errors.New("Chunk index out of bounds")
 	}
 
 	if !fs.Bitmask.IsSet(chunkIndex) {
@@ -97,6 +97,8 @@ func (m *UploadTracker) MarkChunk(shareID string, fileIndex int, chunkIndex int)
 		fs.ChunksUploaded++
 		state.LastActivityAt = time.Now()
 	}
+
+	return nil
 }
 
 func (m *UploadTracker) GetUploadProgress(shareID string) UploadProgress {

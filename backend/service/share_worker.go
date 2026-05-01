@@ -169,20 +169,16 @@ func (w *UploadWorker) scan() {
 
 	for _, id := range uploadingIDs {
 		status, err := w.uploadTracker.GetUploadStatus(id)
-		if err != nil {
-			if errors.Is(err, upload.ErrNotTracked) {
-				sh, getErr := w.shareRepository.Get(id)
-				if getErr != nil {
-					log.Printf("error fetching share %s: %v", id, getErr)
-					continue
-				}
-				if trackErr := w.uploadTracker.TrackUploadProgress(*sh); trackErr != nil {
-					log.Printf("error re-tracking share %s: %v", id, trackErr)
-				}
+		if errors.Is(err, upload.ErrNotTracked) {
+			sh, getErr := w.shareRepository.Get(id)
+			if getErr != nil {
+				log.Printf("error fetching share %s: %v", id, getErr)
 				continue
 			}
-			log.Printf("error getting status for %s: %v", id, err)
-			continue
+
+			if trackErr := w.uploadTracker.TrackUploadProgress(*sh); trackErr != nil {
+				log.Printf("error re-tracking share %s: %v", id, trackErr)
+			}
 		}
 
 		switch status {
