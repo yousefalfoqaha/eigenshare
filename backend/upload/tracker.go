@@ -2,37 +2,41 @@ package upload
 
 import (
 	"eigenshare/backend/share"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
 
-type fileUploadState struct {
+type internalFileUploadProgress struct {
 	FileIndex      int
 	Bitmask        Bitset
 	ExpectedChunks int
 	ChunksUploaded int
 }
 
-type shareUploadState struct {
-	Files          []fileUploadState
+type internalUploadProgress struct {
+	Files          []internalFileUploadProgress
 	LastActivityAt time.Time
 }
 
 type UploadTracker struct {
-	mu        sync.Mutex
-	uploading map[string]*shareUploadState
-	chunkSize int64
+	mu sync.Mutex
+
+	uploading    map[string]*internalUploadProgress
+	chunkSize    int64
+	staleTimeout time.Duration
 }
 
-func NewUploadTracker(chunkSize int64) *UploadTracker {
+func NewUploadTracker(chunkSize int64, staleTimeout time.Duration) *UploadTracker {
 	return &UploadTracker{
-		uploading: make(map[string]*shareUploadState),
-		chunkSize: chunkSize,
+		uploading:    make(map[string]*internalUploadProgress),
+		chunkSize:    chunkSize,
+		staleTimeout: staleTimeout,
 	}
 }
 
-func (m *UploadTracker) TrackShareUpload(sh share.Share) error {
+func (m *UploadTracker) TrackUploadProgress(sh share.Share) error {
 	for i, f := range sh.Files {
 		if f.Index != i {
 			return fmt.Errorf("file index %d out of order: expected %d", f.Index, i)
@@ -46,18 +50,18 @@ func (m *UploadTracker) TrackShareUpload(sh share.Share) error {
 		return nil
 	}
 
-	files := make([]fileUploadState, len(sh.Files))
+	files := make([]internalFileUploadProgress, len(sh.Files))
 	for i := range sh.Files {
 		numChunks := (sh.Files[i].Size + m.chunkSize - 1) / m.chunkSize
 		numBytes := (numChunks + 7) / 8
-		files[i] = fileUploadState{
+		files[i] = internalFileUploadProgress{
 			FileIndex:      sh.Files[i].Index,
 			Bitmask:        make(Bitset, numBytes),
 			ExpectedChunks: int(numChunks),
 		}
 	}
 
-	m.uploading[sh.ID] = &shareUploadState{
+	m.uploading[sh.ID] = &internalUploadProgress{
 		Files:          files,
 		LastActivityAt: time.Now(),
 	}
@@ -65,7 +69,7 @@ func (m *UploadTracker) TrackShareUpload(sh share.Share) error {
 	return nil
 }
 
-func (m *UploadTracker) UntrackShareUpload(shareID string) {
+func (m *UploadTracker) UntrackUploadProgress(shareID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.uploading, shareID)
@@ -95,13 +99,13 @@ func (m *UploadTracker) MarkChunk(shareID string, fileIndex int, chunkIndex int)
 	}
 }
 
-func (m *UploadTracker) GetShareUploadStatus(shareID string) ShareUploadStatus {
+func (m *UploadTracker) GetUploadProgress(shareID string) UploadProgress {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	state, ok := m.uploading[shareID]
 	if !ok {
-		return ShareUploadStatus{}
+		return UploadProgress{}
 	}
 
 	fileStatuses := make([]FileUploadStatus, len(state.Files))
@@ -113,66 +117,30 @@ func (m *UploadTracker) GetShareUploadStatus(shareID string) ShareUploadStatus {
 		}
 	}
 
-	return ShareUploadStatus{Files: fileStatuses, LastActivityAt: state.LastActivityAt}
+	return UploadProgress{Files: fileStatuses, LastActivityAt: state.LastActivityAt}
 }
 
-func (m *UploadTracker) IsShareComplete(shareID string) bool {
+var ErrNotTracked = errors.New("Share is not tracked")
+
+func (m *UploadTracker) GetUploadStatus(id string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	state, ok := m.uploading[shareID]
+	state, ok := m.uploading[id]
 	if !ok {
-		return false
+		return "", ErrNotTracked
 	}
+
+	cutoff := time.Now().Add(-m.staleTimeout)
+	if state.LastActivityAt.Before(cutoff) {
+		return share.STATUS_PENDING, nil
+	}
+
 	for _, f := range state.Files {
 		if f.ChunksUploaded != f.ExpectedChunks {
-			return false
+			return share.STATUS_UPLOADING, nil
 		}
 	}
 
-	return true
-}
-
-func (m *UploadTracker) GetTrackedShareIDs() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	ids := make([]string, 0, len(m.uploading))
-	for id := range m.uploading {
-		ids = append(ids, id)
-	}
-
-	return ids
-}
-
-func (m *UploadTracker) GetStaleShareIDs(since time.Duration) []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	cutoff := time.Now().Add(-since)
-	var stale []string
-	for id, state := range m.uploading {
-		if state.LastActivityAt.Before(cutoff) {
-			stale = append(stale, id)
-		}
-	}
-	return stale
-}
-
-func (m *UploadTracker) GetOrphanedShareIDs(knownIDs []string) []string {
-	knownSet := make(map[string]bool, len(knownIDs))
-	for _, id := range knownIDs {
-		knownSet[id] = true
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var orphans []string
-	for id := range m.uploading {
-		if !knownSet[id] {
-			orphans = append(orphans, id)
-		}
-	}
-	return orphans
+	return share.STATUS_COMPLETE, nil
 }

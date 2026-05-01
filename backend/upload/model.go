@@ -8,7 +8,7 @@ type FileUploadStatus struct {
 	MarkedChunks   int `json:"chunksUploaded"`
 }
 
-type ShareUploadStatus struct {
+type UploadProgress struct {
 	Files          []FileUploadStatus `json:"files"`
 	LastActivityAt time.Time          `json:"lastActivityAt"`
 }

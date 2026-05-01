@@ -90,7 +90,7 @@ func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, err
 	defer func() {
 		if !success {
 			s.fileStorage.RemoveShareFolder(sh.ID)
-			s.uploadTracker.UntrackShareUpload(sh.ID)
+			s.uploadTracker.UntrackUploadProgress(sh.ID)
 		}
 	}()
 
@@ -112,7 +112,7 @@ func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, err
 
 	}
 
-	if err := s.uploadTracker.TrackShareUpload(*sh); err != nil {
+	if err := s.uploadTracker.TrackUploadProgress(*sh); err != nil {
 		return nil, err
 	}
 
@@ -155,8 +155,8 @@ func (s *ShareService) GetShare(id string) (*share.Share, error) {
 	return sh, nil
 }
 
-func (s *ShareService) GetUploadStatus(id string) (*upload.ShareUploadStatus, error) {
-	status := s.uploadTracker.GetShareUploadStatus(id)
+func (s *ShareService) GetUploadProgress(id string) (*upload.UploadProgress, error) {
+	status := s.uploadTracker.GetUploadProgress(id)
 	return &status, nil
 }
 
@@ -202,8 +202,11 @@ func (s *ShareService) Download(shareID string, fileIndex int) (string, error) {
 		return s.fileStorage.ShareFilePath(sh.ID, fileIndex), nil
 	}
 
-	if sh.Status == share.STATUS_UPLOADING && s.uploadTracker.IsShareComplete(shareID) {
+	if sh.Status == share.STATUS_UPLOADING {
 		if err := s.shareWorker.RequestStatusUpdate(shareID, share.STATUS_COMPLETE); err != nil {
+			if errors.Is(err, ErrShareNotComplete) || errors.Is(err, ErrShareNotTracked) {
+				return "", api.NewError(http.StatusConflict, "Share is not yet complete")
+			}
 			return "", err
 		}
 

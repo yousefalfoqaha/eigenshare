@@ -95,7 +95,7 @@ func (c *ShareController) getShare(w http.ResponseWriter, r *http.Request) error
 
 func (c *ShareController) getUploadStatus(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
-	status, err := c.shareService.GetUploadStatus(id)
+	status, err := c.shareService.GetUploadProgress(id)
 	if err != nil {
 		return err
 	}

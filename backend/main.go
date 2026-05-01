@@ -38,8 +38,8 @@ func main() {
 	fileStorage := storage.NewFileStorage(DATA_PATH, DATA_TMP_PATH, CHUNK_SIZE)
 
 	shareRepo := repository.NewShareRepository(databaseStorage)
-	uploadTracker := upload.NewUploadTracker(CHUNK_SIZE)
-	shareWorker := service.NewUploadWorker(1*time.Minute, 5*time.Minute, shareRepo, uploadTracker, fileStorage)
+	uploadTracker := upload.NewUploadTracker(CHUNK_SIZE, 5*time.Minute)
+	shareWorker := service.NewUploadWorker(1*time.Minute, shareRepo, uploadTracker, fileStorage)
 	shareService := service.NewShareService(shareRepo, fileStorage, uploadTracker, shareWorker)
 	shareController := handler.NewShareController(shareService)
 	shareController.RegisterHandlers(router)

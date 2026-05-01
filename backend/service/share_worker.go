@@ -6,9 +6,15 @@ import (
 	"eigenshare/backend/share"
 	"eigenshare/backend/storage"
 	"eigenshare/backend/upload"
+	"errors"
 	"fmt"
 	"log"
 	"time"
+)
+
+var (
+	ErrShareNotComplete = errors.New("share upload is not complete")
+	ErrShareNotTracked  = errors.New("share is not tracked")
 )
 
 type updateShareStatusEvent struct {
@@ -19,7 +25,6 @@ type updateShareStatusEvent struct {
 
 type UploadWorker struct {
 	interval        time.Duration
-	staleTimeout    time.Duration
 	shareRepository *repository.ShareRepository
 	uploadTracker   *upload.UploadTracker
 	fileStorage     *storage.FileStorage
@@ -29,14 +34,12 @@ type UploadWorker struct {
 
 func NewUploadWorker(
 	interval time.Duration,
-	staleTimeout time.Duration,
 	shareRepository *repository.ShareRepository,
 	uploadTracker *upload.UploadTracker,
 	fileStorage *storage.FileStorage,
 ) *UploadWorker {
 	w := &UploadWorker{
 		interval:                interval,
-		staleTimeout:            staleTimeout,
 		shareRepository:         shareRepository,
 		uploadTracker:           uploadTracker,
 		fileStorage:             fileStorage,
@@ -85,34 +88,49 @@ func (w *UploadWorker) handleUpdateShareStatus(shareID string, status string) er
 	}
 }
 
-func (w *UploadWorker) completeShare(shareID string) error {
-	persisted, err := w.fileStorage.IsSharePersisted(shareID)
+func (w *UploadWorker) completeShare(id string) error {
+	status, err := w.uploadTracker.GetUploadStatus(id)
 	if err != nil {
+		if errors.Is(err, upload.ErrNotTracked) {
+			return ErrShareNotTracked
+		}
+		return err
+	}
+	if status != share.STATUS_COMPLETE {
+		return ErrShareNotComplete
+	}
+
+	if err := w.fileStorage.PersistShareFolder(id); err != nil {
 		return err
 	}
 
-	if !persisted {
-		if err := w.fileStorage.PersistShareFolder(shareID); err != nil {
-			return err
-		}
-	}
-
-	rowsAffected, err := w.shareRepository.UpdateStatus(shareID, share.STATUS_COMPLETE, share.STATUS_UPLOADING)
+	rowsAffected, err := w.shareRepository.UpdateStatus(id, share.STATUS_COMPLETE, share.STATUS_UPLOADING)
 	if err != nil {
 		return err
 	}
 
 	if rowsAffected == 0 {
-		log.Printf("share %s already transitioned to COMPLETE", shareID)
+		log.Printf("share %s already transitioned to COMPLETE", id)
 	}
 
-	w.uploadTracker.UntrackShareUpload(shareID)
+	w.uploadTracker.UntrackUploadProgress(id)
 
 	return nil
 }
 
-func (w *UploadWorker) staleShare(shareID string) error {
-	rowsAffected, err := w.shareRepository.UpdateStatus(shareID, share.STATUS_PENDING, share.STATUS_UPLOADING)
+func (w *UploadWorker) staleShare(id string) error {
+	status, err := w.uploadTracker.GetUploadStatus(id)
+	if err != nil {
+		if errors.Is(err, upload.ErrNotTracked) {
+			return nil
+		}
+		return err
+	}
+	if status != share.STATUS_PENDING {
+		return nil
+	}
+
+	rowsAffected, err := w.shareRepository.UpdateStatus(id, share.STATUS_PENDING, share.STATUS_UPLOADING)
 	if err != nil {
 		return err
 	}
@@ -121,69 +139,57 @@ func (w *UploadWorker) staleShare(shareID string) error {
 		return nil
 	}
 
-	w.uploadTracker.UntrackShareUpload(shareID)
-
 	return nil
 }
 
-func (w *UploadWorker) resumeShare(shareID string) error {
-	rowsAffected, err := w.shareRepository.UpdateStatus(shareID, share.STATUS_UPLOADING, share.STATUS_PENDING)
+func (w *UploadWorker) resumeShare(id string) error {
+	rowsAffected, err := w.shareRepository.UpdateStatus(id, share.STATUS_UPLOADING, share.STATUS_PENDING)
 	if err != nil {
 		return err
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("share %s is no longer in pending state", shareID)
+		return fmt.Errorf("share %s is no longer in a pending state", id)
 	}
 
-	sh, err := w.shareRepository.Get(shareID)
+	sh, err := w.shareRepository.Get(id)
 	if err != nil {
 		return err
 	}
 
-	return w.uploadTracker.TrackShareUpload(*sh)
+	return w.uploadTracker.TrackUploadProgress(*sh)
 }
 
 func (w *UploadWorker) scan() {
-	trackedIDs := w.uploadTracker.GetTrackedShareIDs()
-	staleIDs := w.uploadTracker.GetStaleShareIDs(w.staleTimeout)
 	uploadingIDs, err := w.shareRepository.GetAllUploadingShares()
 	if err != nil {
 		log.Printf("error fetching uploading shares: %v", err)
 		return
 	}
 
-	for _, id := range trackedIDs {
-		if w.uploadTracker.IsShareComplete(id) {
-			w.updateShareStatusEvents <- updateShareStatusEvent{ShareID: id, Status: share.STATUS_COMPLETE}
-		}
-	}
-
-	for _, id := range staleIDs {
-		w.updateShareStatusEvents <- updateShareStatusEvent{ShareID: id, Status: share.STATUS_PENDING}
-	}
-
-	orphanedIDs := w.uploadTracker.GetOrphanedShareIDs(uploadingIDs)
-	for _, id := range orphanedIDs {
-		persisted, err := w.fileStorage.IsSharePersisted(id)
+	for _, id := range uploadingIDs {
+		status, err := w.uploadTracker.GetUploadStatus(id)
 		if err != nil {
-			log.Printf("error checking if share %s is persisted: %v", id, err)
+			if errors.Is(err, upload.ErrNotTracked) {
+				sh, getErr := w.shareRepository.Get(id)
+				if getErr != nil {
+					log.Printf("error fetching share %s: %v", id, getErr)
+					continue
+				}
+				if trackErr := w.uploadTracker.TrackUploadProgress(*sh); trackErr != nil {
+					log.Printf("error re-tracking share %s: %v", id, trackErr)
+				}
+				continue
+			}
+			log.Printf("error getting status for %s: %v", id, err)
 			continue
 		}
 
-		if persisted {
+		switch status {
+		case share.STATUS_COMPLETE:
 			w.updateShareStatusEvents <- updateShareStatusEvent{ShareID: id, Status: share.STATUS_COMPLETE}
-			continue
-		}
-
-		sh, err := w.shareRepository.Get(id)
-		if err != nil {
-			log.Printf("error fetching orphaned share %s: %v", id, err)
-			continue
-		}
-
-		if err := w.uploadTracker.TrackShareUpload(*sh); err != nil {
-			log.Printf("error re-tracking share %s: %v", id, err)
+		case share.STATUS_PENDING:
+			w.updateShareStatusEvents <- updateShareStatusEvent{ShareID: id, Status: share.STATUS_PENDING}
 		}
 	}
 }
