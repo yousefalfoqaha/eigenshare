@@ -19,7 +19,7 @@ func NewShareController(svc *service.ShareService) *ShareController {
 func (c *ShareController) RegisterHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /shares", MakeHandler(c.getShares))
 	router.HandleFunc("GET /shares/{id}", MakeHandler(c.getShare))
-	router.HandleFunc("GET /shares/{id}/download", MakeHandler(c.download))
+	router.HandleFunc("GET /shares/{id}/download", MakeHandler(c.downloadAll))
 	router.HandleFunc("GET /shares/{id}/progress", MakeHandler(c.getProgress))
 	router.HandleFunc("POST /shares", MakeHandler(c.createShare))
 	router.HandleFunc("PUT /shares/{shareID}/files/{fileID}/stream", MakeHandler(c.streamFile))
@@ -98,7 +98,7 @@ func (c *ShareController) getProgress(w http.ResponseWriter, r *http.Request) er
 	return JSON(w, http.StatusOK, map[string]int64{"bytesWritten": bytesWritten})
 }
 
-func (c *ShareController) download(w http.ResponseWriter, r *http.Request) error {
+func (c *ShareController) downloadAll(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 
 	dirPath, err := c.shareService.DownloadAll(id)

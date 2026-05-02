@@ -131,10 +131,6 @@ func (s *ShareService) GetShares() ([]share.ShareSummary, error) {
 }
 
 func (s *ShareService) GetShare(id string) (*share.Share, error) {
-	if id == "" {
-		return nil, api.NewError(http.StatusBadRequest, "share ID is required")
-	}
-
 	sh, err := s.shareRepository.Get(id)
 	if err == sql.ErrNoRows {
 		return nil, api.NewError(http.StatusNotFound, "No share found")
