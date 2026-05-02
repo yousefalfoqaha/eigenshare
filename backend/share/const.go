@@ -1,7 +1,0 @@
-package share
-
-const (
-	STATUS_PENDING   = "PENDING"
-	STATUS_UPLOADING = "UPLOADING"
-	STATUS_COMPLETE  = "COMPLETE"
-)

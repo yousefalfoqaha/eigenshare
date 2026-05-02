@@ -20,10 +20,9 @@ func (c *ShareController) RegisterHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /shares", MakeHandler(c.getShares))
 	router.HandleFunc("GET /shares/{id}", MakeHandler(c.getShare))
 	router.HandleFunc("GET /shares/{id}/download", MakeHandler(c.download))
-	router.HandleFunc("GET /shares/{id}/upload-status", MakeHandler(c.getUploadStatus))
+	router.HandleFunc("GET /shares/{id}/progress", MakeHandler(c.getProgress))
 	router.HandleFunc("POST /shares", MakeHandler(c.createShare))
-	router.HandleFunc("POST /shares/{id}/upload", MakeHandler(c.uploadChunk))
-	router.HandleFunc("POST /shares/{id}/resume", MakeHandler(c.resumeShare))
+	router.HandleFunc("PUT /shares/{shareID}/files/{fileID}/stream", MakeHandler(c.streamFile))
 }
 
 func (c *ShareController) createShare(w http.ResponseWriter, r *http.Request) error {
@@ -39,9 +38,9 @@ func (c *ShareController) createShare(w http.ResponseWriter, r *http.Request) er
 	}
 	for i, f := range shareReq.Files {
 		params.Files[i] = service.CreateFileParams{
-			Name:  f.Name,
-			Size:  f.Size,
-			Index: f.Index,
+			Name:         f.Name,
+			ExpectedSize: f.ExpectedSize,
+			Order:        f.Order,
 		}
 	}
 
@@ -53,20 +52,16 @@ func (c *ShareController) createShare(w http.ResponseWriter, r *http.Request) er
 	return JSON(w, http.StatusCreated, sh)
 }
 
-func (c *ShareController) uploadChunk(w http.ResponseWriter, r *http.Request) error {
-	shareID := r.PathValue("id")
+func (c *ShareController) streamFile(w http.ResponseWriter, r *http.Request) error {
+	shareID := r.PathValue("shareID")
+	fileID := r.PathValue("fileID")
 
-	fileIndex, err := strconv.Atoi(r.URL.Query().Get("fileIndex"))
+	offset, err := strconv.ParseInt(r.Header.Get("X-Write-Offset"), 10, 64)
 	if err != nil {
-		return api.NewError(http.StatusBadRequest, "invalid fileIndex")
+		return api.NewError(http.StatusBadRequest, "invalid X-Write-Offset header")
 	}
 
-	chunkIndex, err := strconv.Atoi(r.URL.Query().Get("chunkIndex"))
-	if err != nil {
-		return api.NewError(http.StatusBadRequest, "invalid chunkIndex")
-	}
-
-	if err := c.shareService.UploadChunk(shareID, fileIndex, chunkIndex, r.Body); err != nil {
+	if err := c.shareService.StreamFile(shareID, fileID, offset, r.Body); err != nil {
 		return err
 	}
 
@@ -93,39 +88,24 @@ func (c *ShareController) getShare(w http.ResponseWriter, r *http.Request) error
 	return JSON(w, http.StatusOK, sh)
 }
 
-func (c *ShareController) getUploadStatus(w http.ResponseWriter, r *http.Request) error {
+func (c *ShareController) getProgress(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
-	status, err := c.shareService.GetUploadProgress(id)
+	bytesWritten, err := c.shareService.GetShareProgress(id)
 	if err != nil {
 		return err
 	}
 
-	return JSON(w, http.StatusOK, status)
+	return JSON(w, http.StatusOK, map[string]int64{"bytesWritten": bytesWritten})
 }
 
 func (c *ShareController) download(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 
-	fileIndex, err := strconv.Atoi(r.URL.Query().Get("fileIndex"))
+	dirPath, err := c.shareService.DownloadAll(id)
 	if err != nil {
 		return err
 	}
 
-	filePath, err := c.shareService.Download(id, fileIndex)
-	if err != nil {
-		return err
-	}
-
-	http.ServeFile(w, r, filePath)
+	http.ServeFile(w, r, dirPath)
 	return nil
-}
-
-func (c *ShareController) resumeShare(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	sh, err := c.shareService.ResumeShare(id)
-	if err != nil {
-		return err
-	}
-
-	return JSON(w, http.StatusOK, sh)
 }

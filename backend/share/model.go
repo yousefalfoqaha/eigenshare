@@ -13,11 +13,10 @@ var (
 type Share struct {
 	ID     string `json:"id"`
 	Handle string `json:"handle"`
-	Status string `json:"status"`
 	Files  []File `json:"files"`
 }
 
-func NewShare(id, handle string, status string) (*Share, error) {
+func NewShare(id, handle string) (*Share, error) {
 	if handle == "" {
 		return nil, fmt.Errorf("share handle is required")
 	}
@@ -28,41 +27,40 @@ func NewShare(id, handle string, status string) (*Share, error) {
 	return &Share{
 		ID:     id,
 		Handle: handle,
-		Status: status,
 	}, nil
 }
 
 type ShareSummary struct {
 	ID         string `json:"id"`
 	Handle     string `json:"handle"`
-	Status     string `json:"status"`
 	TotalFiles int    `json:"totalFiles"`
 	TotalSize  int    `json:"totalSize"`
 }
 
 type File struct {
-	Index int    `json:"index"`
-	Name  string `json:"name"`
-	Size  int64  `json:"size"`
+	ID           string `json:"id"`
+	Order        int    `json:"order"`
+	Name         string `json:"name"`
+	ExpectedSize int64  `json:"expectedSize"`
 }
 
-func NewFile(name string, size int64, index int) (*File, error) {
+func NewFile(name string, expectedSize int64, order int) (*File, error) {
 	if name == "" {
 		return nil, fmt.Errorf("file name is required")
 	}
 	if !validFileName.MatchString(name) {
 		return nil, fmt.Errorf("file name is invalid")
 	}
-	if size <= 0 {
+	if expectedSize <= 0 {
 		return nil, fmt.Errorf("file size must be greater than 0")
 	}
-	if index < 0 {
-		return nil, fmt.Errorf("file index must be greater than or equal to 0")
+	if order < 0 {
+		return nil, fmt.Errorf("file order must be greater than or equal to 0")
 	}
 
 	return &File{
-		Index: index,
-		Name:  name,
-		Size:  size,
+		Order:        order,
+		Name:         name,
+		ExpectedSize: expectedSize,
 	}, nil
 }

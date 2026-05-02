@@ -21,12 +21,11 @@ func (r *ShareRepository) GetAll() ([]share.ShareSummary, error) {
 		SELECT 
 			s.id, 
 			s.handle,
-			s.status,
-			COUNT(f.` + "`index`" + `) AS totalFiles, 
-			COALESCE(SUM(f.size), 0) AS totalSize
+			COUNT(f.` + "`order`" + `) AS totalFiles, 
+			COALESCE(SUM(f.expected_size), 0) AS totalSize
 		FROM share s
 		LEFT JOIN file f ON s.id = f.share_id
-		GROUP BY s.id, s.handle, s.status`
+		GROUP BY s.id, s.handle`
 
 	rows, err := r.storage.DB.Query(query)
 	if err != nil {
@@ -36,7 +35,7 @@ func (r *ShareRepository) GetAll() ([]share.ShareSummary, error) {
 
 	for rows.Next() {
 		var s share.ShareSummary
-		if err := rows.Scan(&s.ID, &s.Handle, &s.Status, &s.TotalFiles, &s.TotalSize); err != nil {
+		if err := rows.Scan(&s.ID, &s.Handle, &s.TotalFiles, &s.TotalSize); err != nil {
 			return nil, err
 		}
 		summaries = append(summaries, s)
@@ -49,37 +48,11 @@ func (r *ShareRepository) GetAll() ([]share.ShareSummary, error) {
 	return summaries, nil
 }
 
-func (r *ShareRepository) GetAllUploadingShares() ([]string, error) {
-	var ids []string
-	query := `SELECT id FROM share WHERE status = ?`
-
-	rows, err := r.storage.DB.Query(query, share.STATUS_UPLOADING)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-
-		ids = append(ids, id)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return ids, nil
-}
-
 func (r *ShareRepository) Get(id string) (*share.Share, error) {
 	var sh share.Share
 
-	row := r.storage.DB.QueryRow("SELECT id, handle, status FROM share WHERE id = ?", id)
-	if err := row.Scan(&sh.ID, &sh.Handle, &sh.Status); err != nil {
+	row := r.storage.DB.QueryRow("SELECT id, handle FROM share WHERE id = ?", id)
+	if err := row.Scan(&sh.ID, &sh.Handle); err != nil {
 		return nil, err
 	}
 
@@ -123,8 +96,8 @@ func (r *ShareRepository) Save(s share.Share, tx *sql.Tx) (*share.Share, error) 
 	}
 
 	_, err = tx.Exec(
-		"INSERT INTO share (id, handle, status) VALUES (?, ?, ?)",
-		s.ID, s.Handle, s.Status,
+		"INSERT INTO share (id, handle) VALUES (?, ?)",
+		s.ID, s.Handle,
 	)
 	if err != nil {
 		return nil, err
@@ -132,8 +105,8 @@ func (r *ShareRepository) Save(s share.Share, tx *sql.Tx) (*share.Share, error) 
 
 	for _, f := range s.Files {
 		_, err := tx.Exec(
-			"INSERT INTO file (name, size, `index`, share_id) VALUES (?, ?, ?, ?)",
-			f.Name, f.Size, f.Index, s.ID,
+			"INSERT INTO file (id, name, expected_size, `order`, share_id) VALUES (?, ?, ?, ?, ?)",
+			f.ID, f.Name, f.ExpectedSize, f.Order, s.ID,
 		)
 		if err != nil {
 			return nil, err
@@ -143,18 +116,10 @@ func (r *ShareRepository) Save(s share.Share, tx *sql.Tx) (*share.Share, error) 
 	return &s, nil
 }
 
-func (r *ShareRepository) UpdateStatus(id string, newStatus string, expectedStatus string) (int64, error) {
-	result, err := r.storage.DB.Exec("UPDATE share SET status = ? WHERE id = ? AND status = ?", newStatus, id, expectedStatus)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 func (r *ShareRepository) getAllFilesByShareID(id string) ([]share.File, error) {
 	var files []share.File
 	rows, err := r.storage.DB.Query(
-		"SELECT name, size, `index` FROM file WHERE share_id = ? ORDER BY `index`", id)
+		"SELECT id, name, expected_size, `order` FROM file WHERE share_id = ? ORDER BY `order`", id)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +127,7 @@ func (r *ShareRepository) getAllFilesByShareID(id string) ([]share.File, error) 
 
 	for rows.Next() {
 		var file share.File
-		if err := rows.Scan(&file.Name, &file.Size, &file.Index); err != nil {
+		if err := rows.Scan(&file.ID, &file.Name, &file.ExpectedSize, &file.Order); err != nil {
 			return nil, err
 		}
 		files = append(files, file)

@@ -1,92 +1,134 @@
 package storage
 
 import (
+	"eigenshare/backend/share"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
+)
+
+var (
+	ErrFileNotFound       = errors.New("File not found")
+	ErrInvalidChunkOffset = errors.New("Wrong chunk offset")
 )
 
 type FileStorage struct {
-	tmpDir    string
 	dataDir   string
 	chunkSize int64
 }
 
-func NewFileStorage(dataDir string, tmpDir string, chunkSize int64) *FileStorage {
-	return &FileStorage{dataDir, tmpDir, chunkSize}
+func NewFileStorage(dataDir string, chunkSize int64) *FileStorage {
+	return &FileStorage{dataDir, chunkSize}
 }
 
-func (s *FileStorage) PersistShareFolder(shareID string) error {
-	err := os.Rename(filepath.Join(s.tmpDir, shareID), filepath.Join(s.dataDir, shareID))
+func (s *FileStorage) CreateShareFolder(share share.Share) error {
+	err := os.MkdirAll(filepath.Join(s.dataDir, share.ID), 0755)
 	if err != nil {
 		return err
+	}
+
+	for _, f := range share.Files {
+		err := s.createFile(share.ID, f.ID)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (s *FileStorage) CreateShareFolder(shareID string) error {
-	return os.MkdirAll(filepath.Join(s.tmpDir, shareID), 0755)
-}
-
-func (s *FileStorage) CreateFile(shareID string, fileIndex int, size int64) error {
-	filePath := filepath.Join(s.tmpDir, shareID, strconv.Itoa(fileIndex))
+func (s *FileStorage) createFile(shareID string, fileID string) error {
+	filePath := filepath.Join(s.dataDir, shareID, fileID)
 	f, err := os.Create(filePath)
 	if err != nil {
 		return err
 	}
-
 	defer f.Close()
-
-	if err := f.Truncate(size); err != nil {
-		return err
-	}
 
 	return nil
 }
 
 func (s *FileStorage) RemoveShareFolder(shareID string) error {
-	return os.RemoveAll(filepath.Join(s.tmpDir, shareID))
+	return os.RemoveAll(filepath.Join(s.dataDir, shareID))
 }
 
-func (s *FileStorage) WriteChunk(shareID string, fileIndex int, chunkIndex int, chunkReader io.Reader) error {
-	filePath := filepath.Join(s.tmpDir, shareID, strconv.Itoa(fileIndex))
-	f, err := os.OpenFile(filePath, os.O_RDWR, 0644)
+func (s *FileStorage) WriteFileStream(shareID string, fileID string, expectedSize int64, offset int64, fileReader io.Reader) error {
+	filePath := filepath.Join(s.dataDir, shareID, fileID)
+	f, err := os.OpenFile(filePath, os.O_WRONLY, 0644)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrFileNotFound
+		}
 		return err
 	}
 	defer f.Close()
 
-	offset := int64(chunkIndex) * s.chunkSize
+	stat, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	if offset != stat.Size() {
+		return ErrInvalidChunkOffset
+	}
+
 	if _, err = f.Seek(offset, io.SeekStart); err != nil {
 		return err
 	}
 
-	if _, err := io.Copy(f, io.LimitReader(chunkReader, s.chunkSize)); err != nil {
+	remaining := expectedSize - offset
+	if _, err := io.Copy(f, io.LimitReader(fileReader, remaining)); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *FileStorage) IsSharePersisted(shareID string) (bool, error) {
-	if shareID == "" {
-		return false, errors.New("share ID is empty")
+func (s *FileStorage) IsShareComplete(share share.Share) (bool, error) {
+	sharePath := filepath.Join(s.dataDir, share.ID)
+
+	for _, f := range share.Files {
+		stat, err := os.Stat(filepath.Join(sharePath, f.ID))
+		if os.IsNotExist(err) {
+			return false, ErrFileNotFound
+		}
+
+		inProgress := stat.Size() != f.ExpectedSize
+		if inProgress {
+			return false, nil
+		}
 	}
 
-	_, err := os.Stat(filepath.Join(s.dataDir, shareID))
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-
-	return false, err
+	return true, nil
 }
 
-func (s *FileStorage) ShareFilePath(shareID string, fileIndex int) string {
-	return filepath.Join(s.dataDir, shareID, strconv.Itoa(fileIndex))
+func (s *FileStorage) GetShareBytesWritten(share share.Share) (int64, error) {
+	sharePath := filepath.Join(s.dataDir, share.ID)
+
+	var written int64
+	for _, f := range share.Files {
+		stat, err := os.Stat(filepath.Join(sharePath, f.ID))
+		if os.IsNotExist(err) {
+			return 0, ErrFileNotFound
+		}
+
+		written += stat.Size()
+	}
+
+	return written, nil
+}
+
+func (s *FileStorage) SharePath(shareID string) string {
+	return filepath.Join(s.dataDir, shareID)
+}
+
+func (s *FileStorage) GetShareFilePath(shareID string, fileID string) (string, error) {
+	path := filepath.Join(s.dataDir, shareID, fileID)
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return "", ErrFileNotFound
+	}
+
+	return path, nil
 }

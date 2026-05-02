@@ -1,9 +1,9 @@
 package handler
 
 type fileRequest struct {
-	Index int    `json:"index"`
-	Name  string `json:"name"`
-	Size  int64  `json:"size"`
+	Order        int    `json:"order"`
+	Name         string `json:"name"`
+	ExpectedSize int64  `json:"expectedSize"`
 }
 
 type shareRequest struct {

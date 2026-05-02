@@ -6,7 +6,6 @@ import (
 	"eigenshare/backend/repository"
 	"eigenshare/backend/share"
 	"eigenshare/backend/storage"
-	"eigenshare/backend/upload"
 	"errors"
 	"io"
 	"net/http"
@@ -17,24 +16,16 @@ import (
 type ShareService struct {
 	shareRepository *repository.ShareRepository
 	fileStorage     *storage.FileStorage
-	uploadTracker   *upload.UploadTracker
-	shareWorker     *UploadWorker
 }
 
-func NewShareService(repo *repository.ShareRepository, fs *storage.FileStorage, ut *upload.UploadTracker, sw *UploadWorker) *ShareService {
+func NewShareService(repo *repository.ShareRepository, fs *storage.FileStorage) *ShareService {
 	return &ShareService{
 		shareRepository: repo,
 		fileStorage:     fs,
-		uploadTracker:   ut,
-		shareWorker:     sw,
 	}
 }
 
-func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int, chunk io.Reader) error {
-	if shareID == "" {
-		return api.NewError(http.StatusBadRequest, "Share ID is empty")
-	}
-
+func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, stream io.Reader) error {
 	sh, err := s.shareRepository.Get(shareID)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -44,13 +35,9 @@ func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int
 		return err
 	}
 
-	if sh.Status != share.STATUS_UPLOADING {
-		return api.NewError(http.StatusConflict, "Share is not uploading")
-	}
-
 	var file *share.File
 	for i, f := range sh.Files {
-		if f.Index == fileIndex {
+		if f.ID == fileID {
 			file = &sh.Files[i]
 			break
 		}
@@ -59,14 +46,20 @@ func (s *ShareService) UploadChunk(shareID string, fileIndex int, chunkIndex int
 		return api.NewError(http.StatusNotFound, "No file found")
 	}
 
-	err = s.fileStorage.WriteChunk(shareID, fileIndex, chunkIndex, chunk)
-	if err != nil {
-		return err
+	if offset >= file.ExpectedSize {
+		return api.NewError(http.StatusConflict, "Chunk offset exceeds declared file size")
 	}
 
-	err = s.uploadTracker.MarkChunk(*sh, fileIndex, chunkIndex)
-	if err == upload.ErrNotTracked {
-		s.uploadTracker.TrackUploadProgress(*sh)
+	err = s.fileStorage.WriteFileStream(shareID, file.ID, file.ExpectedSize, offset, stream)
+	if err != nil {
+		if errors.Is(err, storage.ErrInvalidChunkOffset) {
+			return api.NewError(http.StatusBadRequest, "Invalid chunk offset")
+		}
+		if errors.Is(err, storage.ErrFileNotFound) {
+			return api.NewError(http.StatusBadRequest, "File not found")
+		}
+
+		return err
 	}
 
 	return nil
@@ -78,13 +71,13 @@ type CreateShareParams struct {
 }
 
 type CreateFileParams struct {
-	Name  string
-	Size  int64
-	Index int
+	Name         string
+	ExpectedSize int64
+	Order        int
 }
 
 func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, error) {
-	sh, err := share.NewShare(uuid.New().String(), params.Handle, share.STATUS_UPLOADING)
+	sh, err := share.NewShare(uuid.New().String(), params.Handle)
 	if err != nil {
 		return nil, api.NewError(http.StatusBadRequest, err.Error())
 	}
@@ -93,29 +86,24 @@ func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, err
 	defer func() {
 		if !success {
 			s.fileStorage.RemoveShareFolder(sh.ID)
-			s.uploadTracker.UntrackUploadProgress(sh.ID)
 		}
 	}()
 
-	if err := s.fileStorage.CreateShareFolder(sh.ID); err != nil {
-		return nil, err
-	}
-
 	for _, f := range params.Files {
-		file, err := share.NewFile(f.Name, f.Size, f.Index)
+		file, err := share.NewFile(f.Name, f.ExpectedSize, f.Order)
+		if err != nil {
+			return nil, api.NewError(http.StatusBadRequest, err.Error())
+		}
+
+		file.ID = uuid.New().String()
 		if err != nil {
 			return nil, api.NewError(http.StatusBadRequest, err.Error())
 		}
 
 		sh.Files = append(sh.Files, *file)
-
-		if err := s.fileStorage.CreateFile(sh.ID, f.Index, f.Size); err != nil {
-			return nil, err
-		}
-
 	}
 
-	if err := s.uploadTracker.TrackUploadProgress(*sh); err != nil {
+	if err := s.fileStorage.CreateShareFolder(*sh); err != nil {
 		return nil, err
 	}
 
@@ -158,41 +146,24 @@ func (s *ShareService) GetShare(id string) (*share.Share, error) {
 	return sh, nil
 }
 
-func (s *ShareService) GetUploadProgress(id string) (*upload.UploadProgress, error) {
-	status := s.uploadTracker.GetUploadProgress(id)
-	return &status, nil
-}
-
-func (s *ShareService) ResumeShare(shareID string) (*share.Share, error) {
-	if shareID == "" {
-		return nil, api.NewError(http.StatusBadRequest, "Share ID is required")
-	}
-
-	sh, err := s.shareRepository.Get(shareID)
+func (s *ShareService) GetShareProgress(id string) (int64, error) {
+	sh, err := s.shareRepository.Get(id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, api.NewError(http.StatusNotFound, "No share found")
+			return 0, api.NewError(http.StatusNotFound, "No share found")
 		}
-		return nil, err
+		return 0, err
 	}
 
-	if sh.Status != share.STATUS_PENDING {
-		return nil, api.NewError(http.StatusConflict, "Share is not in pending state")
+	bytesWritten, err := s.fileStorage.GetShareBytesWritten(*sh)
+	if errors.Is(err, storage.ErrFileNotFound) {
+		return 0, api.NewError(http.StatusBadRequest, "No share folder found")
 	}
 
-	if err := s.shareWorker.RequestStatusUpdate(shareID, share.STATUS_UPLOADING); err != nil {
-		return nil, err
-	}
-
-	sh.Status = share.STATUS_UPLOADING
-	return sh, nil
+	return bytesWritten, nil
 }
 
-func (s *ShareService) Download(shareID string, fileIndex int) (string, error) {
-	if shareID == "" {
-		return "", api.NewError(http.StatusBadRequest, "Share ID is required")
-	}
-
+func (s *ShareService) DownloadAll(shareID string) (string, error) {
 	sh, err := s.shareRepository.Get(shareID)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -201,20 +172,14 @@ func (s *ShareService) Download(shareID string, fileIndex int) (string, error) {
 		return "", err
 	}
 
-	if sh.Status == share.STATUS_COMPLETE {
-		return s.fileStorage.ShareFilePath(sh.ID, fileIndex), nil
+	isComplete, err := s.fileStorage.IsShareComplete(*sh)
+	if errors.Is(err, storage.ErrFileNotFound) {
+		return "", api.NewError(http.StatusBadRequest, "No share folder found")
 	}
 
-	if sh.Status == share.STATUS_UPLOADING {
-		if err := s.shareWorker.RequestStatusUpdate(shareID, share.STATUS_COMPLETE); err != nil {
-			if errors.Is(err, ErrShareNotComplete) || errors.Is(err, ErrShareNotTracked) {
-				return "", api.NewError(http.StatusConflict, "Share is not yet complete")
-			}
-			return "", err
-		}
-
-		return s.fileStorage.ShareFilePath(sh.ID, fileIndex), nil
+	if !isComplete {
+		return "", api.NewError(http.StatusConflict, "Share is not completed")
 	}
 
-	return "", api.NewError(http.StatusConflict, "Share is not yet complete")
+	return s.fileStorage.SharePath(sh.ID), nil
 }
