@@ -225,6 +225,7 @@ func TestCreateShareWithExpiry(t *testing.T) {
 	srv := setupTestServer(t)
 	sh := createShare(t, srv, defaultShareBody("expiry-test", 60))
 
+	// validate created share
 	if sh.ID == "" {
 		t.Fatal("expected non-empty ID")
 	}
@@ -249,6 +250,7 @@ func TestCreatePermanentShare(t *testing.T) {
 	srv := setupTestServer(t)
 	sh := createShare(t, srv, defaultShareBody("permanent-test", 0))
 
+	// validate permanent share = nil ExpiresAt
 	if sh.ExpiresAt != nil {
 		t.Fatalf("expected expiresAt to be null, got %v", *sh.ExpiresAt)
 	}
@@ -266,6 +268,8 @@ func TestCreateShareInvalidExpiry(t *testing.T) {
 
 func TestCreateShareEmptyHandle(t *testing.T) {
 	srv := setupTestServer(t)
+
+	// request share with empty handle
 	body := defaultShareBody("", 60)
 	resp := doRequest(t, http.MethodPost, srv.URL+"/shares", body)
 	defer resp.Body.Close()
@@ -279,6 +283,7 @@ func TestCreateShareDuplicateHandle(t *testing.T) {
 	srv := setupTestServer(t)
 	createShare(t, srv, defaultShareBody("dup-handle", 60))
 
+	// make request with same handle
 	resp := doRequest(t, http.MethodPost, srv.URL+"/shares", defaultShareBody("dup-handle", 60))
 	defer resp.Body.Close()
 
@@ -291,6 +296,7 @@ func TestStreamFile(t *testing.T) {
 	srv := setupTestServer(t)
 	sh := createShare(t, srv, defaultShareBody("stream-test", 60))
 
+	// populate 100 bytes
 	data := make([]byte, 100)
 	for i := range data {
 		data[i] = byte(i)
@@ -539,6 +545,7 @@ func TestStreamWithResume(t *testing.T) {
 	largeData := readFile(t, "sample.pdf")
 	midpoint := int64(len(largeData) / 2)
 
+	// request share
 	body := handler.ShareRequest{
 		Handle:        "resume-test",
 		ExpiryMinutes: 60,
@@ -548,28 +555,33 @@ func TestStreamWithResume(t *testing.T) {
 	}
 	sh := createShare(t, srv, body)
 
+	// stream file to requested share
 	resp := streamFile(t, srv, sh.ID, sh.Files[0].ID, largeData[:midpoint], 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204 for first chunk, got %d", resp.StatusCode)
 	}
 
+	// check progress at midpoint
 	written := getProgress(t, srv, sh.ID)
 	if written != midpoint {
 		t.Fatalf("expected %d bytes written after first chunk, got %d", midpoint, written)
 	}
 
+	// continue streaming rest of file
 	resp = streamFile(t, srv, sh.ID, sh.Files[0].ID, largeData[midpoint:], midpoint)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204 for second chunk, got %d", resp.StatusCode)
 	}
 
+	// check full progress
 	written = getProgress(t, srv, sh.ID)
 	if written != int64(len(largeData)) {
 		t.Fatalf("expected %d bytes written after resume, got %d", len(largeData), written)
 	}
 
+	// download share
 	dlResp, err := http.Get(srv.URL + "/shares/" + sh.ID + "/download")
 	if err != nil {
 		t.Fatal(err)
@@ -585,6 +597,7 @@ func TestStreamWithResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// check download zip
 	files := extractZipFiles(t, bodyBytes)
 	if !bytes.Equal(files["sample.pdf"], largeData) {
 		t.Fatalf("sample.pdf content mismatch: expected %d bytes, got %d bytes", len(largeData), len(files["sample.pdf"]))
