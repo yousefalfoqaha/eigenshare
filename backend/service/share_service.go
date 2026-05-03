@@ -96,10 +96,6 @@ func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, err
 		}
 
 		file.ID = uuid.New().String()
-		if err != nil {
-			return nil, api.NewError(http.StatusBadRequest, err.Error())
-		}
-
 		sh.Files = append(sh.Files, *file)
 	}
 
@@ -159,13 +155,40 @@ func (s *ShareService) GetShareProgress(id string) (int64, error) {
 	return bytesWritten, nil
 }
 
-func (s *ShareService) DownloadAll(shareID string) (string, error) {
+func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
+	sh, err := s.shareRepository.Get(shareID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return api.NewError(http.StatusNotFound, "No share found")
+		}
+		return err
+	}
+
+	err = s.fileStorage.CreateShareZipStream(*sh, w)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *ShareService) DownloadFile(shareID string, fileID string) (string, error) {
 	sh, err := s.shareRepository.Get(shareID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", api.NewError(http.StatusNotFound, "No share found")
 		}
 		return "", err
+	}
+	var file *share.File
+	for i, f := range sh.Files {
+		if f.ID == fileID {
+			file = &sh.Files[i]
+			break
+		}
+	}
+	if file == nil {
+		return "", api.NewError(http.StatusNotFound, "No file found")
 	}
 
 	isComplete, err := s.fileStorage.IsShareComplete(*sh)
@@ -177,5 +200,12 @@ func (s *ShareService) DownloadAll(shareID string) (string, error) {
 		return "", api.NewError(http.StatusConflict, "Share is not completed")
 	}
 
-	return s.fileStorage.SharePath(sh.ID), nil
+	filePath, err := s.fileStorage.ShareFilePath(sh.ID, file.ID)
+	if err != nil {
+		if errors.Is(err, storage.ErrFileNotFound) {
+			return "", api.NewError(http.StatusBadRequest, "No share folder found")
+		}
+	}
+
+	return filePath, nil
 }

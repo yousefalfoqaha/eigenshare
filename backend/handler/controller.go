@@ -99,13 +99,9 @@ func (c *ShareController) getProgress(w http.ResponseWriter, r *http.Request) er
 }
 
 func (c *ShareController) downloadAll(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="share.zip"`)
+
 	id := r.PathValue("id")
-
-	dirPath, err := c.shareService.DownloadAll(id)
-	if err != nil {
-		return err
-	}
-
-	http.ServeFile(w, r, dirPath)
-	return nil
+	return c.shareService.DownloadAll(id, w)
 }

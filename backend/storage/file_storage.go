@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"archive/zip"
 	"eigenshare/backend/share"
 	"errors"
 	"io"
@@ -119,11 +120,7 @@ func (s *FileStorage) GetShareBytesWritten(share share.Share) (int64, error) {
 	return written, nil
 }
 
-func (s *FileStorage) SharePath(shareID string) string {
-	return filepath.Join(s.dataDir, shareID)
-}
-
-func (s *FileStorage) GetShareFilePath(shareID string, fileID string) (string, error) {
+func (s *FileStorage) ShareFilePath(shareID string, fileID string) (string, error) {
 	path := filepath.Join(s.dataDir, shareID, fileID)
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -131,4 +128,32 @@ func (s *FileStorage) GetShareFilePath(shareID string, fileID string) (string, e
 	}
 
 	return path, nil
+}
+
+func (s *FileStorage) CreateShareZipStream(sh share.Share, w io.Writer) error {
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	for _, f := range sh.Files {
+		path := filepath.Join(s.dataDir, sh.ID, f.ID)
+		src, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+
+		dst, err := zw.Create(f.Name)
+		if err != nil {
+			src.Close()
+			return err
+		}
+
+		if _, err := io.Copy(dst, src); err != nil {
+			src.Close()
+			return err
+		}
+
+		src.Close()
+	}
+
+	return nil
 }
