@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -54,6 +55,15 @@ func setupTestServer(t *testing.T) *testServer {
 		shareService: shareSvc,
 		srv:          srv,
 	}
+}
+
+func readFile(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "resources", "e2e_tests", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func doRequest(t *testing.T, method, url string, body any) *http.Response {
@@ -185,6 +195,30 @@ func defaultShareBody(handle string, expiryMinutes int) handler.ShareRequest {
 			{Name: "test.txt", ExpectedSize: 100, Order: 0},
 		},
 	}
+}
+
+func extractZipFiles(t *testing.T, data []byte) map[string][]byte {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := make(map[string][]byte)
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[f.Name] = content
+	}
+
+	return files
 }
 
 func TestCreateShareWithExpiry(t *testing.T) {
@@ -445,29 +479,30 @@ func TestDeleteMultipleShares(t *testing.T) {
 
 func TestDownloadCompleteShare(t *testing.T) {
 	srv := setupTestServer(t)
+
+	helloData := readFile(t, "hello.txt")
+	binaryData := readFile(t, "binary.bin")
+
 	body := handler.ShareRequest{
 		Handle:        "download-test",
 		ExpiryMinutes: 60,
 		Files: []handler.FileRequest{
-			{Name: "hello.txt", ExpectedSize: 5, Order: 0},
-			{Name: "world.txt", ExpectedSize: 5, Order: 1},
+			{Name: "hello.txt", ExpectedSize: int64(len(helloData)), Order: 0},
+			{Name: "binary.bin", ExpectedSize: int64(len(binaryData)), Order: 1},
 		},
 	}
 	sh := createShare(t, srv, body)
 
-	fileA := []byte("hello")
-	fileB := []byte("world")
-
-	resp := streamFile(t, srv, sh.ID, sh.Files[0].ID, fileA, 0)
+	resp := streamFile(t, srv, sh.ID, sh.Files[0].ID, helloData, 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("expected 204 for file 0, got %d", resp.StatusCode)
+		t.Fatalf("expected 204 for hello.txt, got %d", resp.StatusCode)
 	}
 
-	resp = streamFile(t, srv, sh.ID, sh.Files[1].ID, fileB, 0)
+	resp = streamFile(t, srv, sh.ID, sh.Files[1].ID, binaryData, 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("expected 204 for file 1, got %d", resp.StatusCode)
+		t.Fatalf("expected 204 for binary.bin, got %d", resp.StatusCode)
 	}
 
 	dlResp, err := http.Get(srv.URL + "/shares/" + sh.ID + "/download")
@@ -485,97 +520,134 @@ func TestDownloadCompleteShare(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	zr, err := zip.NewReader(bytes.NewReader(bodyBytes), int64(len(bodyBytes)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(zr.File) != 2 {
-		t.Fatalf("expected 2 files in zip, got %d", len(zr.File))
+	files := extractZipFiles(t, bodyBytes)
+	if len(files) != 2 {
+		t.Fatalf("expected 2 files in zip, got %d", len(files))
 	}
 
-	filesInZip := map[string]string{}
-	for _, f := range zr.File {
-		rc, err := f.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		content, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		filesInZip[f.Name] = string(content)
+	if !bytes.Equal(files["hello.txt"], helloData) {
+		t.Fatalf("hello.txt content mismatch: expected %d bytes, got %d bytes", len(helloData), len(files["hello.txt"]))
 	}
-
-	if filesInZip["hello.txt"] != "hello" {
-		t.Fatalf("expected hello.txt to contain 'hello', got %q", filesInZip["hello.txt"])
-	}
-	if filesInZip["world.txt"] != "world" {
-		t.Fatalf("expected world.txt to contain 'world', got %q", filesInZip["world.txt"])
+	if !bytes.Equal(files["binary.bin"], binaryData) {
+		t.Fatalf("binary.bin content mismatch: expected %d bytes, got %d bytes", len(binaryData), len(files["binary.bin"]))
 	}
 }
 
 func TestStreamWithResume(t *testing.T) {
 	srv := setupTestServer(t)
+
+	largeData := readFile(t, "sample.pdf")
+	midpoint := int64(len(largeData) / 2)
+
 	body := handler.ShareRequest{
 		Handle:        "resume-test",
 		ExpiryMinutes: 60,
 		Files: []handler.FileRequest{
-			{Name: "resume.txt", ExpectedSize: 100, Order: 0},
+			{Name: "sample.pdf", ExpectedSize: int64(len(largeData)), Order: 0},
 		},
 	}
 	sh := createShare(t, srv, body)
 
-	firstHalf := make([]byte, 50)
-	for i := range firstHalf {
-		firstHalf[i] = byte(i)
-	}
-
-	resp := streamFile(t, srv, sh.ID, sh.Files[0].ID, firstHalf, 0)
+	resp := streamFile(t, srv, sh.ID, sh.Files[0].ID, largeData[:midpoint], 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204 for first chunk, got %d", resp.StatusCode)
 	}
 
 	written := getProgress(t, srv, sh.ID)
-	if written != 50 {
-		t.Fatalf("expected 50 bytes written after first chunk, got %d", written)
+	if written != midpoint {
+		t.Fatalf("expected %d bytes written after first chunk, got %d", midpoint, written)
 	}
 
-	secondHalf := make([]byte, 50)
-	for i := range secondHalf {
-		secondHalf[i] = byte(50 + i)
-	}
-
-	resp = streamFile(t, srv, sh.ID, sh.Files[0].ID, secondHalf, 50)
+	resp = streamFile(t, srv, sh.ID, sh.Files[0].ID, largeData[midpoint:], midpoint)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204 for second chunk, got %d", resp.StatusCode)
 	}
 
 	written = getProgress(t, srv, sh.ID)
-	if written != 100 {
-		t.Fatalf("expected 100 bytes written after resume, got %d", written)
+	if written != int64(len(largeData)) {
+		t.Fatalf("expected %d bytes written after resume, got %d", len(largeData), written)
+	}
+
+	dlResp, err := http.Get(srv.URL + "/shares/" + sh.ID + "/download")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dlResp.Body.Close()
+
+	if dlResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", dlResp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(dlResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := extractZipFiles(t, bodyBytes)
+	if !bytes.Equal(files["sample.pdf"], largeData) {
+		t.Fatalf("sample.pdf content mismatch: expected %d bytes, got %d bytes", len(largeData), len(files["sample.pdf"]))
+	}
+}
+
+func TestBinaryIntegrity(t *testing.T) {
+	srv := setupTestServer(t)
+
+	binaryData := readFile(t, "binary.bin")
+
+	body := handler.ShareRequest{
+		Handle:        "binary-test",
+		ExpiryMinutes: 60,
+		Files: []handler.FileRequest{
+			{Name: "binary.bin", ExpectedSize: int64(len(binaryData)), Order: 0},
+		},
+	}
+	sh := createShare(t, srv, body)
+
+	resp := streamFile(t, srv, sh.ID, sh.Files[0].ID, binaryData, 0)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", resp.StatusCode)
+	}
+
+	dlResp, err := http.Get(srv.URL + "/shares/" + sh.ID + "/download")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dlResp.Body.Close()
+
+	if dlResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", dlResp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(dlResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := extractZipFiles(t, bodyBytes)
+	if !bytes.Equal(files["binary.bin"], binaryData) {
+		t.Fatalf("binary.bin round-trip failed: expected %d bytes, got %d bytes", len(binaryData), len(files["binary.bin"]))
 	}
 }
 
 func TestDownloadIncompleteShare(t *testing.T) {
 	srv := setupTestServer(t)
+
+	binaryData := readFile(t, "binary.bin")
+	partialSize := int64(len(binaryData) / 2)
+
 	body := handler.ShareRequest{
 		Handle:        "incomplete-test",
 		ExpiryMinutes: 60,
 		Files: []handler.FileRequest{
-			{Name: "partial.txt", ExpectedSize: 100, Order: 0},
+			{Name: "binary.bin", ExpectedSize: int64(len(binaryData)), Order: 0},
 		},
 	}
 	sh := createShare(t, srv, body)
 
-	partialData := make([]byte, 50)
-	for i := range partialData {
-		partialData[i] = byte(i)
-	}
-
-	resp := streamFile(t, srv, sh.ID, sh.Files[0].ID, partialData, 0)
+	resp := streamFile(t, srv, sh.ID, sh.Files[0].ID, binaryData[:partialSize], 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204 for partial upload, got %d", resp.StatusCode)
@@ -596,25 +668,12 @@ func TestDownloadIncompleteShare(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	zr, err := zip.NewReader(bytes.NewReader(bodyBytes), int64(len(bodyBytes)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(zr.File) != 1 {
-		t.Fatalf("expected 1 file in zip, got %d", len(zr.File))
+	files := extractZipFiles(t, bodyBytes)
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file in zip, got %d", len(files))
 	}
 
-	rc, err := zr.File[0].Open()
-	if err != nil {
-		t.Fatal(err)
-	}
-	content, err := io.ReadAll(rc)
-	rc.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if string(content) != string(partialData) {
-		t.Fatalf("expected partial content of %d bytes, got %d bytes", len(partialData), len(content))
+	if !bytes.Equal(files["binary.bin"], binaryData[:partialSize]) {
+		t.Fatalf("partial content mismatch: expected %d bytes, got %d bytes", partialSize, len(files["binary.bin"]))
 	}
 }
