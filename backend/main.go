@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"eigenshare/backend/handler"
+	"eigenshare/backend/job"
 	"eigenshare/backend/middleware"
 	"eigenshare/backend/repository"
 	"eigenshare/backend/service"
@@ -19,23 +20,17 @@ import (
 )
 
 const (
-	PORT int = 8080
-
-	CHUNK_SIZE = int64(1024 * 1024 * 5)
-
-	DATA_PATH = "data"
+	PORT      int = 8080
+	DATA_PATH     = "data"
 )
 
 func main() {
 	router := http.NewServeMux()
 
 	databaseStorage := storage.NewDatabaseStorage()
-	fileStorage := storage.NewFileStorage(DATA_PATH, CHUNK_SIZE)
-
+	fileStorage := storage.NewFileStorage(DATA_PATH)
 	shareRepo := repository.NewShareRepository(databaseStorage)
-
 	shareService := service.NewShareService(shareRepo, fileStorage)
-
 	shareController := handler.NewShareController(shareService)
 	shareController.RegisterHandlers(router)
 
@@ -51,6 +46,8 @@ func main() {
 		fmt.Println("Shutting down...")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
+		go job.NewExpiryJob(shutdownCtx, shareService, 1*time.Minute)
+
 		server.Shutdown(shutdownCtx)
 	}()
 

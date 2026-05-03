@@ -22,6 +22,7 @@ func (c *ShareController) RegisterHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /shares/{id}/download", MakeHandler(c.downloadAll))
 	router.HandleFunc("GET /shares/{id}/progress", MakeHandler(c.getProgress))
 	router.HandleFunc("POST /shares", MakeHandler(c.createShare))
+	router.HandleFunc("DELETE /shares/{id}", MakeHandler(c.deleteShare))
 	router.HandleFunc("PUT /shares/{shareID}/files/{fileID}/stream", MakeHandler(c.streamFile))
 }
 
@@ -33,8 +34,9 @@ func (c *ShareController) createShare(w http.ResponseWriter, r *http.Request) er
 	}
 
 	params := service.CreateShareParams{
-		Handle: shareReq.Handle,
-		Files:  make([]service.CreateFileParams, len(shareReq.Files)),
+		Handle:        shareReq.Handle,
+		ExpiryMinutes: shareReq.ExpiryMinutes,
+		Files:         make([]service.CreateFileParams, len(shareReq.Files)),
 	}
 	for i, f := range shareReq.Files {
 		params.Files[i] = service.CreateFileParams{
@@ -50,6 +52,16 @@ func (c *ShareController) createShare(w http.ResponseWriter, r *http.Request) er
 	}
 
 	return JSON(w, http.StatusCreated, sh)
+}
+
+func (c *ShareController) deleteShare(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	if err := c.shareService.Delete(id); err != nil {
+		return err
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func (c *ShareController) streamFile(w http.ResponseWriter, r *http.Request) error {

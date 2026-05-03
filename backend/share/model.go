@@ -1,8 +1,10 @@
 package share
 
 import (
+	"eigenshare/backend/timestamp"
 	"fmt"
 	"regexp"
+	"time"
 )
 
 var (
@@ -11,23 +13,37 @@ var (
 )
 
 type Share struct {
-	ID     string `json:"id"`
-	Handle string `json:"handle"`
-	Files  []File `json:"files"`
+	ID        string               `json:"id"`
+	Handle    string               `json:"handle"`
+	Files     []File               `json:"files"`
+	CreatedAt timestamp.Timestamp  `json:"createdAt"`
+	ExpiresAt *timestamp.Timestamp `json:"expiresAt"`
 }
 
-func NewShare(id, handle string) (*Share, error) {
+func NewShare(id, handle string, expiryMinutes int) (*Share, error) {
 	if handle == "" {
 		return nil, fmt.Errorf("share handle is required")
 	}
 	if !validShareHandle.MatchString(handle) {
 		return nil, fmt.Errorf("share handle may only contain letters, numbers, hyphens and underscores (max 64 chars)")
 	}
+	if expiryMinutes < 0 {
+		return nil, fmt.Errorf("expiry minutes must be non-negative")
+	}
 
-	return &Share{
-		ID:     id,
-		Handle: handle,
-	}, nil
+	createdAt := timestamp.Now()
+	s := &Share{
+		ID:        id,
+		Handle:    handle,
+		CreatedAt: createdAt,
+	}
+
+	if expiryMinutes > 0 {
+		expiresAt := timestamp.Timestamp(time.Time(createdAt).Add(time.Duration(expiryMinutes) * time.Minute))
+		s.ExpiresAt = &expiresAt
+	}
+
+	return s, nil
 }
 
 type ShareSummary struct {

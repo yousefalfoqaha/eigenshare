@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS share (
     id TEXT NOT NULL PRIMARY KEY,
-    handle TEXT NOT NULL UNIQUE
+    handle TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS file (

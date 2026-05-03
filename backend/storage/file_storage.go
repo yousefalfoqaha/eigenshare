@@ -15,12 +15,11 @@ var (
 )
 
 type FileStorage struct {
-	dataDir   string
-	chunkSize int64
+	dataDir string
 }
 
-func NewFileStorage(dataDir string, chunkSize int64) *FileStorage {
-	return &FileStorage{dataDir, chunkSize}
+func NewFileStorage(dataDir string) *FileStorage {
+	return &FileStorage{dataDir}
 }
 
 func (s *FileStorage) CreateShareFolder(share share.Share) error {

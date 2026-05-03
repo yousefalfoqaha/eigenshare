@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"eigenshare/backend/share"
 	"eigenshare/backend/storage"
+	"eigenshare/backend/timestamp"
 	"fmt"
+	"strings"
 )
 
 type ShareRepository struct {
@@ -50,10 +52,19 @@ func (r *ShareRepository) GetAll() ([]share.ShareSummary, error) {
 
 func (r *ShareRepository) Get(id string) (*share.Share, error) {
 	var sh share.Share
+	var expiresAt sql.NullString
 
-	row := r.storage.DB.QueryRow("SELECT id, handle FROM share WHERE id = ?", id)
-	if err := row.Scan(&sh.ID, &sh.Handle); err != nil {
+	row := r.storage.DB.QueryRow("SELECT id, handle, created_at, expires_at FROM share WHERE id = ?", id)
+	if err := row.Scan(&sh.ID, &sh.Handle, &sh.CreatedAt, &expiresAt); err != nil {
 		return nil, err
+	}
+
+	if expiresAt.Valid {
+		var ea timestamp.Timestamp
+		if err := ea.Scan(expiresAt.String); err != nil {
+			return nil, err
+		}
+		sh.ExpiresAt = &ea
 	}
 
 	files, err := r.getAllFilesByShareID(sh.ID)
@@ -95,9 +106,14 @@ func (r *ShareRepository) Save(s share.Share, tx *sql.Tx) (*share.Share, error) 
 		return nil, fmt.Errorf("%w: %s", share.ErrHandleExists, s.Handle)
 	}
 
+	var expiresAt any
+	if s.ExpiresAt != nil {
+		expiresAt = s.ExpiresAt.String()
+	}
+
 	_, err = tx.Exec(
-		"INSERT INTO share (id, handle) VALUES (?, ?)",
-		s.ID, s.Handle,
+		"INSERT INTO share (id, handle, created_at, expires_at) VALUES (?, ?, ?, ?)",
+		s.ID, s.Handle, s.CreatedAt.String(), expiresAt,
 	)
 	if err != nil {
 		return nil, err
@@ -114,6 +130,23 @@ func (r *ShareRepository) Save(s share.Share, tx *sql.Tx) (*share.Share, error) 
 	}
 
 	return &s, nil
+}
+
+func (r *ShareRepository) Delete(ids []string, tx *sql.Tx) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := "DELETE FROM share WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+	_, err := tx.Exec(query, args...)
+	return err
 }
 
 func (r *ShareRepository) getAllFilesByShareID(id string) ([]share.File, error) {
@@ -134,4 +167,27 @@ func (r *ShareRepository) getAllFilesByShareID(id string) ([]share.File, error) 
 	}
 
 	return files, rows.Err()
+}
+
+func (r *ShareRepository) GetExpiredIDs() ([]string, error) {
+	now := timestamp.Now()
+	rows, err := r.storage.DB.Query(
+		"SELECT id FROM share WHERE expires_at IS NOT NULL AND expires_at < ?", now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+
+		ids = append(ids, id)
+	}
+
+	return ids, rows.Err()
 }

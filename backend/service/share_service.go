@@ -66,8 +66,9 @@ func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, s
 }
 
 type CreateShareParams struct {
-	Handle string
-	Files  []CreateFileParams
+	Handle        string
+	ExpiryMinutes int
+	Files         []CreateFileParams
 }
 
 type CreateFileParams struct {
@@ -77,7 +78,7 @@ type CreateFileParams struct {
 }
 
 func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, error) {
-	sh, err := share.NewShare(uuid.New().String(), params.Handle)
+	sh, err := share.NewShare(uuid.New().String(), params.Handle, params.ExpiryMinutes)
 	if err != nil {
 		return nil, api.NewError(http.StatusBadRequest, err.Error())
 	}
@@ -120,6 +121,24 @@ func (s *ShareService) RequestShare(params CreateShareParams) (*share.Share, err
 
 	success = true
 	return sh, nil
+}
+
+func (s *ShareService) Delete(ids ...string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	err := s.shareRepository.MakeTransaction(func(tx *sql.Tx) error {
+		return s.shareRepository.Delete(ids, tx)
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, id := range ids {
+		s.fileStorage.RemoveShareFolder(id)
+	}
+	return nil
 }
 
 func (s *ShareService) GetShares() ([]share.ShareSummary, error) {
@@ -208,4 +227,13 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (string, erro
 	}
 
 	return filePath, nil
+}
+
+func (s *ShareService) GetExpiredShares() ([]string, error) {
+	ids, err := s.shareRepository.GetExpiredIDs()
+	if err != nil {
+		return nil, err
+	}
+
+	return ids, nil
 }
