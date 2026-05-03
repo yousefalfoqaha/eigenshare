@@ -199,6 +199,7 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (string, erro
 		}
 		return "", err
 	}
+
 	var file *share.File
 	for i, f := range sh.Files {
 		if f.ID == fileID {

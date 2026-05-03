@@ -7,8 +7,8 @@ import (
 	"os"
 )
 
-func NewDatabaseStorage() *DatabaseStorage {
-	db, err := sql.Open("sqlite", "./data.db")
+func NewDatabaseStorage(dbPath string) *DatabaseStorage {
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -24,8 +24,6 @@ func NewDatabaseStorage() *DatabaseStorage {
 	if _, err := db.Exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;"); err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println("Connected to database")
 
 	storage := &DatabaseStorage{DB: db}
 	initSchema(storage)

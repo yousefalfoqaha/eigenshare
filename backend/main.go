@@ -27,7 +27,7 @@ const (
 func main() {
 	router := http.NewServeMux()
 
-	databaseStorage := storage.NewDatabaseStorage()
+	databaseStorage := storage.NewDatabaseStorage("./data.db")
 	fileStorage := storage.NewFileStorage(DATA_PATH)
 	shareRepo := repository.NewShareRepository(databaseStorage)
 	shareService := service.NewShareService(shareRepo, fileStorage)

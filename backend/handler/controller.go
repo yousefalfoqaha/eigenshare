@@ -27,7 +27,7 @@ func (c *ShareController) RegisterHandlers(router *http.ServeMux) {
 }
 
 func (c *ShareController) createShare(w http.ResponseWriter, r *http.Request) error {
-	var shareReq shareRequest
+	var shareReq ShareRequest
 	err := json.NewDecoder(r.Body).Decode(&shareReq)
 	if err != nil {
 		return err
