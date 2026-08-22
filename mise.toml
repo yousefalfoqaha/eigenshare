@@ -1,3 +1,7 @@
 [tools]
 go = "1.26"
-node = { version = "24", postinstall = "corepack enable" }
+
+[tasks.dev]
+run = "go run ."
+dir = "{{config_root}}/backend"
+description = "Run the eigenshare server on :8080"

@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	validShareHandle = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+	validShareHandle = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,64}$`)
 	validFileName    = regexp.MustCompile(`^[^/\\\x00]{1,255}$`)
 )
 
@@ -25,7 +25,7 @@ func NewShare(id, handle string, expiryMinutes int) (*Share, error) {
 		return nil, fmt.Errorf("share handle is required")
 	}
 	if !validShareHandle.MatchString(handle) {
-		return nil, fmt.Errorf("share handle may only contain letters, numbers, hyphens and underscores (max 64 chars)")
+		return nil, fmt.Errorf("share handle may only contain letters, numbers, hyphens and underscores (3-64 chars)")
 	}
 	if expiryMinutes < 0 {
 		return nil, fmt.Errorf("expiry minutes must be non-negative")

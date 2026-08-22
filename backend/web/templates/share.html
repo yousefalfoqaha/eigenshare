@@ -1,0 +1,20 @@
+{{define "content"}}
+<h1>{{.Share.Handle}}</h1>
+<p><a href="/s/{{.Share.Handle}}/download">download all (zip)</a></p>
+
+<h2>files</h2>
+<table>
+	<thead>
+		<tr><th>name</th><th>size</th><th></th></tr>
+	</thead>
+	<tbody>
+	{{range .Share.Files}}
+		<tr>
+			<td>{{.Name}}</td>
+			<td>{{.ExpectedSize}}</td>
+			<td><a href="/s/{{$.Share.Handle}}/files/{{.ID}}/download">download</a></td>
+		</tr>
+	{{end}}
+	</tbody>
+</table>
+{{end}}

@@ -4,18 +4,19 @@ import (
 	"archive/zip"
 	"bytes"
 	"database/sql"
-	"eigenshare/backend/api"
-	"eigenshare/backend/handler"
+	"eigenshare/backend/auth"
+	"eigenshare/backend/infra"
 	"eigenshare/backend/middleware"
-	"eigenshare/backend/repository"
-	"eigenshare/backend/service"
 	"eigenshare/backend/share"
-	"eigenshare/backend/storage"
+	"eigenshare/backend/user"
+	"eigenshare/backend/web"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,32 +28,74 @@ type testClient struct {
 	t            *testing.T
 	url          string
 	db           *sql.DB
-	shareService *service.ShareService
+	shareService *share.ShareService
+	httpClient   *http.Client
 }
 
 func setup(t *testing.T) *testClient {
 	t.Helper()
 	tmpDir := t.TempDir()
 
-	dbStorage := storage.NewDatabaseStorage(filepath.Join(tmpDir, "test.db"))
-	fileStorage := storage.NewFileStorage(filepath.Join(tmpDir, "data"))
-	shareRepo := repository.NewShareRepository(dbStorage)
-	shareSvc := service.NewShareService(shareRepo, fileStorage)
-	shareCtrl := handler.NewShareController(shareSvc)
+	db := infra.NewDatabase(filepath.Join(tmpDir, "test.db"))
+	fileStorage := share.NewFileStorage(filepath.Join(tmpDir, "data"))
+	shareRepo := share.NewShareRepository(db)
+	shareSvc := share.NewShareService(shareRepo, fileStorage)
+
+	userRepo := user.NewUserRepository(db)
+	sessionRepo := user.NewSessionRepository(db)
+	authSvc := auth.NewAuthService(userRepo, sessionRepo)
+	if err := authSvc.SeedAdmin(); err != nil {
+		t.Fatal(err)
+	}
+
+	webCtrl := web.NewController(authSvc, shareSvc)
+
+	protectedMux := http.NewServeMux()
+	webCtrl.RegisterProtectedHandlers(protectedMux)
 
 	router := http.NewServeMux()
-	shareCtrl.RegisterHandlers(router)
+	router.Handle("/", auth.RequireAuth(authSvc, protectedMux))
+	webCtrl.RegisterHandlers(router)
 
 	srv := httptest.NewServer(middleware.Logging(router))
 	t.Cleanup(srv.Close)
-	t.Cleanup(func() { dbStorage.DB.Close() })
+	t.Cleanup(func() { db.DB.Close() })
 
-	return &testClient{
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpClient := &http.Client{
+		Jar: jar,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	c := &testClient{
 		t:            t,
 		url:          srv.URL,
-		db:           dbStorage.DB,
+		db:           db.DB,
 		shareService: shareSvc,
+		httpClient:   httpClient,
 	}
+
+	c.loginAsAdmin()
+
+	return c
+}
+
+func (c *testClient) loginAsAdmin() {
+	c.t.Helper()
+	form := url.Values{
+		"username": {"admin"},
+		"password": {"admin"},
+	}
+	resp, err := c.httpClient.PostForm(c.url+"/login", form)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	resp.Body.Close()
 }
 
 func (c *testClient) do(method, path string, body any) *http.Response {
@@ -72,7 +115,7 @@ func (c *testClient) do(method, path string, body any) *http.Response {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -87,23 +130,23 @@ func (c *testClient) decode(resp *http.Response, v any) {
 	}
 }
 
-func (c *testClient) Default(handle string, expiryMinutes int) handler.ShareRequest {
-	return handler.ShareRequest{
+func (c *testClient) Default(handle string, expiryMinutes int) share.ShareRequest {
+	return share.ShareRequest{
 		Handle:        handle,
 		ExpiryMinutes: expiryMinutes,
-		Files: []handler.FileRequest{
+		Files: []share.FileRequest{
 			{Name: "test.txt", ExpectedSize: 100, Order: 0},
 		},
 	}
 }
 
-func (c *testClient) CreateShare(body handler.ShareRequest) share.Share {
+func (c *testClient) CreateShare(body share.ShareRequest) share.Share {
 	c.t.Helper()
 	resp := c.do(http.MethodPost, "/shares", body)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		var e api.Error
+		var e web.Error
 		c.decode(resp, &e)
 		c.t.Fatalf("CreateShare: expected 201, got %d: %s", resp.StatusCode, e.Message)
 	}
@@ -113,42 +156,16 @@ func (c *testClient) CreateShare(body handler.ShareRequest) share.Share {
 	return sh
 }
 
-func (c *testClient) GetShare(id string) (*share.Share, int) {
+func (c *testClient) DeleteShare(handle string) int {
 	c.t.Helper()
-	resp := c.do(http.MethodGet, "/shares/"+id, nil)
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, resp.StatusCode
-	}
-	var sh share.Share
-	c.decode(resp, &sh)
-	return &sh, resp.StatusCode
-}
-
-func (c *testClient) GetShares() []share.ShareSummary {
-	c.t.Helper()
-	resp := c.do(http.MethodGet, "/shares", nil)
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		c.t.Fatalf("GetShares: expected 200, got %d", resp.StatusCode)
-	}
-	var shares []share.ShareSummary
-	c.decode(resp, &shares)
-	return shares
-}
-
-func (c *testClient) DeleteShare(id string) int {
-	c.t.Helper()
-	resp := c.do(http.MethodDelete, "/shares/"+id, nil)
+	resp := c.do(http.MethodPost, "/shares/"+handle+"/delete", nil)
 	defer resp.Body.Close()
 	return resp.StatusCode
 }
 
-func (c *testClient) Progress(id string) int64 {
+func (c *testClient) Progress(handle string) int64 {
 	c.t.Helper()
-	resp := c.do(http.MethodGet, "/shares/"+id+"/progress", nil)
+	resp := c.do(http.MethodGet, "/shares/"+handle+"/progress", nil)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -159,9 +176,9 @@ func (c *testClient) Progress(id string) int64 {
 	return result["bytesWritten"]
 }
 
-func (c *testClient) StreamFile(shareID, fileID string, data []byte, offset int64) *http.Response {
+func (c *testClient) StreamFile(handle, fileID string, data []byte, offset int64) *http.Response {
 	c.t.Helper()
-	url := fmt.Sprintf("%s/shares/%s/files/%s/stream", c.url, shareID, fileID)
+	url := fmt.Sprintf("%s/shares/%s/files/%s/stream", c.url, handle, fileID)
 	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(data))
 	if err != nil {
 		c.t.Fatal(err)
@@ -169,7 +186,7 @@ func (c *testClient) StreamFile(shareID, fileID string, data []byte, offset int6
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-Write-Offset", strconv.FormatInt(offset, 10))
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -281,7 +298,7 @@ func TestStreamFile(t *testing.T) {
 		data[i] = byte(i)
 	}
 
-	resp := client.StreamFile(sh.ID, sh.Files[0].ID, data, 0)
+	resp := client.StreamFile(sh.Handle, sh.Files[0].ID, data, 0)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNoContent {
@@ -293,7 +310,7 @@ func TestStreamFileInvalidOffset(t *testing.T) {
 	client := setup(t)
 	sh := client.CreateShare(client.Default("offset-test", 60))
 
-	resp := client.StreamFile(sh.ID, sh.Files[0].ID, make([]byte, 10), 200)
+	resp := client.StreamFile(sh.Handle, sh.Files[0].ID, make([]byte, 10), 200)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusConflict {
@@ -311,13 +328,13 @@ func TestStreamFileNonExistentShare(t *testing.T) {
 	}
 }
 
-func TestGetShare(t *testing.T) {
+func TestGetShareServiceLevel(t *testing.T) {
 	client := setup(t)
 	created := client.CreateShare(client.Default("get-test", 60))
 
-	got, status := client.GetShare(created.ID)
-	if status != http.StatusOK {
-		t.Fatalf("expected 200, got %d", status)
+	got, err := client.shareService.GetShare(created.ID)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
 	if got.ID != created.ID {
 		t.Fatalf("expected ID %q, got %q", created.ID, got.ID)
@@ -330,21 +347,25 @@ func TestGetShare(t *testing.T) {
 	}
 }
 
-func TestGetShares(t *testing.T) {
+func TestGetSharesServiceLevel(t *testing.T) {
 	client := setup(t)
 	client.CreateShare(client.Default("list-test-1", 60))
 	client.CreateShare(client.Default("list-test-2", 60))
 
-	if shares := client.GetShares(); len(shares) < 2 {
+	shares, err := client.shareService.GetShares()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shares) < 2 {
 		t.Fatalf("expected at least 2 shares, got %d", len(shares))
 	}
 }
 
 func TestGetShareNotFound(t *testing.T) {
 	client := setup(t)
-	_, status := client.GetShare("nonexistent-id")
-	if status != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", status)
+	_, err := client.shareService.GetShare("nonexistent-id")
+	if err != share.ErrShareNotFound {
+		t.Fatalf("expected ErrShareNotFound, got %v", err)
 	}
 }
 
@@ -357,13 +378,13 @@ func TestGetProgress(t *testing.T) {
 		data[i] = byte(i)
 	}
 
-	resp := client.StreamFile(sh.ID, sh.Files[0].ID, data, 0)
+	resp := client.StreamFile(sh.Handle, sh.Files[0].ID, data, 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", resp.StatusCode)
 	}
 
-	if written := client.Progress(sh.ID); written != 50 {
+	if written := client.Progress(sh.Handle); written != 50 {
 		t.Fatalf("expected 50 bytes written, got %d", written)
 	}
 }
@@ -372,19 +393,19 @@ func TestDeleteShare(t *testing.T) {
 	client := setup(t)
 	sh := client.CreateShare(client.Default("delete-test", 60))
 
-	if status := client.DeleteShare(sh.ID); status != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", status)
+	if status := client.DeleteShare(sh.Handle); status != http.StatusFound {
+		t.Fatalf("expected 302, got %d", status)
 	}
-	_, getStatus := client.GetShare(sh.ID)
-	if getStatus != http.StatusNotFound {
-		t.Fatalf("expected 404 after delete, got %d", getStatus)
+	_, err := client.shareService.GetShare(sh.ID)
+	if err != share.ErrShareNotFound {
+		t.Fatalf("expected ErrShareNotFound after delete, got %v", err)
 	}
 }
 
 func TestDeleteNonExistentShare(t *testing.T) {
 	client := setup(t)
-	if status := client.DeleteShare("nonexistent-id"); status != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", status)
+	if status := client.DeleteShare("nonexistent-id"); status != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", status)
 	}
 }
 
@@ -408,9 +429,9 @@ func TestExpiryCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, status := client.GetShare(sh.ID)
-	if status != http.StatusNotFound {
-		t.Fatalf("expected 404 after expiry cleanup, got %d", status)
+	_, err = client.shareService.GetShare(sh.ID)
+	if err != share.ErrShareNotFound {
+		t.Fatalf("expected ErrShareNotFound after expiry cleanup, got %v", err)
 	}
 }
 
@@ -436,11 +457,11 @@ func TestDeleteMultipleShares(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, status := client.GetShare(sh1.ID); status != http.StatusNotFound {
-		t.Fatalf("expected 404 for first share, got %d", status)
+	if _, err := client.shareService.GetShare(sh1.ID); err != share.ErrShareNotFound {
+		t.Fatalf("expected ErrShareNotFound for first share, got %v", err)
 	}
-	if _, status := client.GetShare(sh2.ID); status != http.StatusNotFound {
-		t.Fatalf("expected 404 for second share, got %d", status)
+	if _, err := client.shareService.GetShare(sh2.ID); err != share.ErrShareNotFound {
+		t.Fatalf("expected ErrShareNotFound for second share, got %v", err)
 	}
 }
 
@@ -450,10 +471,10 @@ func TestDownloadCompleteShare(t *testing.T) {
 	helloData := readFile(t, "hello.txt")
 	binaryData := readFile(t, "binary.bin")
 
-	sh := client.CreateShare(handler.ShareRequest{
+	sh := client.CreateShare(share.ShareRequest{
 		Handle:        "download-test",
 		ExpiryMinutes: 60,
-		Files: []handler.FileRequest{
+		Files: []share.FileRequest{
 			{Name: "hello.txt", ExpectedSize: int64(len(helloData)), Order: 0},
 			{Name: "binary.bin", ExpectedSize: int64(len(binaryData)), Order: 1},
 		},
@@ -467,14 +488,14 @@ func TestDownloadCompleteShare(t *testing.T) {
 		{sh.Files[0].ID, helloData, "hello.txt"},
 		{sh.Files[1].ID, binaryData, "binary.bin"},
 	} {
-		resp := client.StreamFile(sh.ID, tc.id, tc.data, 0)
+		resp := client.StreamFile(sh.Handle, tc.id, tc.data, 0)
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusNoContent {
 			t.Fatalf("stream %s: expected 204, got %d", tc.name, resp.StatusCode)
 		}
 	}
 
-	dlResp, err := http.Get(client.url + "/shares/" + sh.ID + "/download")
+	dlResp, err := client.httpClient.Get(client.url + "/s/" + sh.Handle + "/download")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,33 +526,33 @@ func TestStreamWithResume(t *testing.T) {
 	largeData := readFile(t, "sample.pdf")
 	midpoint := int64(len(largeData) / 2)
 
-	sh := client.CreateShare(handler.ShareRequest{
+	sh := client.CreateShare(share.ShareRequest{
 		Handle:        "resume-test",
 		ExpiryMinutes: 60,
-		Files: []handler.FileRequest{
+		Files: []share.FileRequest{
 			{Name: "sample.pdf", ExpectedSize: int64(len(largeData)), Order: 0},
 		},
 	})
 
-	resp := client.StreamFile(sh.ID, sh.Files[0].ID, largeData[:midpoint], 0)
+	resp := client.StreamFile(sh.Handle, sh.Files[0].ID, largeData[:midpoint], 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("first chunk: expected 204, got %d", resp.StatusCode)
 	}
-	if written := client.Progress(sh.ID); written != midpoint {
+	if written := client.Progress(sh.Handle); written != midpoint {
 		t.Fatalf("expected %d bytes after first chunk, got %d", midpoint, written)
 	}
 
-	resp = client.StreamFile(sh.ID, sh.Files[0].ID, largeData[midpoint:], midpoint)
+	resp = client.StreamFile(sh.Handle, sh.Files[0].ID, largeData[midpoint:], midpoint)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("second chunk: expected 204, got %d", resp.StatusCode)
 	}
-	if written := client.Progress(sh.ID); written != int64(len(largeData)) {
+	if written := client.Progress(sh.Handle); written != int64(len(largeData)) {
 		t.Fatalf("expected %d bytes after resume, got %d", len(largeData), written)
 	}
 
-	dlResp, err := http.Get(client.url + "/shares/" + sh.ID + "/download")
+	dlResp, err := client.httpClient.Get(client.url + "/s/" + sh.Handle + "/download")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,21 +575,21 @@ func TestBinaryIntegrity(t *testing.T) {
 	client := setup(t)
 	binaryData := readFile(t, "binary.bin")
 
-	sh := client.CreateShare(handler.ShareRequest{
+	sh := client.CreateShare(share.ShareRequest{
 		Handle:        "binary-test",
 		ExpiryMinutes: 60,
-		Files: []handler.FileRequest{
+		Files: []share.FileRequest{
 			{Name: "binary.bin", ExpectedSize: int64(len(binaryData)), Order: 0},
 		},
 	})
 
-	resp := client.StreamFile(sh.ID, sh.Files[0].ID, binaryData, 0)
+	resp := client.StreamFile(sh.Handle, sh.Files[0].ID, binaryData, 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", resp.StatusCode)
 	}
 
-	dlResp, err := http.Get(client.url + "/shares/" + sh.ID + "/download")
+	dlResp, err := client.httpClient.Get(client.url + "/s/" + sh.Handle + "/download")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,21 +613,21 @@ func TestDownloadIncompleteShare(t *testing.T) {
 	binaryData := readFile(t, "binary.bin")
 	partialSize := int64(len(binaryData) / 2)
 
-	sh := client.CreateShare(handler.ShareRequest{
+	sh := client.CreateShare(share.ShareRequest{
 		Handle:        "incomplete-test",
 		ExpiryMinutes: 60,
-		Files: []handler.FileRequest{
+		Files: []share.FileRequest{
 			{Name: "binary.bin", ExpectedSize: int64(len(binaryData)), Order: 0},
 		},
 	})
 
-	resp := client.StreamFile(sh.ID, sh.Files[0].ID, binaryData[:partialSize], 0)
+	resp := client.StreamFile(sh.Handle, sh.Files[0].ID, binaryData[:partialSize], 0)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204 for partial upload, got %d", resp.StatusCode)
 	}
 
-	dlResp, err := http.Get(client.url + "/shares/" + sh.ID + "/download")
+	dlResp, err := client.httpClient.Get(client.url + "/s/" + sh.Handle + "/download")
 	if err != nil {
 		t.Fatal(err)
 	}

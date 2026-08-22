@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"eigenshare/backend/handler"
-	"eigenshare/backend/job"
+	"eigenshare/backend/auth"
+	"eigenshare/backend/infra"
 	"eigenshare/backend/middleware"
-	"eigenshare/backend/repository"
-	"eigenshare/backend/service"
-	"eigenshare/backend/storage"
+	"eigenshare/backend/share"
+	"eigenshare/backend/user"
+	"eigenshare/backend/web"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"syscall"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
 
 const (
@@ -25,14 +23,28 @@ const (
 )
 
 func main() {
-	router := http.NewServeMux()
+	db := infra.NewDatabase("./data.db")
 
-	databaseStorage := storage.NewDatabaseStorage("./data.db")
-	fileStorage := storage.NewFileStorage(DATA_PATH)
-	shareRepo := repository.NewShareRepository(databaseStorage)
-	shareService := service.NewShareService(shareRepo, fileStorage)
-	shareController := handler.NewShareController(shareService)
-	shareController.RegisterHandlers(router)
+	userRepo := user.NewUserRepository(db)
+	sessionRepo := user.NewSessionRepository(db)
+	shareRepo := share.NewShareRepository(db)
+
+	fileStorage := share.NewFileStorage(DATA_PATH)
+	shareService := share.NewShareService(shareRepo, fileStorage)
+	authService := auth.NewAuthService(userRepo, sessionRepo)
+
+	if err := authService.SeedAdmin(); err != nil {
+		fmt.Printf("Failed to seed admin: %v\n", err)
+	}
+
+	webController := web.NewController(authService, shareService)
+
+	protectedMux := http.NewServeMux()
+	webController.RegisterProtectedHandlers(protectedMux)
+
+	router := http.NewServeMux()
+	router.Handle("/", auth.RequireAuth(authService, protectedMux))
+	webController.RegisterHandlers(router)
 
 	server := http.Server{
 		Addr:    ":" + strconv.Itoa(PORT),
@@ -46,7 +58,7 @@ func main() {
 		fmt.Println("Shutting down...")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
-		go job.NewExpiryJob(shutdownCtx, shareService, 1*time.Minute)
+		go share.NewExpiryJob(shutdownCtx, shareService, 1*time.Minute)
 
 		server.Shutdown(shutdownCtx)
 	}()

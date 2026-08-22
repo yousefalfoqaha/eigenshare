@@ -1,0 +1,25 @@
+{{define "content"}}
+<h1>shares</h1>
+<p><a href="/shares/new">+ new share</a></p>
+<table>
+	<thead>
+		<tr><th>handle</th><th>files</th><th>total size</th><th></th></tr>
+	</thead>
+	<tbody>
+	{{range .Shares}}
+		<tr>
+			<td><a href="/shares/{{.Handle}}/edit">{{.Handle}}</a></td>
+			<td>{{.TotalFiles}}</td>
+			<td>{{.TotalSize}}</td>
+			<td>
+				<form method="post" action="/shares/{{.Handle}}/delete" class="inline">
+					<button type="submit">delete</button>
+				</form>
+			</td>
+		</tr>
+	{{else}}
+		<tr><td colspan="4">no shares yet</td></tr>
+	{{end}}
+	</tbody>
+</table>
+{{end}}

@@ -1,0 +1,27 @@
+{{define "content"}}
+<h1>{{.Share.Handle}}</h1>
+<p>
+	bytes written: {{.BytesWritten}} / {{shareTotalSize .Share}}
+	{{if .Complete}}<span class="done">(complete)</span>{{end}}
+</p>
+
+<h2>files</h2>
+<table>
+	<thead>
+		<tr><th>name</th><th>size</th><th></th></tr>
+	</thead>
+	<tbody>
+	{{range .Share.Files}}
+		<tr>
+			<td>{{.Name}}</td>
+			<td>{{.ExpectedSize}}</td>
+			<td>
+				<form method="post" action="/shares/{{$.Share.Handle}}/files/{{.ID}}/delete" class="inline">
+					<button type="submit">delete</button>
+				</form>
+			</td>
+		</tr>
+	{{end}}
+	</tbody>
+</table>
+{{end}}

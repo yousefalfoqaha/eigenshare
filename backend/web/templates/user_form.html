@@ -1,0 +1,10 @@
+{{define "content"}}
+<h1>{{if .User}}edit user{{else}}new user{{end}}</h1>
+<form method="post" action="{{if .User}}/users/{{.User.ID}}{{else}}/users{{end}}">
+	<label>username <input type="text" name="username" required value="{{if .User}}{{.User.Username}}{{end}}"></label>
+	<label>password {{if .User}}<span class="hint">(leave blank to keep current)</span>{{end}} <input type="password" name="password" {{if not .User}}required{{end}}></label>
+	<label class="inline"><input type="checkbox" name="isAdmin" {{if .User}}{{if .User.IsAdmin}}checked{{end}}{{end}}> admin</label>
+	<button type="submit">{{if .User}}update{{else}}create{{end}}</button>
+</form>
+<p><a href="/users">back to users</a></p>
+{{end}}
