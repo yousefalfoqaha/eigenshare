@@ -35,6 +35,13 @@ func NewController(authSvc *auth.AuthService, shareSvc *share.ShareService) *Con
 			return total
 		},
 		"formatSize": formatSize,
+		"shareTotalFiles": func(sh *share.Share) int {
+			var total int
+			for range sh.Files {
+				total += 1
+			}
+			return total
+		},
 	}
 
 	base := template.Must(template.New("layout").Funcs(funcs).ParseFS(templateFS, "templates/layout.html"))
@@ -249,15 +256,12 @@ func (c *Controller) editSharePage(w http.ResponseWriter, r *http.Request) {
 	bytesWritten, _ := c.shareService.GetShareProgress(sh.ID)
 
 	var total int64
-	var numFiles int
 	for _, f := range sh.Files {
 		total += f.ExpectedSize
-		numFiles += 1
 	}
 	c.render(w, "edit_share", ShareView{
 		Page:         page(r, sh.Handle),
 		Share:        sh,
-		numFiles:     numFiles,
 		BytesWritten: bytesWritten,
 		Complete:     bytesWritten == total && total > 0,
 	})

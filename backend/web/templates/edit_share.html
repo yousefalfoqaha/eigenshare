@@ -5,9 +5,8 @@
 </section>
 
 <p>
-  {{formatSize .BytesWritten}} total {{if .Complete}}<span class="done"
-    >(complete)</span
-  >{{end}}
+  {{shareTotalFiles .Share}} file(s) - {{formatSize .BytesWritten}} total {{if
+  .Complete}}<span class="done">(complete)</span>{{end}}
 </p>
 
 <table>

@@ -14,7 +14,7 @@
         {{if .CurrentUser}}
         <a href="/shares">shares</a>
         <a href="/users">users</a>
-        <span>{{.CurrentUser.Username}}</span>
+        <span>logged in as {{.CurrentUser.Username}}</span>
         <form method="post" action="/logout">
           <button type="submit">logout</button>
         </form>

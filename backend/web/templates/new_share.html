@@ -22,7 +22,7 @@
     <div id="file-list"></div>
     <input type="file" id="file-input" multiple />
   </fieldset>
-  <button type="submit" id="create-btn" class="submit">create share</button>
+  <button type="submit" id="create-btn" class="submit">create</button>
 </form>
 
 <p>
@@ -32,6 +32,15 @@
 <div id="status"></div>
 
 <script>
+  function formatSize(bytes) {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const val = bytes / Math.pow(k, i);
+    return `${val.toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
+  }
+
   const handleInput = document.getElementById("handle-input");
 
   function randomHandle() {
@@ -57,7 +66,8 @@
     selected.forEach((f, i) => {
       const row = document.createElement("div");
       row.className = "file-row";
-      row.textContent = `${f.name} (${f.size} bytes)`;
+      row.textContent = `${f.name} (${formatSize(f.size)})`;
+
       const rm = document.createElement("button");
       rm.type = "button";
       rm.textContent = "remove";
