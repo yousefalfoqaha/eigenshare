@@ -1,20 +1,31 @@
 {{define "content"}}
-<h1>{{.Share.Handle}}</h1>
-<p><a href="/s/{{.Share.Handle}}/download">download all (zip)</a></p>
+<div class="title">
+  <h1>{{.Share.Handle}}</h1>
+  <a href="/s/{{.Share.Handle}}/download">download all (zip)</a>
+</div>
 
-<h2>files</h2>
+<p>{{shareTotalSize .Share | formatSize}} total</p>
+
 <table>
-	<thead>
-		<tr><th>name</th><th>size</th><th></th></tr>
-	</thead>
-	<tbody>
-	{{range .Share.Files}}
-		<tr>
-			<td>{{.Name}}</td>
-			<td>{{.ExpectedSize}}</td>
-			<td><a href="/s/{{$.Share.Handle}}/files/{{.ID}}/download">download</a></td>
-		</tr>
-	{{end}}
-	</tbody>
+  <thead>
+    <tr>
+      <th>name</th>
+      <th>size</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Share.Files}}
+    <tr>
+      <td>{{.Name}}</td>
+      <td>{{.ExpectedSize}}</td>
+      <td>
+        <button href="/s/{{$.Share.Handle}}/files/{{.ID}}/download">
+          download
+        </button>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
 </table>
 {{end}}

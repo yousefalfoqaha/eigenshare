@@ -34,6 +34,7 @@ func NewController(authSvc *auth.AuthService, shareSvc *share.ShareService) *Con
 			}
 			return total
 		},
+		"formatSize": formatSize,
 	}
 
 	base := template.Must(template.New("layout").Funcs(funcs).ParseFS(templateFS, "templates/layout.html"))
@@ -64,20 +65,20 @@ func (c *Controller) RegisterHandlers(router *http.ServeMux) {
 		return auth.OptionalAuth(c.authService, h)
 	}
 	router.Handle("GET /s/{handle}", optional(http.HandlerFunc(c.sharePage)))
-	router.Handle("GET /s/{handle}/download", optional(MakeHandler(c.downloadAll)))
-	router.Handle("GET /s/{handle}/files/{fileID}/download", optional(MakeHandler(c.downloadFile)))
+	router.Handle("GET /s/{handle}/download", optional(makeHandler(c.downloadAll)))
+	router.Handle("GET /s/{handle}/files/{fileID}/download", optional(makeHandler(c.downloadFile)))
 }
 
 func (c *Controller) RegisterProtectedHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /", c.index)
 	router.HandleFunc("GET /shares", c.sharesPage)
 	router.HandleFunc("GET /shares/new", c.newSharePage)
-	router.HandleFunc("POST /shares", MakeHandler(c.createShare))
+	router.HandleFunc("POST /shares", makeHandler(c.createShare))
 	router.HandleFunc("GET /shares/{handle}/edit", c.editSharePage)
 	router.HandleFunc("POST /shares/{handle}/delete", c.deleteShare)
 	router.HandleFunc("POST /shares/{handle}/files/{fileID}/delete", c.deleteFile)
-	router.HandleFunc("GET /shares/{handle}/progress", MakeHandler(c.getProgress))
-	router.HandleFunc("PUT /shares/{handle}/files/{fileID}/stream", MakeHandler(c.streamFile))
+	router.HandleFunc("GET /shares/{handle}/progress", makeHandler(c.getProgress))
+	router.HandleFunc("PUT /shares/{handle}/files/{fileID}/stream", makeHandler(c.streamFile))
 
 	router.HandleFunc("GET /users", c.usersPage)
 	admin := auth.RequireAdmin
@@ -234,6 +235,7 @@ func (c *Controller) sharePage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+
 	c.render(w, "share", SharePublicView{Page: page(r, sh.Handle), Share: sh})
 }
 
@@ -247,12 +249,15 @@ func (c *Controller) editSharePage(w http.ResponseWriter, r *http.Request) {
 	bytesWritten, _ := c.shareService.GetShareProgress(sh.ID)
 
 	var total int64
+	var numFiles int
 	for _, f := range sh.Files {
 		total += f.ExpectedSize
+		numFiles += 1
 	}
 	c.render(w, "edit_share", ShareView{
 		Page:         page(r, sh.Handle),
 		Share:        sh,
+		numFiles:     numFiles,
 		BytesWritten: bytesWritten,
 		Complete:     bytesWritten == total && total > 0,
 	})

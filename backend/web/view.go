@@ -32,6 +32,7 @@ type SharesView struct {
 type ShareView struct {
 	Page
 	Share        *share.Share
+	numFiles     int
 	BytesWritten int64
 	Complete     bool
 }

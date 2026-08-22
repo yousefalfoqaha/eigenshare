@@ -4,11 +4,12 @@ import (
 	"eigenshare/backend/share"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 )
 
-func MakeHandler(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+func makeHandler(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := h(w, r); err != nil {
 			if apiErr, ok := shareAPIError(err); ok {
@@ -19,6 +20,19 @@ func MakeHandler(h func(w http.ResponseWriter, r *http.Request) error) http.Hand
 			}
 		}
 	}
+}
+
+func formatSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 func JSON(w http.ResponseWriter, status int, v any) error {

@@ -50,7 +50,7 @@ type ShareSummary struct {
 	ID         string `json:"id"`
 	Handle     string `json:"handle"`
 	TotalFiles int    `json:"totalFiles"`
-	TotalSize  int    `json:"totalSize"`
+	TotalSize  int64  `json:"totalSize"`
 }
 
 type File struct {
