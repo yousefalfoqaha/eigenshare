@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1>{{if .User}}edit user{{else}}new user{{end}}</h1>
+<h1>{{if .User}} {{.User.Username}} {{else}}new user{{end}}</h1>
 <form
   method="post"
   action="{{if .User}}/users/{{.User.ID}}{{else}}/users{{end}}"

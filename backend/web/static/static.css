@@ -9,6 +9,14 @@ body {
   padding: 1rem;
 }
 
+input {
+  font-size: 1rem;
+}
+
+input[type="file"] {
+  font-size: 0.8rem;
+}
+
 header {
   display: flex;
   justify-content: space-between;
@@ -50,6 +58,7 @@ main {
 
 .submit {
   margin-left: auto;
+  font-size: 1rem;
 }
 
 .title {
