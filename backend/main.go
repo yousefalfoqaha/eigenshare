@@ -2,12 +2,6 @@ package main
 
 import (
 	"context"
-	"eigenshare/backend/auth"
-	"eigenshare/backend/infra"
-	"eigenshare/backend/middleware"
-	"eigenshare/backend/share"
-	"eigenshare/backend/user"
-	"eigenshare/backend/web"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +9,12 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"eigenshare/backend/auth"
+	"eigenshare/backend/infra"
+	"eigenshare/backend/share"
+	"eigenshare/backend/user"
+	"eigenshare/backend/web"
 )
 
 const (
@@ -26,29 +26,30 @@ func main() {
 	db := infra.NewDatabase("./data.db")
 
 	userRepo := user.NewUserRepository(db)
-	sessionRepo := user.NewSessionRepository(db)
+	userSvc := user.NewUserService(userRepo)
+	sessionRepo := auth.NewSessionRepository(db)
 	shareRepo := share.NewShareRepository(db)
 
 	fileStorage := share.NewFileStorage(DATA_PATH)
 	shareService := share.NewShareService(shareRepo, fileStorage)
-	authService := auth.NewAuthService(userRepo, sessionRepo)
+	authService := auth.NewAuthService(userSvc, sessionRepo)
 
-	if err := authService.SeedAdmin(); err != nil {
+	if err := userSvc.SeedAdmin(); err != nil {
 		fmt.Printf("Failed to seed admin: %v\n", err)
 	}
 
-	webController := web.NewController(authService, shareService)
+	webController := web.NewController(authService, userSvc, shareService)
 
 	protectedMux := http.NewServeMux()
 	webController.RegisterProtectedHandlers(protectedMux)
 
 	router := http.NewServeMux()
-	router.Handle("/", auth.RequireAuth(authService, protectedMux))
+	router.Handle("/", web.RequireAuth(authService, protectedMux))
 	webController.RegisterHandlers(router)
 
 	server := http.Server{
 		Addr:    ":" + strconv.Itoa(PORT),
-		Handler: middleware.Logging(router),
+		Handler: web.Logging(router),
 	}
 
 	go func() {

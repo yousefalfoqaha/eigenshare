@@ -1,23 +1,17 @@
 package user
 
 import (
-	"eigenshare/backend/timestamp"
-	"errors"
 	"fmt"
 	"regexp"
-	"time"
+
+	"eigenshare/backend/timestamp"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
 	validUsername = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
-
-	ErrUsernameTaken         = errors.New("username already taken")
-	ErrInvalidCredentials    = errors.New("invalid credentials")
-	ErrSessionNotFound       = errors.New("session not found")
-	ErrUserNotFound          = errors.New("user not found")
-	ErrCannotDeleteSelf      = errors.New("cannot delete your own account")
-	ErrCannotDeleteLastAdmin = errors.New("cannot delete the last admin")
-	ErrCannotDemoteSelf      = errors.New("cannot remove admin from your own account")
+	hashCost      = 12
 )
 
 type User struct {
@@ -48,47 +42,13 @@ func NewUser(id, username, passwordHash string, isAdmin bool) (*User, error) {
 	}, nil
 }
 
-type CreateRequest struct {
-	Username string `form:"username" json:"username"`
-	Password string `form:"password" json:"password"`
-	IsAdmin  bool   `form:"isAdmin" json:"isAdmin"`
-}
-
-type UpdateRequest struct {
-	Username string `form:"username" json:"username"`
-	Password string `form:"password" json:"password"`
-	IsAdmin  bool   `form:"isAdmin" json:"isAdmin"`
-}
-
-type Session struct {
-	Token     string               `json:"token"`
-	UserID    string               `json:"userId"`
-	CreatedAt timestamp.Timestamp  `json:"createdAt"`
-	ExpiresAt *timestamp.Timestamp `json:"expiresAt"`
-}
-
-func NewSession(token, userID string, expiryMinutes int) (*Session, error) {
-	if token == "" {
-		return nil, fmt.Errorf("session token is required")
+func (u *User) VerifyPassword(password string) (bool, error) {
+	err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password))
+	if err != nil {
+		if err == bcrypt.ErrMismatchedHashAndPassword {
+			return false, nil
+		}
+		return false, err
 	}
-	if userID == "" {
-		return nil, fmt.Errorf("user id is required")
-	}
-	if expiryMinutes < 0 {
-		return nil, fmt.Errorf("expiry minutes must be non-negative")
-	}
-
-	createdAt := timestamp.Now()
-	s := &Session{
-		Token:     token,
-		UserID:    userID,
-		CreatedAt: createdAt,
-	}
-
-	if expiryMinutes > 0 {
-		expiresAt := timestamp.Timestamp(time.Time(createdAt).Add(time.Duration(expiryMinutes) * time.Minute))
-		s.ExpiresAt = &expiresAt
-	}
-
-	return s, nil
+	return true, nil
 }

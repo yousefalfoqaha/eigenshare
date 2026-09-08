@@ -2,8 +2,9 @@ package user
 
 import (
 	"database/sql"
-	"eigenshare/backend/infra"
 	"errors"
+
+	"eigenshare/backend/infra"
 )
 
 type UserRepository struct {

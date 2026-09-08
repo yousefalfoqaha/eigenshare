@@ -1,18 +1,13 @@
-package auth
+package web
 
 import (
-	"context"
-	"eigenshare/backend/user"
+	"log"
 	"net/http"
 	"strings"
+	"time"
+
+	"eigenshare/backend/auth"
 )
-
-type userKey struct{}
-
-func UserFromContext(ctx context.Context) *user.User {
-	u, _ := ctx.Value(userKey{}).(*user.User)
-	return u
-}
 
 const SessionCookieName = "session_id"
 
@@ -38,7 +33,7 @@ func ClearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-func RequireAuth(svc *AuthService, next http.Handler) http.Handler {
+func RequireAuth(svc *auth.AuthService, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(SessionCookieName)
 		if err != nil || c.Value == "" {
@@ -53,16 +48,16 @@ func RequireAuth(svc *AuthService, next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), userKey{}, u)
+		ctx := auth.WithUser(r.Context(), u)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func OptionalAuth(svc *AuthService, next http.Handler) http.Handler {
+func OptionalAuth(svc *auth.AuthService, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(SessionCookieName); err == nil && c.Value != "" {
 			if u, err := svc.ValidateSession(c.Value); err == nil {
-				ctx := context.WithValue(r.Context(), userKey{}, u)
+				ctx := auth.WithUser(r.Context(), u)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -73,7 +68,7 @@ func OptionalAuth(svc *AuthService, next http.Handler) http.Handler {
 
 func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u := UserFromContext(r.Context())
+		u := auth.UserFromContext(r.Context())
 		if u == nil || !u.IsAdmin {
 			if wantsJSON(r) {
 				w.Header().Set("Content-Type", "application/json")
@@ -109,4 +104,29 @@ func wantsJSON(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+type WrappedWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *WrappedWriter) WriteHeader(status int) {
+	w.ResponseWriter.WriteHeader(status)
+	w.status = status
+}
+
+func Logging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrappedWriter := &WrappedWriter{
+			ResponseWriter: w,
+			status:         http.StatusOK,
+		}
+
+		start := time.Now()
+
+		next.ServeHTTP(wrappedWriter, r)
+
+		log.Println(wrappedWriter.status, r.Method, r.URL.Path, time.Since(start))
+	})
 }

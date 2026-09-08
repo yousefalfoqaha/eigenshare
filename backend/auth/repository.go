@@ -1,10 +1,11 @@
-package user
+package auth
 
 import (
 	"database/sql"
+	"errors"
+
 	"eigenshare/backend/infra"
 	"eigenshare/backend/timestamp"
-	"errors"
 )
 
 type SessionRepository struct {

@@ -1,15 +1,17 @@
 package web
 
 import (
-	"eigenshare/backend/auth"
-	"eigenshare/backend/share"
-	"eigenshare/backend/user"
 	"embed"
 	"encoding/json"
 	"html/template"
 	"io/fs"
+	"log"
 	"net/http"
 	"strconv"
+
+	"eigenshare/backend/auth"
+	"eigenshare/backend/share"
+	"eigenshare/backend/user"
 )
 
 //go:embed templates/*.html
@@ -20,12 +22,13 @@ var staticFS embed.FS
 
 type Controller struct {
 	authService  *auth.AuthService
+	userService  *user.UserService
 	shareService *share.ShareService
 	pages        map[string]*template.Template
 	static       http.Handler
 }
 
-func NewController(authSvc *auth.AuthService, shareSvc *share.ShareService) *Controller {
+func NewController(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.ShareService) *Controller {
 	funcs := template.FuncMap{
 		"shareTotalSize": func(sh *share.Share) int64 {
 			var total int64
@@ -57,8 +60,23 @@ func NewController(authSvc *auth.AuthService, shareSvc *share.ShareService) *Con
 	return &Controller{
 		authService:  authSvc,
 		shareService: shareSvc,
+		userService:  userSvc,
 		pages:        pages,
 		static:       http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
+	}
+}
+
+func makeHandler(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := h(w, r); err != nil {
+			apiErr := MapError(err)
+
+			if apiErr.Status == http.StatusInternalServerError {
+				log.Printf("INTERNAL ERROR: %v", err)
+			}
+
+			_ = JSON(w, apiErr.Status, apiErr)
+		}
 	}
 }
 
@@ -69,7 +87,7 @@ func (c *Controller) RegisterHandlers(router *http.ServeMux) {
 	router.HandleFunc("POST /logout", c.logout)
 
 	optional := func(h http.HandlerFunc) http.Handler {
-		return auth.OptionalAuth(c.authService, h)
+		return OptionalAuth(c.authService, h)
 	}
 	router.Handle("GET /s/{handle}", optional(http.HandlerFunc(c.sharePage)))
 	router.Handle("GET /s/{handle}/download", optional(makeHandler(c.downloadAll)))
@@ -88,7 +106,7 @@ func (c *Controller) RegisterProtectedHandlers(router *http.ServeMux) {
 	router.HandleFunc("PUT /shares/{handle}/files/{fileID}/stream", makeHandler(c.streamFile))
 
 	router.HandleFunc("GET /users", c.usersPage)
-	admin := auth.RequireAdmin
+	admin := RequireAdmin
 	router.Handle("GET /users/new", admin(http.HandlerFunc(c.newUserPage)))
 	router.Handle("POST /users", admin(http.HandlerFunc(c.createUser)))
 	router.Handle("GET /users/{id}/edit", admin(http.HandlerFunc(c.editUserPage)))
@@ -125,7 +143,7 @@ func (c *Controller) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		c.render(w, "login", Page{Title: "login", Error: err.Error()})
 		return
 	}
-	cred := auth.Credentials{
+	cred := auth.LoginRequest{
 		Username: r.PostForm.Get("username"),
 		Password: r.PostForm.Get("password"),
 	}
@@ -134,21 +152,21 @@ func (c *Controller) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		c.render(w, "login", Page{Title: "login", Error: err.Error()})
 		return
 	}
-	auth.SetSessionCookie(w, session.Token, 60*24*7)
+	SetSessionCookie(w, session.Token, 60*24*7)
 	http.Redirect(w, r, "/shares", http.StatusFound)
 }
 
 func (c *Controller) logout(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(auth.SessionCookieName); err == nil {
+	if cookie, err := r.Cookie(SessionCookieName); err == nil {
 		_ = c.authService.Logout(cookie.Value)
 	}
-	auth.ClearSessionCookie(w)
+	ClearSessionCookie(w)
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 func (c *Controller) usersPage(w http.ResponseWriter, r *http.Request) {
 	p := page(r, "users")
-	users, err := c.authService.GetAllUsers()
+	users, err := c.userService.GetAllUsers()
 	if err != nil {
 		p.Error = err.Error()
 		c.render(w, "users", UsersView{Page: p})
@@ -173,7 +191,7 @@ func (c *Controller) createUser(w http.ResponseWriter, r *http.Request) {
 		Password: r.PostForm.Get("password"),
 		IsAdmin:  r.PostForm.Get("isAdmin") == "on",
 	}
-	if _, err := c.authService.CreateUser(req); err != nil {
+	if _, err := c.userService.CreateUser(req); err != nil {
 		p := page(r, "new user")
 		p.Error = err.Error()
 		c.render(w, "user_form", UserFormView{Page: p})
@@ -184,7 +202,7 @@ func (c *Controller) createUser(w http.ResponseWriter, r *http.Request) {
 
 func (c *Controller) editUserPage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	u, err := c.authService.GetUser(id)
+	u, err := c.userService.GetUser(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -203,8 +221,8 @@ func (c *Controller) updateUser(w http.ResponseWriter, r *http.Request) {
 		Password: r.PostForm.Get("password"),
 		IsAdmin:  r.PostForm.Get("isAdmin") == "on",
 	}
-	if _, err := c.authService.UpdateUser(id, auth.UserFromContext(r.Context()).ID, req); err != nil {
-		u, _ := c.authService.GetUser(id)
+	if _, err := c.userService.UpdateUser(id, auth.UserFromContext(r.Context()).ID, req); err != nil {
+		u, _ := c.userService.GetUser(id)
 		p := page(r, "edit user")
 		p.Error = err.Error()
 		c.render(w, "user_form", UserFormView{Page: p, User: u})
@@ -216,7 +234,7 @@ func (c *Controller) updateUser(w http.ResponseWriter, r *http.Request) {
 func (c *Controller) deleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	actor := auth.UserFromContext(r.Context())
-	_ = c.authService.DeleteUser(id, actor.ID)
+	_ = c.userService.DeleteUser(id, actor.ID)
 	http.Redirect(w, r, "/users", http.StatusFound)
 }
 
