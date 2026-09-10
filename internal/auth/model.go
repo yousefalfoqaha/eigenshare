@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"eigenshare/backend/timestamp"
+	"eigenshare/internal/timestamp"
 )
 
 type Session struct {

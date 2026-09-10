@@ -10,6 +10,7 @@
       <th>handle</th>
       <th>files</th>
       <th>total size</th>
+      <th>expires</th>
       <th></th>
     </tr>
   </thead>
@@ -19,6 +20,7 @@
       <td><a href="/s/{{.Handle}}">{{.Handle}}</a></td>
       <td>{{.TotalFiles}}</td>
       <td>{{formatSize .TotalSize}}</td>
+      <td>{{.ExpiresAt.Time.Format "Jan 02, 2006"}}</td>
       <td>
         <div class="row-actions">
           <a href="/shares/{{.Handle}}/edit">edit</a>

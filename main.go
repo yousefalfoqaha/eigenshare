@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"eigenshare/backend/auth"
-	"eigenshare/backend/infra"
-	"eigenshare/backend/share"
-	"eigenshare/backend/user"
-	"eigenshare/backend/web"
+	"eigenshare/internal/auth"
+	"eigenshare/internal/infra"
+	"eigenshare/internal/share"
+	"eigenshare/internal/user"
+	"eigenshare/internal/web"
 )
 
 const (

@@ -3,5 +3,5 @@ go = "1.26"
 
 [tasks.dev]
 run = "go run ."
-dir = "{{config_root}}/backend"
+dir = "{{config_root}}/internal"
 description = "Run the eigenshare server on :8080"

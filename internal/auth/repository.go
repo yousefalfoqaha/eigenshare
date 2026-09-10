@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"errors"
 
-	"eigenshare/backend/infra"
-	"eigenshare/backend/timestamp"
+	"eigenshare/internal/infra"
+	"eigenshare/internal/timestamp"
 )
 
 type SessionRepository struct {

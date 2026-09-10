@@ -2,10 +2,11 @@ package share
 
 import (
 	"database/sql"
-	"eigenshare/backend/infra"
-	"eigenshare/backend/timestamp"
 	"fmt"
 	"strings"
+
+	"eigenshare/internal/infra"
+	"eigenshare/internal/timestamp"
 )
 
 type ShareRepository struct {
@@ -22,6 +23,7 @@ func (r *ShareRepository) GetAll() ([]ShareSummary, error) {
 		SELECT 
 			s.id, 
 			s.handle,
+			s.expires_at,
 			COUNT(f.` + "`order`" + `) AS totalFiles, 
 			COALESCE(SUM(f.expected_size), 0) AS totalSize
 		FROM share s
@@ -36,7 +38,7 @@ func (r *ShareRepository) GetAll() ([]ShareSummary, error) {
 
 	for rows.Next() {
 		var s ShareSummary
-		if err := rows.Scan(&s.ID, &s.Handle, &s.TotalFiles, &s.TotalSize); err != nil {
+		if err := rows.Scan(&s.ID, &s.Handle, &s.ExpiresAt, &s.TotalFiles, &s.TotalSize); err != nil {
 			return nil, err
 		}
 		summaries = append(summaries, s)

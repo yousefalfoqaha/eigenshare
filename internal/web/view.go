@@ -1,21 +1,15 @@
 package web
 
 import (
-	"eigenshare/backend/share"
-	"eigenshare/backend/user"
+	"net/http"
+
+	"eigenshare/internal/auth"
+	"eigenshare/internal/share"
+	"eigenshare/internal/user"
 )
 
-type Error struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
-}
-
-func (e Error) Error() string {
-	return e.Message
-}
-
-func NewError(status int, message string) Error {
-	return Error{Status: status, Message: message}
+func page(r *http.Request, title string) Page {
+	return Page{Title: title, CurrentUser: auth.UserFromContext(r.Context())}
 }
 
 type Page struct {

@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"eigenshare/backend/user"
+	"eigenshare/internal/user"
 )
 
 type userKey struct{}

@@ -1,4 +1,4 @@
-module eigenshare/backend
+module eigenshare
 
 go 1.26.1
 

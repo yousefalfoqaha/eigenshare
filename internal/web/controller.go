@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"html/template"
 	"io/fs"
-	"log"
 	"net/http"
 	"strconv"
 
-	"eigenshare/backend/auth"
-	"eigenshare/backend/share"
-	"eigenshare/backend/user"
+	"eigenshare/internal/auth"
+	"eigenshare/internal/share"
+	"eigenshare/internal/user"
 )
 
 //go:embed templates/*.html
@@ -66,20 +65,6 @@ func NewController(authSvc *auth.AuthService, userSvc *user.UserService, shareSv
 	}
 }
 
-func makeHandler(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := h(w, r); err != nil {
-			apiErr := MapError(err)
-
-			if apiErr.Status == http.StatusInternalServerError {
-				log.Printf("INTERNAL ERROR: %v", err)
-			}
-
-			_ = JSON(w, apiErr.Status, apiErr)
-		}
-	}
-}
-
 func (c *Controller) RegisterHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /static/", c.serveStatic)
 	router.HandleFunc("GET /login", c.loginPage)
@@ -90,20 +75,20 @@ func (c *Controller) RegisterHandlers(router *http.ServeMux) {
 		return OptionalAuth(c.authService, h)
 	}
 	router.Handle("GET /s/{handle}", optional(http.HandlerFunc(c.sharePage)))
-	router.Handle("GET /s/{handle}/download", optional(makeHandler(c.downloadAll)))
-	router.Handle("GET /s/{handle}/files/{fileID}/download", optional(makeHandler(c.downloadFile)))
+	router.Handle("GET /s/{handle}/download", optional(makeAPIHandler(c.downloadAll)))
+	router.Handle("GET /s/{handle}/files/{fileID}/download", optional(makeAPIHandler(c.downloadFile)))
 }
 
 func (c *Controller) RegisterProtectedHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /", c.index)
 	router.HandleFunc("GET /shares", c.sharesPage)
 	router.HandleFunc("GET /shares/new", c.newSharePage)
-	router.HandleFunc("POST /shares", makeHandler(c.createShare))
+	router.HandleFunc("POST /shares", makeAPIHandler(c.createShare))
 	router.HandleFunc("GET /shares/{handle}/edit", c.editSharePage)
 	router.HandleFunc("POST /shares/{handle}/delete", c.deleteShare)
 	router.HandleFunc("POST /shares/{handle}/files/{fileID}/delete", c.deleteFile)
-	router.HandleFunc("GET /shares/{handle}/progress", makeHandler(c.getProgress))
-	router.HandleFunc("PUT /shares/{handle}/files/{fileID}/stream", makeHandler(c.streamFile))
+	router.HandleFunc("GET /shares/{handle}/progress", makeAPIHandler(c.getProgress))
+	router.HandleFunc("PUT /shares/{handle}/files/{fileID}/stream", makeAPIHandler(c.streamFile))
 
 	router.HandleFunc("GET /users", c.usersPage)
 	admin := RequireAdmin
@@ -120,10 +105,6 @@ func (c *Controller) render(w http.ResponseWriter, page string, data any) {
 	if err := t.ExecuteTemplate(w, "layout", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func page(r *http.Request, title string) Page {
-	return Page{Title: title, CurrentUser: auth.UserFromContext(r.Context())}
 }
 
 func (c *Controller) index(w http.ResponseWriter, r *http.Request) {
@@ -314,7 +295,7 @@ func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	return JSON(w, http.StatusCreated, sh)
+	return writeAPIResponse(w, http.StatusCreated, sh)
 }
 
 func (c *Controller) streamFile(w http.ResponseWriter, r *http.Request) error {
@@ -328,7 +309,7 @@ func (c *Controller) streamFile(w http.ResponseWriter, r *http.Request) error {
 
 	offset, err := strconv.ParseInt(r.Header.Get("X-Write-Offset"), 10, 64)
 	if err != nil {
-		return NewError(http.StatusBadRequest, "invalid X-Write-Offset header")
+		return NewHTTPError(http.StatusBadRequest, "invalid X-Write-Offset header")
 	}
 
 	if err := c.shareService.StreamFile(sh.ID, fileID, offset, r.Body); err != nil {
@@ -351,7 +332,7 @@ func (c *Controller) getProgress(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	return JSON(w, http.StatusOK, map[string]int64{"bytesWritten": bytesWritten})
+	return writeAPIResponse(w, http.StatusOK, map[string]int64{"bytesWritten": bytesWritten})
 }
 
 func (c *Controller) downloadAll(w http.ResponseWriter, r *http.Request) error {

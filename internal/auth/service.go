@@ -3,7 +3,7 @@ package auth
 import (
 	"time"
 
-	"eigenshare/backend/user"
+	"eigenshare/internal/user"
 
 	"github.com/google/uuid"
 )

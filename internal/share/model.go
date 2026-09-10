@@ -1,10 +1,11 @@
 package share
 
 import (
-	"eigenshare/backend/timestamp"
 	"fmt"
 	"regexp"
 	"time"
+
+	"eigenshare/internal/timestamp"
 )
 
 var (
@@ -47,10 +48,11 @@ func NewShare(id, handle string, expiryMinutes int) (*Share, error) {
 }
 
 type ShareSummary struct {
-	ID         string `json:"id"`
-	Handle     string `json:"handle"`
-	TotalFiles int    `json:"totalFiles"`
-	TotalSize  int64  `json:"totalSize"`
+	ID         string               `json:"id"`
+	Handle     string               `json:"handle"`
+	TotalFiles int                  `json:"totalFiles"`
+	TotalSize  int64                `json:"totalSize"`
+	ExpiresAt  *timestamp.Timestamp `json:"expiresAt"`
 }
 
 type File struct {

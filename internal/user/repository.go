@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"eigenshare/backend/infra"
+	"eigenshare/internal/infra"
 )
 
 type UserRepository struct {

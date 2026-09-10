@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"eigenshare/backend/timestamp"
+	"eigenshare/internal/timestamp"
 
 	"golang.org/x/crypto/bcrypt"
 )

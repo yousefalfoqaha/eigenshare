@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"eigenshare/backend/auth"
+	"eigenshare/internal/auth"
 )
 
 const SessionCookieName = "session_id"
