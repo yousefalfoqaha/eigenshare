@@ -19,6 +19,7 @@ type Share struct {
 	Files     []File               `json:"files"`
 	CreatedAt timestamp.Timestamp  `json:"createdAt"`
 	ExpiresAt *timestamp.Timestamp `json:"expiresAt"`
+	Version   int64                `json:"-"`
 }
 
 func NewShare(id, handle string, expiryMinutes int) (*Share, error) {
@@ -57,12 +58,18 @@ type ShareSummary struct {
 
 type File struct {
 	ID           string `json:"id"`
-	Order        int    `json:"order"`
 	Name         string `json:"name"`
 	ExpectedSize int64  `json:"expectedSize"`
 }
 
-func NewFile(name string, expectedSize int64, order int) (*File, error) {
+type FileProgress struct {
+	FileID       string `json:"fileId"`
+	BytesWritten int64  `json:"bytesWritten"`
+	ExpectedSize int64  `json:"expectedSize"`
+	Complete     bool   `json:"complete"`
+}
+
+func NewFile(name string, expectedSize int64) (*File, error) {
 	if name == "" {
 		return nil, fmt.Errorf("file name is required")
 	}
@@ -72,12 +79,7 @@ func NewFile(name string, expectedSize int64, order int) (*File, error) {
 	if expectedSize <= 0 {
 		return nil, fmt.Errorf("file size must be greater than 0")
 	}
-	if order < 0 {
-		return nil, fmt.Errorf("file order must be greater than or equal to 0")
-	}
-
 	return &File{
-		Order:        order,
 		Name:         name,
 		ExpectedSize: expectedSize,
 	}, nil

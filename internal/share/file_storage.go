@@ -16,7 +16,7 @@ func NewFileStorage(dataDir string) *FileStorage {
 }
 
 func (s *FileStorage) CreateShareFolder(sh Share) error {
-	err := os.MkdirAll(filepath.Join(s.dataDir, sh.ID), 0755)
+	err := os.MkdirAll(filepath.Join(s.dataDir, sh.ID), 0o755)
 	if err != nil {
 		return err
 	}
@@ -31,9 +31,17 @@ func (s *FileStorage) CreateShareFolder(sh Share) error {
 	return nil
 }
 
+func (s *FileStorage) CreateFile(shareID, fileID string) error {
+	if err := os.MkdirAll(filepath.Join(s.dataDir, shareID), 0o755); err != nil {
+		return err
+	}
+
+	return s.createFile(shareID, fileID)
+}
+
 func (s *FileStorage) createFile(shareID string, fileID string) error {
 	filePath := filepath.Join(s.dataDir, shareID, fileID)
-	f, err := os.Create(filePath)
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0o644)
 	if err != nil {
 		return err
 	}
@@ -42,8 +50,52 @@ func (s *FileStorage) createFile(shareID string, fileID string) error {
 	return nil
 }
 
-func (s *FileStorage) RemoveShareFolder(shareID string) error {
-	return os.RemoveAll(filepath.Join(s.dataDir, shareID))
+func (s *FileStorage) HasIncompleteFiles(sh Share) (bool, error) {
+	for _, file := range sh.Files {
+		stat, err := os.Stat(filepath.Join(s.dataDir, sh.ID, file.ID))
+		if os.IsNotExist(err) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if stat.Size() != file.ExpectedSize {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (s *FileStorage) RemoveShareFolder(ids ...string) error {
+	for _, id := range ids {
+		err := os.RemoveAll(filepath.Join(s.dataDir, id))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *FileStorage) GetShareIDs() ([]string, error) {
+	entries, err := os.ReadDir(s.dataDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var shareIDs []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		shareIDs = append(shareIDs, entry.Name())
+	}
+
+	return shareIDs, nil
 }
 
 func (s *FileStorage) RemoveFile(shareID, fileID string) error {
@@ -54,36 +106,41 @@ func (s *FileStorage) RemoveFile(shareID, fileID string) error {
 	return err
 }
 
-func (s *FileStorage) WriteFileStream(shareID string, fileID string, expectedSize int64, offset int64, fileReader io.Reader) error {
+func (s *FileStorage) WriteFileStream(shareID string, fileID string, expectedSize int64, offset int64, fileReader io.Reader) (int64, error) {
+	if err := os.MkdirAll(filepath.Join(s.dataDir, shareID), 0o755); err != nil {
+		return 0, err
+	}
+
 	filePath := filepath.Join(s.dataDir, shareID, fileID)
-	f, err := os.OpenFile(filePath, os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0o644)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return ErrFileNotFound
-		}
-		return err
+		return 0, err
 	}
 	defer f.Close()
 
 	stat, err := f.Stat()
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if offset != stat.Size() {
-		return ErrInvalidChunkOffset
+		return 0, &ChunkOffsetConflictError{
+			CurrentOffset: stat.Size(),
+			ExpectedSize:  expectedSize,
+		}
 	}
 
 	if _, err = f.Seek(offset, io.SeekStart); err != nil {
-		return err
+		return 0, err
 	}
 
 	remaining := expectedSize - offset
-	if _, err := io.Copy(f, io.LimitReader(fileReader, remaining)); err != nil {
-		return err
+	written, err := io.Copy(f, io.LimitReader(fileReader, remaining))
+	if err != nil {
+		return 0, err
 	}
 
-	return nil
+	return offset + written, nil
 }
 
 func (s *FileStorage) IsShareComplete(sh Share) (bool, error) {
@@ -92,7 +149,7 @@ func (s *FileStorage) IsShareComplete(sh Share) (bool, error) {
 	for _, f := range sh.Files {
 		stat, err := os.Stat(filepath.Join(sharePath, f.ID))
 		if os.IsNotExist(err) {
-			return false, ErrFileNotFound
+			return false, nil
 		}
 
 		inProgress := stat.Size() != f.ExpectedSize
@@ -111,7 +168,7 @@ func (s *FileStorage) GetShareBytesWritten(sh Share) (int64, error) {
 	for _, f := range sh.Files {
 		stat, err := os.Stat(filepath.Join(sharePath, f.ID))
 		if os.IsNotExist(err) {
-			return 0, ErrFileNotFound
+			continue
 		}
 
 		written += stat.Size()

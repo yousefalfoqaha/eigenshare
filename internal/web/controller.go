@@ -3,6 +3,7 @@ package web
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -29,21 +30,10 @@ type Controller struct {
 
 func NewController(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.ShareService) *Controller {
 	funcs := template.FuncMap{
-		"shareTotalSize": func(sh *share.Share) int64 {
-			var total int64
-			for _, f := range sh.Files {
-				total += f.ExpectedSize
-			}
-			return total
-		},
-		"formatSize": formatSize,
-		"shareTotalFiles": func(sh *share.Share) int {
-			var total int
-			for range sh.Files {
-				total += 1
-			}
-			return total
-		},
+		"shareTotalSize":  shareTotalSize,
+		"formatSize":      formatSize,
+		"shareTotalFiles": shareTotalFiles,
+		"expiresIn":       expiresIn,
 	}
 
 	base := template.Must(template.New("layout").Funcs(funcs).ParseFS(templateFS, "templates/layout.html"))
@@ -51,7 +41,7 @@ func NewController(authSvc *auth.AuthService, userSvc *user.UserService, shareSv
 	pages := make(map[string]*template.Template)
 	for _, name := range []string{"login", "shares", "share", "edit_share", "new_share", "users", "user_form"} {
 		t := template.Must(base.Clone())
-		template.Must(t.ParseFS(templateFS, "templates/"+name+".html"))
+		template.Must(t.ParseFS(templateFS, "templates/"+name+".html", "templates/file_picker.html"))
 		pages[name] = t
 	}
 
@@ -86,6 +76,7 @@ func (c *Controller) RegisterProtectedHandlers(router *http.ServeMux) {
 	router.HandleFunc("POST /shares", makeAPIHandler(c.createShare))
 	router.HandleFunc("GET /shares/{handle}/edit", c.editSharePage)
 	router.HandleFunc("POST /shares/{handle}/delete", c.deleteShare)
+	router.HandleFunc("POST /shares/{handle}/files", makeAPIHandler(c.addFilesToShare))
 	router.HandleFunc("POST /shares/{handle}/files/{fileID}/delete", c.deleteFile)
 	router.HandleFunc("GET /shares/{handle}/progress", makeAPIHandler(c.getProgress))
 	router.HandleFunc("PUT /shares/{handle}/files/{fileID}/stream", makeAPIHandler(c.streamFile))
@@ -277,6 +268,24 @@ func (c *Controller) deleteShare(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/shares", http.StatusFound)
 }
 
+func (c *Controller) addFilesToShare(w http.ResponseWriter, r *http.Request) error {
+	handle := r.PathValue("handle")
+
+	var req struct {
+		Files []share.FileRequest `json:"files"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return err
+	}
+
+	newFiles, err := c.shareService.AddFiles(handle, req.Files)
+	if err != nil {
+		return err
+	}
+
+	return writeAPIResponse(w, http.StatusOK, newFiles)
+}
+
 func (c *Controller) deleteFile(w http.ResponseWriter, r *http.Request) {
 	handle := r.PathValue("handle")
 	fileID := r.PathValue("fileID")
@@ -312,12 +321,22 @@ func (c *Controller) streamFile(w http.ResponseWriter, r *http.Request) error {
 		return NewHTTPError(http.StatusBadRequest, "invalid X-Write-Offset header")
 	}
 
-	if err := c.shareService.StreamFile(sh.ID, fileID, offset, r.Body); err != nil {
+	progress, err := c.shareService.StreamFile(sh.ID, fileID, offset, r.Body)
+	if err != nil {
+		var offsetError *share.ChunkOffsetConflictError
+		if errors.As(err, &offsetError) {
+			return writeAPIResponse(w, http.StatusConflict, map[string]any{
+				"message":      err.Error(),
+				"fileId":       fileID,
+				"bytesWritten": offsetError.CurrentOffset,
+				"expectedSize": offsetError.ExpectedSize,
+				"complete":     offsetError.CurrentOffset == offsetError.ExpectedSize,
+			})
+		}
 		return err
 	}
 
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+	return writeAPIResponse(w, http.StatusOK, progress)
 }
 
 func (c *Controller) getProgress(w http.ResponseWriter, r *http.Request) error {

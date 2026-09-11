@@ -3,10 +3,10 @@ package share
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"eigenshare/internal/infra"
 	"eigenshare/internal/timestamp"
+	"github.com/google/uuid"
 )
 
 type ShareRepository struct {
@@ -24,7 +24,7 @@ func (r *ShareRepository) GetAll() ([]ShareSummary, error) {
 			s.id, 
 			s.handle,
 			s.expires_at,
-			COUNT(f.` + "`order`" + `) AS totalFiles, 
+			COUNT(f.id) AS totalFiles,
 			COALESCE(SUM(f.expected_size), 0) AS totalSize
 		FROM share s
 		LEFT JOIN file f ON s.id = f.share_id
@@ -55,8 +55,8 @@ func (r *ShareRepository) Get(id string) (*Share, error) {
 	var sh Share
 	var expiresAt sql.NullString
 
-	row := r.storage.DB.QueryRow("SELECT id, handle, created_at, expires_at FROM share WHERE id = ?", id)
-	if err := row.Scan(&sh.ID, &sh.Handle, &sh.CreatedAt, &expiresAt); err != nil {
+	row := r.storage.DB.QueryRow("SELECT id, handle, created_at, expires_at, version FROM share WHERE id = ?", id)
+	if err := row.Scan(&sh.ID, &sh.Handle, &sh.CreatedAt, &expiresAt, &sh.Version); err != nil {
 		return nil, err
 	}
 
@@ -82,8 +82,8 @@ func (r *ShareRepository) GetByHandle(handle string) (*Share, error) {
 	var sh Share
 	var expiresAt sql.NullString
 
-	row := r.storage.DB.QueryRow("SELECT id, handle, created_at, expires_at FROM share WHERE handle = ?", handle)
-	if err := row.Scan(&sh.ID, &sh.Handle, &sh.CreatedAt, &expiresAt); err != nil {
+	row := r.storage.DB.QueryRow("SELECT id, handle, created_at, expires_at, version FROM share WHERE handle = ?", handle)
+	if err := row.Scan(&sh.ID, &sh.Handle, &sh.CreatedAt, &expiresAt, &sh.Version); err != nil {
 		return nil, err
 	}
 
@@ -105,87 +105,98 @@ func (r *ShareRepository) GetByHandle(handle string) (*Share, error) {
 	return &sh, nil
 }
 
-func (r *ShareRepository) MakeTransaction(o func(tx *sql.Tx) error) error {
+func (r *ShareRepository) Save(share *Share) (*Share, error) {
 	tx, err := r.storage.DB.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 
-	if err := o(tx); err != nil {
-		return err
+	isNew := share.ID == ""
+	if isNew {
+		share.ID = uuid.New().String()
+		share.Version = 1
+	} else {
+		result, err := tx.Exec(
+			"UPDATE share SET version = version + 1 WHERE id = ? AND version = ?",
+			share.ID, share.Version,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if rowsAffected != 1 {
+			return nil, ErrShareVersionConflict
+		}
+		share.Version++
 	}
 
-	return tx.Commit()
-}
-
-func (r *ShareRepository) Save(s Share, tx *sql.Tx) (*Share, error) {
 	var exists bool
-
-	err := tx.QueryRow(
+	err = tx.QueryRow(
 		"SELECT EXISTS(SELECT 1 FROM share WHERE handle = ? AND id != ?)",
-		s.Handle, s.ID,
+		share.Handle, share.ID,
 	).Scan(&exists)
 	if err != nil {
 		return nil, err
 	}
 
 	if exists {
-		return nil, fmt.Errorf("%w: %s", ErrHandleExists, s.Handle)
+		return nil, fmt.Errorf("%w: %s", ErrHandleExists, share.Handle)
 	}
 
-	var expiresAt any
-	if s.ExpiresAt != nil {
-		expiresAt = s.ExpiresAt.String()
-	}
-
-	_, err = tx.Exec(
-		"INSERT INTO share (id, handle, created_at, expires_at) VALUES (?, ?, ?, ?)",
-		s.ID, s.Handle, s.CreatedAt.String(), expiresAt,
-	)
-	if err != nil {
+	if _, err := tx.Exec("DELETE FROM share WHERE id = ?", share.ID); err != nil {
 		return nil, err
 	}
 
-	for _, f := range s.Files {
-		_, err := tx.Exec(
-			"INSERT INTO file (id, name, expected_size, `order`, share_id) VALUES (?, ?, ?, ?, ?)",
-			f.ID, f.Name, f.ExpectedSize, f.Order, s.ID,
-		)
-		if err != nil {
-			return nil, err
+	if err := r.insertShareAggregate(tx, share); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return share, nil
+}
+
+func (r *ShareRepository) insertShareAggregate(tx *sql.Tx, share *Share) error {
+	var expiresAt any
+	if share.ExpiresAt != nil {
+		expiresAt = share.ExpiresAt.String()
+	}
+
+	if _, err := tx.Exec(
+		"INSERT INTO share (id, handle, created_at, expires_at, version) VALUES (?, ?, ?, ?, ?)",
+		share.ID, share.Handle, share.CreatedAt.String(), expiresAt, share.Version,
+	); err != nil {
+		return err
+	}
+
+	for _, file := range share.Files {
+		if _, err := tx.Exec(
+			"INSERT INTO file (id, name, expected_size, share_id) VALUES (?, ?, ?, ?)",
+			file.ID, file.Name, file.ExpectedSize, share.ID,
+		); err != nil {
+			return err
 		}
 	}
 
-	return &s, nil
+	return nil
 }
 
-func (r *ShareRepository) Delete(ids []string, tx *sql.Tx) error {
-	if len(ids) == 0 {
-		return nil
-	}
-
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-
-	query := "DELETE FROM share WHERE id IN (" + strings.Join(placeholders, ",") + ")"
-	_, err := tx.Exec(query, args...)
-	return err
-}
-
-func (r *ShareRepository) DeleteFile(shareID, fileID string) error {
-	_, err := r.storage.DB.Exec("DELETE FROM file WHERE id = ? AND share_id = ?", fileID, shareID)
+func (r *ShareRepository) Delete(shareID string) error {
+	_, err := r.storage.DB.Exec("DELETE FROM share WHERE id = ?", shareID)
 	return err
 }
 
 func (r *ShareRepository) getAllFilesByShareID(id string) ([]File, error) {
 	var files []File
 	rows, err := r.storage.DB.Query(
-		"SELECT id, name, expected_size, `order` FROM file WHERE share_id = ? ORDER BY `order`", id)
+		"SELECT id, name, expected_size FROM file WHERE share_id = ?", id)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +204,7 @@ func (r *ShareRepository) getAllFilesByShareID(id string) ([]File, error) {
 
 	for rows.Next() {
 		var file File
-		if err := rows.Scan(&file.ID, &file.Name, &file.ExpectedSize, &file.Order); err != nil {
+		if err := rows.Scan(&file.ID, &file.Name, &file.ExpectedSize); err != nil {
 			return nil, err
 		}
 		files = append(files, file)

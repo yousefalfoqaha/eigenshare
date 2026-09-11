@@ -3,7 +3,6 @@ package infra
 import (
 	"database/sql"
 	_ "embed"
-	"fmt"
 	"log"
 
 	_ "modernc.org/sqlite"
@@ -45,5 +44,5 @@ func initSchema(s *Database) {
 		log.Fatal(err.Error())
 	}
 
-	fmt.Println("Initialized database schema")
+	log.Println("Initialized database schema")
 }

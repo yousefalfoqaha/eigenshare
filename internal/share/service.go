@@ -21,13 +21,13 @@ func NewShareService(repo *ShareRepository, fs *FileStorage) *ShareService {
 	}
 }
 
-func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, stream io.Reader) error {
+func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, stream io.Reader) (FileProgress, error) {
 	sh, err := s.shareRepository.Get(shareID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrShareNotFound
+			return FileProgress{}, ErrShareNotFound
 		}
-		return err
+		return FileProgress{}, err
 	}
 
 	var file *File
@@ -38,36 +38,45 @@ func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, s
 		}
 	}
 	if file == nil {
-		return ErrFileNotFound
+		return FileProgress{}, ErrFileNotFound
 	}
 
 	if offset >= file.ExpectedSize {
-		return ErrChunkOffsetExceedsSize
+		return FileProgress{}, ErrChunkOffsetExceedsSize
 	}
 
-	err = s.fileStorage.WriteFileStream(shareID, file.ID, file.ExpectedSize, offset, stream)
+	bytesWritten, err := s.fileStorage.WriteFileStream(shareID, file.ID, file.ExpectedSize, offset, stream)
 	if err != nil {
-		return err
+		return FileProgress{}, err
 	}
 
-	return nil
+	return FileProgress{
+		FileID:       file.ID,
+		BytesWritten: bytesWritten,
+		ExpectedSize: file.ExpectedSize,
+		Complete:     bytesWritten == file.ExpectedSize,
+	}, nil
 }
 
 func (s *ShareService) RequestShare(req ShareRequest) (*Share, error) {
-	sh, err := NewShare(uuid.New().String(), req.Handle, req.ExpiryMinutes)
+	sh, err := NewShare("", req.Handle, req.ExpiryMinutes)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
 
+	saved := false
 	var success bool
 	defer func() {
 		if !success {
-			s.fileStorage.RemoveShareFolder(sh.ID)
+			if saved {
+				_ = s.shareRepository.Delete(sh.ID)
+			}
+			_ = s.fileStorage.RemoveShareFolder(sh.ID)
 		}
 	}()
 
 	for _, f := range req.Files {
-		file, err := NewFile(f.Name, f.ExpectedSize, f.Order)
+		file, err := NewFile(f.Name, f.ExpectedSize)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 		}
@@ -76,17 +85,13 @@ func (s *ShareService) RequestShare(req ShareRequest) (*Share, error) {
 		sh.Files = append(sh.Files, *file)
 	}
 
-	if err := s.fileStorage.CreateShareFolder(*sh); err != nil {
+	sh, err = s.shareRepository.Save(sh)
+	if err != nil {
 		return nil, err
 	}
+	saved = true
 
-	err = s.shareRepository.MakeTransaction(func(tx *sql.Tx) error {
-		if _, err := s.shareRepository.Save(*sh, tx); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
+	if err := s.fileStorage.CreateShareFolder(*sh); err != nil {
 		return nil, err
 	}
 
@@ -110,15 +115,13 @@ func (s *ShareService) Delete(ids ...string) error {
 		return nil
 	}
 
-	err := s.shareRepository.MakeTransaction(func(tx *sql.Tx) error {
-		return s.shareRepository.Delete(ids, tx)
-	})
-	if err != nil {
-		return err
-	}
-
 	for _, id := range ids {
-		s.fileStorage.RemoveShareFolder(id)
+		if err := s.shareRepository.Delete(id); err != nil {
+			return err
+		}
+		if err := s.fileStorage.RemoveShareFolder(id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -199,6 +202,39 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (string, erro
 	return s.fileStorage.ShareFilePath(sh.ID, file.ID)
 }
 
+func (s *ShareService) AddFiles(handle string, fileReqs []FileRequest) ([]File, error) {
+	sh, err := s.GetShareByHandle(handle)
+	if err != nil {
+		return nil, err
+	}
+
+	incomplete, err := s.fileStorage.HasIncompleteFiles(*sh)
+	if err != nil {
+		return nil, err
+	}
+	if incomplete {
+		return nil, ErrShareUploading
+	}
+
+	var newFiles []File
+
+	for _, req := range fileReqs {
+		file, err := NewFile(req.Name, req.ExpectedSize)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
+		file.ID = uuid.New().String()
+		sh.Files = append(sh.Files, *file)
+		newFiles = append(newFiles, *file)
+	}
+
+	if _, err := s.shareRepository.Save(sh); err != nil {
+		return nil, err
+	}
+
+	return newFiles, nil
+}
+
 func (s *ShareService) DeleteFile(handle, fileID string) error {
 	sh, err := s.shareRepository.GetByHandle(handle)
 	if err != nil {
@@ -208,22 +244,27 @@ func (s *ShareService) DeleteFile(handle, fileID string) error {
 		return err
 	}
 
-	var file *File
+	var removedFileID string
 	for i, f := range sh.Files {
 		if f.ID == fileID {
-			file = &sh.Files[i]
+			removedFileID = f.ID
+			sh.Files = append(sh.Files[:i], sh.Files[i+1:]...)
 			break
 		}
 	}
-	if file == nil {
+	if removedFileID == "" {
 		return ErrFileNotFound
 	}
 
-	if err := s.shareRepository.DeleteFile(sh.ID, fileID); err != nil {
+	if _, err := s.shareRepository.Save(sh); err != nil {
 		return err
 	}
 
-	return s.fileStorage.RemoveFile(sh.ID, fileID)
+	if err := s.fileStorage.RemoveFile(sh.ID, removedFileID); errors.Is(err, ErrFileNotFound) {
+		return nil
+	} else {
+		return err
+	}
 }
 
 func (s *ShareService) GetExpiredShares() ([]string, error) {

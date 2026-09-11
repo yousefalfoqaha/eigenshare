@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1>new share</h1>
-<form id="new-share">
+<form id="new-share-form">
   <label
     >handle
     <input
@@ -11,17 +11,18 @@
       pattern="[a-zA-Z0-9_-]{3,64}"
       minlength="3"
       autofocus
-  /></label>
+    />
+  </label>
+
   <label
     >expiry (minutes, 0 = permanent)
-    <input type="number" name="expiryMinutes" value="60" min="0"
-  /></label>
+    <input type="number" name="expiryMinutes" value="60" min="0" />
+  </label>
 
-  <fieldset>
-    <legend>files</legend>
-    <div id="file-list"></div>
-    <input type="file" id="file-input" multiple />
-  </fieldset>
+  {{template "file-picker" "select files"}}
+
+  <div id="status" role="status" aria-live="polite"></div>
+
   <button type="submit" id="create-btn" class="submit">create</button>
 </form>
 
@@ -29,19 +30,9 @@
   <a href="/shares">back to shares</a>
 </p>
 
-<div id="status"></div>
-
+<script src="/static/uploader.js"></script>
 <script>
-  function formatSize(bytes) {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    const val = bytes / Math.pow(k, i);
-    return `${val.toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
-  }
-
-  const handleInput = document.getElementById("handle-input");
+  const selectedFiles = window.filePicker.files;
 
   function randomHandle() {
     const chars =
@@ -52,107 +43,60 @@
     return s;
   }
 
-  handleInput.value = randomHandle();
+  document.getElementById("handle-input").value = randomHandle();
 
-  const fileList = document.getElementById("file-list");
-  const fileInput = document.getElementById("file-input");
-  const status = document.getElementById("status");
-  const createBtn = document.getElementById("create-btn");
-  const form = document.getElementById("new-share");
-  let selected = [];
+  document
+    .getElementById("new-share-form")
+    .addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("create-btn");
+      const status = document.getElementById("status");
 
-  function renderFiles() {
-    fileList.innerHTML = "";
-    selected.forEach((f, i) => {
-      const row = document.createElement("div");
-      row.className = "file-row";
-      row.textContent = `${f.name} (${formatSize(f.size)})`;
+      btn.disabled = true;
+      status.textContent = "creating share...";
 
-      const rm = document.createElement("button");
-      rm.type = "button";
-      rm.textContent = "remove";
-      rm.onclick = () => {
-        selected.splice(i, 1);
-        renderFiles();
+      const fd = new FormData(e.target);
+      const req = {
+        handle: fd.get("handle"),
+        expiryMinutes: parseInt(fd.get("expiryMinutes") || "0", 10),
+        files: selectedFiles.map((f) => ({
+          name: f.name,
+          expectedSize: f.size,
+        })),
       };
-      row.appendChild(rm);
-      fileList.appendChild(row);
+
+      try {
+        const resp = await fetch("/shares", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(req),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.message || `create failed: ${resp.status}`);
+        }
+
+        const share = await resp.json();
+        const files = share.files || [];
+        status.textContent = `share ${share.handle} created, uploading ${files.length} file(s)...`;
+
+        for (let i = 0; i < files.length; i++) {
+          const file = selectedFiles[i];
+          await streamFile(share.handle, files[i].id, file, (progress) => {
+            const percent = Math.round(
+              (progress.bytesWritten / progress.expectedSize) * 100,
+            );
+            status.textContent = `uploading ${file.name}: ${percent}%`;
+          });
+        }
+
+        status.textContent = "done. redirecting...";
+        window.location.href = `/s/${share.handle}`;
+      } catch (err) {
+        status.textContent = err.message;
+        btn.disabled = false;
+      }
     });
-  }
-
-  fileInput.addEventListener("change", () => {
-    for (const f of fileInput.files) selected.push(f);
-    fileInput.value = "";
-    renderFiles();
-  });
-
-  async function streamFile(handle, fileID, file, expectedSize) {
-    const chunkSize = 1024 * 1024;
-    let offset = 0;
-    while (offset < expectedSize) {
-      const end = Math.min(offset + chunkSize, expectedSize);
-      const blob = file.slice(offset, end);
-      const buf = await blob.arrayBuffer();
-      const resp = await fetch(`/shares/${handle}/files/${fileID}/stream`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "X-Write-Offset": String(offset),
-        },
-        body: buf,
-      });
-      if (!resp.ok)
-        throw new Error(
-          `stream failed for ${file.name} at offset ${offset}: ${resp.status}`,
-        );
-      offset = end;
-      status.textContent = `uploading ${file.name}: ${Math.round((end / expectedSize) * 100)}%`;
-    }
-  }
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    createBtn.disabled = true;
-    status.textContent = "creating share...";
-
-    const fd = new FormData(form);
-    const req = {
-      handle: fd.get("handle"),
-      expiryMinutes: parseInt(fd.get("expiryMinutes") || "0", 10),
-      files: selected.map((f, i) => ({
-        order: i,
-        name: f.name,
-        expectedSize: f.size,
-      })),
-    };
-
-    try {
-      const resp = await fetch("/shares", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(req),
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.message || `create failed: ${resp.status}`);
-      }
-      const share = await resp.json();
-      status.textContent = `share ${share.handle} created, uploading ${share.files.length} file(s)...`;
-
-      for (let i = 0; i < share.files.length; i++) {
-        await streamFile(
-          share.handle,
-          share.files[i].id,
-          selected[i],
-          share.files[i].expectedSize,
-        );
-      }
-      status.textContent = "done. redirecting...";
-      window.location.href = `/s/${share.handle}`;
-    } catch (err) {
-      status.textContent = err.message;
-      createBtn.disabled = false;
-    }
-  });
 </script>
 {{end}}

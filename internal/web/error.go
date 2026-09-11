@@ -31,6 +31,8 @@ var errorRegistry = map[error]int{
 
 	// 409 Conflict
 	share.ErrHandleExists:           http.StatusConflict,
+	share.ErrShareVersionConflict:   http.StatusConflict,
+	share.ErrShareUploading:         http.StatusConflict,
 	share.ErrShareNotComplete:       http.StatusConflict,
 	share.ErrChunkOffsetExceedsSize: http.StatusConflict,
 }

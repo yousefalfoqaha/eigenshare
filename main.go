@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,9 +34,12 @@ func main() {
 	fileStorage := share.NewFileStorage(DATA_PATH)
 	shareService := share.NewShareService(shareRepo, fileStorage)
 	authService := auth.NewAuthService(userSvc, sessionRepo)
+	maintenanceCtx, stopMaintenance := context.WithCancel(context.Background())
+	defer stopMaintenance()
+	share.NewCleanupJob(maintenanceCtx, shareService, 1*time.Minute)
 
 	if err := userSvc.SeedAdmin(); err != nil {
-		fmt.Printf("Failed to seed admin: %v\n", err)
+		log.Printf("Failed to seed admin: %v\n", err)
 	}
 
 	webController := web.NewController(authService, userSvc, shareService)
@@ -59,12 +63,11 @@ func main() {
 		fmt.Println("Shutting down...")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
-		go share.NewExpiryJob(shutdownCtx, shareService, 1*time.Minute)
 
 		server.Shutdown(shutdownCtx)
 	}()
 
-	fmt.Printf("Server listening on port %v\n", PORT)
+	log.Printf("Server listening on port %v\n", PORT)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Printf("Server error: %v\n", err)
 	}

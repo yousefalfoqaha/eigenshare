@@ -20,7 +20,7 @@
       <td><a href="/s/{{.Handle}}">{{.Handle}}</a></td>
       <td>{{.TotalFiles}}</td>
       <td>{{formatSize .TotalSize}}</td>
-      <td>{{.ExpiresAt.Time.Format "Jan 02, 2006"}}</td>
+      <td>{{expiresIn .ExpiresAt}}</td>
       <td>
         <div class="row-actions">
           <a href="/shares/{{.Handle}}/edit">edit</a>
@@ -37,7 +37,7 @@
     </tr>
     {{else}}
     <tr>
-      <td colspan="4" class="empty-table">no shares yet</td>
+      <td colspan="5" class="empty-table">no shares yet</td>
     </tr>
     {{end}}
   </tbody>

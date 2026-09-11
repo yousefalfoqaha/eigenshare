@@ -103,11 +103,21 @@ button {
   width: fit-content;
 }
 
-.file-row {
+.file-picker-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.file-picker-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   padding: 0.25rem 0;
+}
+
+.file-picker-row button {
+  margin-left: auto;
 }
 
 table {
