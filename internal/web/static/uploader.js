@@ -1,3 +1,17 @@
+function formatBytes(bytes) {
+  const unit = 1024;
+  if (bytes < unit) {
+    return `${bytes} B`;
+  }
+  let div = unit;
+  let exp = 0;
+  for (let n = bytes / unit; n >= unit; n /= unit) {
+    div *= unit;
+    exp++;
+  }
+  return `${(bytes / div).toFixed(1)} ${"KMGTPE"[exp]}B`;
+}
+
 async function streamFile(handle, fileID, file, onProgress) {
   const chunkSize = 1024 * 1024;
   let offset = 0;
@@ -8,28 +22,36 @@ async function streamFile(handle, fileID, file, onProgress) {
       method: "PUT",
       headers: {
         "Content-Type": "application/octet-stream",
-        "X-Write-Offset": String(offset),
+        "Upload-Offset": String(offset),
       },
       body: await file.slice(offset, end).arrayBuffer(),
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
+      const uploadOffset = Number(response.headers.get("Upload-Offset"));
       if (
         response.status === 409 &&
-        Number.isSafeInteger(error.bytesWritten) &&
-        error.bytesWritten > offset &&
-        error.bytesWritten <= file.size
+        Number.isSafeInteger(uploadOffset) &&
+        uploadOffset > offset &&
+        uploadOffset <= file.size
       ) {
-        offset = error.bytesWritten;
-        if (onProgress) onProgress(error);
+        offset = uploadOffset;
+        if (onProgress) onProgress(offset);
         continue;
       }
+      const error = await response.json().catch(() => ({}));
       throw new Error(error.message || `upload failed: ${response.status}`);
     }
 
-    const progress = await response.json();
-    offset = progress.bytesWritten;
-    if (onProgress) onProgress(progress);
+    const nextOffset = Number(response.headers.get("Upload-Offset"));
+    if (
+      !Number.isSafeInteger(nextOffset) ||
+      nextOffset <= offset ||
+      nextOffset > file.size
+    ) {
+      throw new Error("invalid Upload-Offset response header");
+    }
+    offset = nextOffset;
+    if (onProgress) onProgress(offset);
   }
 }

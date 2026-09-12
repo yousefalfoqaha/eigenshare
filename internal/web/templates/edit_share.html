@@ -3,10 +3,7 @@
   <h1>{{.Share.Handle}}</h1>
 </section>
 
-<p>
-  {{shareTotalFiles .Share}} file(s) - {{formatSize .BytesWritten}} total {{if
-  .Complete}}<span class="done">(complete)</span>{{end}}
-</p>
+<p>{{shareTotalFiles .Share}} file(s)</p>
 
 <table>
   <thead>
@@ -20,7 +17,10 @@
     {{range .Share.Files}}
     <tr>
       <td>{{.Name}}</td>
-      <td>{{formatSize .ExpectedSize}}</td>
+      <td>
+        {{$w := index $.Progress .ID}}{{if lt $w .ExpectedSize}}in
+        progress{{else}}{{formatSize .ExpectedSize}}{{end}}
+      </td>
       <td>
         <form
           method="post"
@@ -45,7 +45,9 @@
 
   <div id="status" role="status" aria-live="polite"></div>
 
-  <button type="submit" id="add-btn" class="submit">upload to share</button>
+  <button type="submit" id="add-btn" class="submit">upload</button>
+
+  <ul id="progress-lines"></ul>
 </form>
 
 <p>
@@ -54,52 +56,92 @@
 
 <script src="/static/uploader.js"></script>
 <script>
-  const selectedFiles = window.filePicker.files;
+  const handle = "{{.Share.Handle}}";
+  const files = {{.Share.Files}} || [];
+  const progress = {{.Progress}};
+  const lines = document.getElementById("progress-lines");
+
+  function incompleteFiles() {
+    return files.filter((f) => progress[f.id] !== f.expectedSize);
+  }
+
+  function fileLine(f) {
+    let line = document.querySelector(`[data-progress-file="${f.id}"]`);
+    if (!line) {
+      line = document.createElement("li");
+      line.dataset.progressFile = f.id;
+      lines.appendChild(line);
+    }
+    line.textContent = `${f.name}: ${formatBytes(progress[f.id] || 0)} / ${formatBytes(f.expectedSize)}`;
+  }
+
+  incompleteFiles().forEach(fileLine);
 
   document
     .getElementById("add-files-form")
     .addEventListener("submit", async (e) => {
       e.preventDefault();
+      const selectedFiles = window.filePicker.files;
       if (selectedFiles.length === 0) return;
 
       const btn = document.getElementById("add-btn");
       const status = document.getElementById("status");
-      const handle = "{{.Share.Handle}}";
+
+      const uploads = [];
+      const unmatched = [];
+      const pending = incompleteFiles();
+
+      for (const file of selectedFiles) {
+        const match = pending.find(
+          (f) =>
+            !f.claimed && f.name === file.name && f.expectedSize === file.size,
+        );
+        if (match) {
+          match.claimed = true;
+          uploads.push({ entry: match, file });
+        } else {
+          unmatched.push(file);
+        }
+      }
 
       btn.disabled = true;
-      status.textContent = "registering files...";
-
-      const req = {
-        files: selectedFiles.map((f) => ({
-          name: f.name,
-          expectedSize: f.size,
-        })),
-      };
 
       try {
-        const resp = await fetch(`/shares/${handle}/files`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(req),
-        });
+        if (unmatched.length > 0) {
+          status.textContent = "registering files...";
 
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(
-            err.message || `failed to register files: ${resp.status}`,
-          );
+          const resp = await fetch(`/shares/${handle}/files`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              files: unmatched.map((f) => ({
+                name: f.name,
+                expectedSize: f.size,
+              })),
+            }),
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(
+              err.message || `failed to register files: ${resp.status}`,
+            );
+          }
+
+          const newFiles = (await resp.json()) || [];
+          for (let i = 0; i < newFiles.length; i++) {
+            files.push(newFiles[i]);
+            uploads.push({ entry: newFiles[i], file: unmatched[i] });
+          }
         }
 
-        const newFiles = (await resp.json()) || [];
-        status.textContent = `uploading ${newFiles.length} file(s)...`;
+        status.textContent = `uploading ${uploads.length} file(s)...`;
 
-        for (let i = 0; i < newFiles.length; i++) {
-          const file = selectedFiles[i];
-          await streamFile(handle, newFiles[i].id, file, (progress) => {
-            const percent = Math.round(
-              (progress.bytesWritten / progress.expectedSize) * 100,
-            );
-            status.textContent = `uploading ${file.name}: ${percent}%`;
+        for (const { entry, file } of uploads) {
+          fileLine(entry);
+          await streamFile(handle, entry.id, file, (bytesWritten) => {
+            progress[entry.id] = bytesWritten;
+            fileLine(entry);
           });
         }
 

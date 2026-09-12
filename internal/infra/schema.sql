@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS share (
     handle TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL,
     expires_at TEXT,
+    trashed_at TEXT,
     version INTEGER NOT NULL
 );
 

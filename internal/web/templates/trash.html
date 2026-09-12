@@ -1,0 +1,48 @@
+{{define "content"}}
+<section class="title">
+  <h1>trash</h1>
+  {{if .Shares}}
+  <form method="post" action="/shares/delete" class="inline">
+    {{range .Shares}}
+    <input type="hidden" name="shareID" value="{{.ID}}" />
+    {{end}}
+    <button type="submit">delete all</button>
+  </form>
+  {{end}}
+</section>
+
+<table>
+  <thead>
+    <tr>
+      <th>handle</th>
+      <th>total size</th>
+      <th>trashed</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Shares}}
+    <tr>
+      <td>{{.Handle}}</td>
+      <td>{{formatSize .TotalSize}}</td>
+      <td>{{timeAgo .TrashedAt}}</td>
+      <td>
+        <div class="row-actions">
+          <form method="post" action="/shares/{{.Handle}}/restore" class="inline">
+            <button type="submit">restore</button>
+          </form>
+          <form method="post" action="/shares/delete" class="inline">
+            <input type="hidden" name="shareID" value="{{.ID}}" />
+            <button type="submit">delete</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {{else}}
+    <tr>
+      <td colspan="4" class="empty-table">trash is empty</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}

@@ -20,15 +20,14 @@ type Page struct {
 
 type SharesView struct {
 	Page
-	Shares []share.ShareSummary
+	Shares   []share.ShareSummary
+	Progress map[string]int64
 }
 
 type ShareView struct {
 	Page
-	Share        *share.Share
-	numFiles     int
-	BytesWritten int64
-	Complete     bool
+	Share    *share.Share
+	Progress map[string]int64
 }
 
 type SharePublicView struct {

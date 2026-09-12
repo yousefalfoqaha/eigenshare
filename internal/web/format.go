@@ -58,3 +58,22 @@ func expiresIn(t *timestamp.Timestamp) string {
 
 	return "in < 1 min"
 }
+
+func timeAgo(t *timestamp.Timestamp) string {
+	if t == nil {
+		return "never"
+	}
+
+	d := time.Since(t.Time())
+	if d < time.Minute {
+		return "just now"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%d mins ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%d hours ago", int(d.Hours()))
+	}
+
+	return fmt.Sprintf("%d days ago", int(d.Hours()/24))
+}

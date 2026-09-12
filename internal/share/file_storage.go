@@ -50,23 +50,6 @@ func (s *FileStorage) createFile(shareID string, fileID string) error {
 	return nil
 }
 
-func (s *FileStorage) HasIncompleteFiles(sh Share) (bool, error) {
-	for _, file := range sh.Files {
-		stat, err := os.Stat(filepath.Join(s.dataDir, sh.ID, file.ID))
-		if os.IsNotExist(err) {
-			return true, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		if stat.Size() != file.ExpectedSize {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
 func (s *FileStorage) RemoveShareFolder(ids ...string) error {
 	for _, id := range ids {
 		err := os.RemoveAll(filepath.Join(s.dataDir, id))
@@ -161,17 +144,26 @@ func (s *FileStorage) IsShareComplete(sh Share) (bool, error) {
 	return true, nil
 }
 
-func (s *FileStorage) GetShareBytesWritten(sh Share) (int64, error) {
-	sharePath := filepath.Join(s.dataDir, sh.ID)
+func (s *FileStorage) GetShareBytesWritten(shareID string) (map[string]int64, error) {
+	entries, err := os.ReadDir(filepath.Join(s.dataDir, shareID))
+	if os.IsNotExist(err) {
+		return map[string]int64{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 
-	var written int64
-	for _, f := range sh.Files {
-		stat, err := os.Stat(filepath.Join(sharePath, f.ID))
-		if os.IsNotExist(err) {
+	written := make(map[string]int64, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
 			continue
 		}
 
-		written += stat.Size()
+		info, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+		written[entry.Name()] = info.Size()
 	}
 
 	return written, nil
@@ -213,4 +205,37 @@ func (s *FileStorage) CreateShareZipStream(sh Share, w io.Writer) error {
 	}
 
 	return nil
+}
+
+func (s *FileStorage) GetKeys() (map[string]struct{}, error) {
+	keys := make(map[string]struct{})
+
+	entries, err := os.ReadDir(s.dataDir)
+	if os.IsNotExist(err) {
+		return keys, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		shareID := entry.Name()
+		keys[shareID] = struct{}{}
+
+		fileEntries, err := os.ReadDir(filepath.Join(s.dataDir, shareID))
+		if err != nil {
+			continue
+		}
+
+		for _, fe := range fileEntries {
+			if !fe.IsDir() {
+				keys[shareID+"/"+fe.Name()] = struct{}{}
+			}
+		}
+	}
+
+	return keys, nil
 }

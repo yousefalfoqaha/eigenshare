@@ -35,7 +35,8 @@ func main() {
 	authService := auth.NewAuthService(userSvc, sessionRepo)
 	maintenanceCtx, stopMaintenance := context.WithCancel(context.Background())
 	defer stopMaintenance()
-	share.NewCleanupJob(maintenanceCtx, shareService, 1*time.Minute)
+	cleaner := share.NewCleaner(shareRepo, fileStorage)
+	go cleaner.Run(maintenanceCtx, 1*time.Minute)
 
 	if err := userSvc.SeedAdmin(); err != nil {
 		log.Printf("Failed to seed admin: %v\n", err)

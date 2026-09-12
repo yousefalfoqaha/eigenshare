@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net/http"
 
+	"eigenshare/internal/auth"
 	"eigenshare/internal/share"
+	"eigenshare/internal/user"
 )
 
 type HTTPError struct {
@@ -25,16 +27,24 @@ var errorRegistry = map[error]int{
 	share.ErrInvalidRequest:     http.StatusBadRequest,
 	share.ErrInvalidChunkOffset: http.StatusBadRequest,
 
+	// 401 Unauthorized
+	auth.ErrInvalidCredentials: http.StatusUnauthorized,
+	auth.ErrSessionNotFound:    http.StatusUnauthorized,
+
 	// 404 Not Found
 	share.ErrShareNotFound: http.StatusNotFound,
 	share.ErrFileNotFound:  http.StatusNotFound,
+	user.ErrUserNotFound:   http.StatusNotFound,
 
 	// 409 Conflict
 	share.ErrHandleExists:           http.StatusConflict,
 	share.ErrShareVersionConflict:   http.StatusConflict,
-	share.ErrShareUploading:         http.StatusConflict,
 	share.ErrShareNotComplete:       http.StatusConflict,
 	share.ErrChunkOffsetExceedsSize: http.StatusConflict,
+	user.ErrUsernameTaken:           http.StatusConflict,
+	user.ErrCannotDeleteSelf:        http.StatusConflict,
+	user.ErrCannotDeleteLastAdmin:   http.StatusConflict,
+	user.ErrCannotDemoteSelf:        http.StatusConflict,
 }
 
 func MapError(err error) HTTPError {

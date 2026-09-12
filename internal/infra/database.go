@@ -16,7 +16,7 @@ type Database struct {
 }
 
 func NewDatabase(dbPath string) *Database {
-	sqlDB, err := sql.Open("sqlite", dbPath)
+	sqlDB, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -26,10 +26,6 @@ func NewDatabase(dbPath string) *Database {
 	sqlDB.SetMaxOpenConns(10)
 
 	if err := sqlDB.Ping(); err != nil {
-		log.Fatal(err)
-	}
-
-	if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;"); err != nil {
 		log.Fatal(err)
 	}
 

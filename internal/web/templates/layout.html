@@ -13,6 +13,7 @@
       <nav>
         {{if .CurrentUser}}
         <a href="/shares">shares</a>
+		<a href="/trash">trash</a>
         <a href="/users">users</a>
         <span>logged in as {{.CurrentUser.Username}}</span>
         <form method="post" action="/logout">

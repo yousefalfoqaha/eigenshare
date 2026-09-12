@@ -14,7 +14,6 @@ var (
 	ErrInvalidChunkOffset     = errors.New("invalid chunk offset")
 	ErrInvalidRequest         = errors.New("invalid request")
 	ErrShareVersionConflict   = errors.New("share was modified concurrently")
-	ErrShareUploading         = errors.New("share already has an incomplete upload")
 )
 
 type ChunkOffsetConflictError struct {

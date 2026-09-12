@@ -19,6 +19,7 @@ type Share struct {
 	Files     []File               `json:"files"`
 	CreatedAt timestamp.Timestamp  `json:"createdAt"`
 	ExpiresAt *timestamp.Timestamp `json:"expiresAt"`
+	TrashedAt *timestamp.Timestamp `json:"trashedAt"`
 	Version   int64                `json:"-"`
 }
 
@@ -54,19 +55,13 @@ type ShareSummary struct {
 	TotalFiles int                  `json:"totalFiles"`
 	TotalSize  int64                `json:"totalSize"`
 	ExpiresAt  *timestamp.Timestamp `json:"expiresAt"`
+	TrashedAt  *timestamp.Timestamp `json:"trashedAt"`
 }
 
 type File struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	ExpectedSize int64  `json:"expectedSize"`
-}
-
-type FileProgress struct {
-	FileID       string `json:"fileId"`
-	BytesWritten int64  `json:"bytesWritten"`
-	ExpectedSize int64  `json:"expectedSize"`
-	Complete     bool   `json:"complete"`
 }
 
 func NewFile(name string, expectedSize int64) (*File, error) {
