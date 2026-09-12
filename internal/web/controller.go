@@ -323,8 +323,7 @@ func (c *Controller) streamFile(w http.ResponseWriter, r *http.Request) error {
 
 	progress, err := c.shareService.StreamFile(sh.ID, fileID, offset, r.Body)
 	if err != nil {
-		var offsetError *share.ChunkOffsetConflictError
-		if errors.As(err, &offsetError) {
+		if offsetError, ok := errors.AsType[*share.ChunkOffsetConflictError](err); ok {
 			return writeAPIResponse(w, http.StatusConflict, map[string]any{
 				"message":      err.Error(),
 				"fileId":       fileID,

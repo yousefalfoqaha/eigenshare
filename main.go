@@ -30,7 +30,6 @@ func main() {
 	userSvc := user.NewUserService(userRepo)
 	sessionRepo := auth.NewSessionRepository(db)
 	shareRepo := share.NewShareRepository(db)
-
 	fileStorage := share.NewFileStorage(DATA_PATH)
 	shareService := share.NewShareService(shareRepo, fileStorage)
 	authService := auth.NewAuthService(userSvc, sessionRepo)
