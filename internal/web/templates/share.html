@@ -1,7 +1,13 @@
 {{define "content"}}
 <div class="title">
   <h1>{{.Share.Handle}}</h1>
-  <a href="/s/{{.Share.Handle}}/download">download all (zip)</a>
+  <form
+    action="/s/{{.Share.Handle}}/download"
+    method="get"
+    style="display: inline"
+  >
+    <button class="submit" type="submit">download all (zip)</button>
+  </form>
 </div>
 
 <p>

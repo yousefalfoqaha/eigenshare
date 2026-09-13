@@ -20,11 +20,11 @@ func NewShareRepository(db *infra.Database) *ShareRepository {
 }
 
 func (r *ShareRepository) Get(id string) (*Share, error) {
-	return r.fetchShareAggregate("WHERE id = ?", id)
+	return r.fetchShareAggregate("WHERE id = ? AND trashed_at IS NULL", id)
 }
 
 func (r *ShareRepository) GetByHandle(handle string) (*Share, error) {
-	return r.fetchShareAggregate("WHERE handle = ?", handle)
+	return r.fetchShareAggregate("WHERE handle = ? AND trashed_at IS NULL", handle)
 }
 
 func (r *ShareRepository) Exists(id string) (bool, error) {
@@ -165,34 +165,6 @@ func (r *ShareRepository) Delete(ids ...string) error {
 	return err
 }
 
-func insertShareAggregate(tx *sql.Tx, share *Share) error {
-	var expiresAt any
-	if share.ExpiresAt != nil {
-		expiresAt = share.ExpiresAt.String()
-	}
-	var trashedAt any
-	if share.TrashedAt != nil {
-		trashedAt = share.TrashedAt.String()
-	}
-
-	if _, err := tx.Exec(
-		"INSERT INTO share (id, handle, created_at, expires_at, trashed_at, version) VALUES (?, ?, ?, ?, ?, ?)",
-		share.ID, share.Handle, share.CreatedAt.String(), expiresAt, trashedAt, share.Version,
-	); err != nil {
-		return err
-	}
-
-	for _, file := range share.Files {
-		if _, err := tx.Exec(
-			"INSERT INTO file (id, name, expected_size, share_id) VALUES (?, ?, ?, ?)",
-			file.ID, file.Name, file.ExpectedSize, share.ID,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *ShareRepository) GetKeys() (map[string]struct{}, error) {
 	keys := make(map[string]struct{})
 
@@ -250,6 +222,34 @@ func (r *ShareRepository) getAllFilesByShareID(id string) ([]File, error) {
 	}
 
 	return files, rows.Err()
+}
+
+func insertShareAggregate(tx *sql.Tx, share *Share) error {
+	var expiresAt any
+	if share.ExpiresAt != nil {
+		expiresAt = share.ExpiresAt.String()
+	}
+	var trashedAt any
+	if share.TrashedAt != nil {
+		trashedAt = share.TrashedAt.String()
+	}
+
+	if _, err := tx.Exec(
+		"INSERT INTO share (id, handle, created_at, expires_at, trashed_at, version) VALUES (?, ?, ?, ?, ?, ?)",
+		share.ID, share.Handle, share.CreatedAt.String(), expiresAt, trashedAt, share.Version,
+	); err != nil {
+		return err
+	}
+
+	for _, file := range share.Files {
+		if _, err := tx.Exec(
+			"INSERT INTO file (id, name, expected_size, share_id) VALUES (?, ?, ?, ?)",
+			file.ID, file.Name, file.ExpectedSize, share.ID,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func parseTimestamp(ns sql.NullString) (*timestamp.Timestamp, error) {

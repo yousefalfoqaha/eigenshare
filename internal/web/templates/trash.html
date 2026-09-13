@@ -6,7 +6,7 @@
     {{range .Shares}}
     <input type="hidden" name="shareID" value="{{.ID}}" />
     {{end}}
-    <button type="submit">delete all</button>
+    <button class="submit" type="submit">delete all</button>
   </form>
   {{end}}
 </section>
@@ -28,7 +28,11 @@
       <td>{{timeAgo .TrashedAt}}</td>
       <td>
         <div class="row-actions">
-          <form method="post" action="/shares/{{.Handle}}/restore" class="inline">
+          <form
+            method="post"
+            action="/shares/{{.Handle}}/restore"
+            class="inline"
+          >
             <button type="submit">restore</button>
           </form>
           <form method="post" action="/shares/delete" class="inline">
