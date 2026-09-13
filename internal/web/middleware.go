@@ -108,12 +108,19 @@ func wantsJSON(r *http.Request) bool {
 
 type WrappedWriter struct {
 	http.ResponseWriter
-	status int
+	status  int
+	written bool
 }
 
 func (w *WrappedWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
+	w.written = true
+}
+
+func (w *WrappedWriter) Write(b []byte) (int, error) {
+	w.written = true
+	return w.ResponseWriter.Write(b)
 }
 
 func Logging(next http.Handler) http.Handler {

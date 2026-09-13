@@ -1,10 +1,10 @@
 {{define "content"}}
-{{if .Share}}
+{{if .Content.Share}}
 <section class="title">
-  <h1>{{.Share.Handle}}</h1>
+  <h1>{{.Content.Share.Handle}}</h1>
 </section>
 
-<p>{{shareTotalFiles .Share}} file(s)</p>
+<p>{{shareTotalFiles .Content.Share}} file(s)</p>
 
 <table>
   <thead>
@@ -15,17 +15,17 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Share.Files}}
+    {{range .Content.Share.Files}}
     <tr>
       <td>{{.Name}}</td>
       <td>
-        {{$w := index $.Progress .ID}}{{if lt $w .ExpectedSize}}in
+        {{$w := index $.Content.Progress .ID}}{{if lt $w .ExpectedSize}}in
         progress{{else}}{{formatSize .ExpectedSize}}{{end}}
       </td>
       <td>
         <form
           method="post"
-          action="/shares/{{$.Share.Handle}}/files/{{.ID}}/delete"
+          action="/shares/{{$.Content.Share.Handle}}/files/{{.ID}}/delete"
           class="inline"
         >
           <button type="submit">delete</button>
@@ -56,9 +56,9 @@
 
 <script src="/static/uploader.js"></script>
 <script>
-  const handle = "{{.Share.Handle}}";
-  const files = {{.Share.Files}} || [];
-  const progress = {{.Progress}};
+  const handle = "{{.Content.Share.Handle}}";
+  const files = {{.Content.Share.Files}} || [];
+  const progress = {{.Content.Progress}};
   const lines = document.getElementById("progress-lines");
 
   function incompleteFiles() {

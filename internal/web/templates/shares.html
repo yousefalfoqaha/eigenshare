@@ -15,12 +15,12 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Shares}}
+    {{range .Content.Shares}}
     <tr>
       <td><a href="/s/{{.Handle}}">{{.Handle}}</a></td>
       <td>{{.TotalFiles}}</td>
       <td>
-        {{$w := index $.Progress .ID}}{{if ge $w .TotalSize}}{{formatSize
+        {{$w := index $.Content.Progress .ID}}{{if ge $w .TotalSize}}{{formatSize
         .TotalSize}}{{else}}{{formatSize $w}} / {{formatSize .TotalSize}}{{end}}
       </td>
       <td>{{expiresIn .ExpiresAt}}</td>

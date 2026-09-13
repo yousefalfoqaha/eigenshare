@@ -1,9 +1,9 @@
 {{define "content"}}
-{{if .Share}}
+{{if .Content.Share}}
 <div class="title">
-  <h1>{{.Share.Handle}}</h1>
+  <h1>{{.Content.Share.Handle}}</h1>
   <form
-    action="/s/{{.Share.Handle}}/download"
+    action="/s/{{.Content.Share.Handle}}/download"
     method="get"
     style="display: inline"
   >
@@ -12,7 +12,7 @@
 </div>
 
 <p>
-  {{shareTotalFiles .Share}} file(s) - {{shareTotalSize .Share | formatSize}}
+  {{shareTotalFiles .Content.Share}} file(s) - {{shareTotalSize .Content.Share | formatSize}}
   total
 </p>
 
@@ -25,12 +25,12 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Share.Files}}
+    {{range .Content.Share.Files}}
     <tr>
       <td>{{.Name}}</td>
       <td>{{formatSize .ExpectedSize}}</td>
       <td>
-        <button href="/s/{{$.Share.Handle}}/files/{{.ID}}/download">
+        <button href="/s/{{$.Content.Share.Handle}}/files/{{.ID}}/download">
           download
         </button>
       </td>
