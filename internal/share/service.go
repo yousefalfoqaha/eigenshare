@@ -64,8 +64,8 @@ func (s *ShareService) RequestShare(req ShareRequest) (*Share, error) {
 	return s.repo.Save(sh)
 }
 
-func (s *ShareService) UploadFiles(handle string, fileReqs []FileRequest) ([]File, error) {
-	sh, err := s.GetShareByHandle(handle)
+func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest) ([]File, error) {
+	sh, err := s.GetShare(shareID)
 	if err != nil {
 		return nil, err
 	}
@@ -187,8 +187,8 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (string, erro
 	return s.storage.ShareFilePath(sh.ID, file.ID)
 }
 
-func (s *ShareService) DeleteFile(handle, fileID string) error {
-	sh, err := s.repo.GetByHandle(handle)
+func (s *ShareService) DeleteFile(shareID, fileID string) error {
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrShareNotFound

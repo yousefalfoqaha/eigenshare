@@ -83,12 +83,12 @@ func (c *Controller) RegisterProtectedHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /shares/new", makeHTMLHandler(c, "new_share.html", c.newSharePage))
 	router.HandleFunc("POST /shares", makeAPIHandler(c.createShare))
 	router.HandleFunc("POST /shares/delete", makeHTMLHandler(c, "trash.html", c.deleteShares))
-	router.HandleFunc("GET /shares/{handle}/edit", makeHTMLHandler(c, "edit_share.html", c.editSharePage))
-	router.HandleFunc("POST /shares/{handle}/trash", makeHTMLHandler(c, "shares.html", c.trashShare))
-	router.HandleFunc("POST /shares/{handle}/restore", makeHTMLHandler(c, "trash.html", c.restoreShare))
-	router.HandleFunc("POST /shares/{handle}/files", makeAPIHandler(c.addFilesToShare))
-	router.HandleFunc("POST /shares/{handle}/files/{fileID}/delete", makeHTMLHandler(c, "edit_share.html", c.deleteFile))
-	router.HandleFunc("PUT /shares/{handle}/files/{fileID}/stream", makeAPIHandler(c.streamFile))
+	router.HandleFunc("GET /shares/{id}/edit", makeHTMLHandler(c, "edit_share.html", c.editSharePage))
+	router.HandleFunc("POST /shares/{id}/trash", makeHTMLHandler(c, "shares.html", c.trashShare))
+	router.HandleFunc("POST /shares/{id}/restore", makeHTMLHandler(c, "trash.html", c.restoreShare))
+	router.HandleFunc("POST /shares/{id}/files", makeAPIHandler(c.addFilesToShare))
+	router.HandleFunc("POST /shares/{id}/files/{fileID}/delete", makeHTMLHandler(c, "edit_share.html", c.deleteFile))
+	router.HandleFunc("PUT /shares/{id}/files/{fileID}/stream", makeAPIHandler(c.streamFile))
 	router.HandleFunc("GET /trash", makeHTMLHandler(c, "trash.html", c.trashPage))
 
 	router.HandleFunc("GET /users", makeHTMLHandler(c, "users.html", c.usersPage))
@@ -315,12 +315,11 @@ func (c *Controller) sharePage(w http.ResponseWriter, p *Page, v *ShareContent, 
 }
 
 func (c *Controller) editSharePage(w http.ResponseWriter, p *Page, v *EditShareContent, r *http.Request) error {
-	handle := r.PathValue("handle")
-	p.Title = handle
-	sh, err := c.shareService.GetShareByHandle(handle)
+	sh, err := c.shareService.GetShare(r.PathValue("id"))
 	if err != nil {
 		return err
 	}
+	p.Title = sh.Handle
 	v.Share = sh
 	progress, err := c.shareService.GetShareProgress(sh.ID)
 	if err != nil {
@@ -332,11 +331,7 @@ func (c *Controller) editSharePage(w http.ResponseWriter, p *Page, v *EditShareC
 
 func (c *Controller) trashShare(w http.ResponseWriter, p *Page, _ *SharesContent, r *http.Request) error {
 	p.Title = "shares"
-	sh, err := c.shareService.GetShareByHandle(r.PathValue("handle"))
-	if err != nil {
-		return err
-	}
-	if err := c.shareService.TrashShare(sh.ID); err != nil {
+	if err := c.shareService.TrashShare(r.PathValue("id")); err != nil {
 		return err
 	}
 	http.Redirect(w, r, "/shares", http.StatusFound)
@@ -345,11 +340,7 @@ func (c *Controller) trashShare(w http.ResponseWriter, p *Page, _ *SharesContent
 
 func (c *Controller) restoreShare(w http.ResponseWriter, p *Page, _ *SharesContent, r *http.Request) error {
 	p.Title = "trash"
-	sh, err := c.shareService.GetShareByHandle(r.PathValue("handle"))
-	if err != nil {
-		return err
-	}
-	if err := c.shareService.RecoverShare(sh.ID); err != nil {
+	if err := c.shareService.RecoverShare(r.PathValue("id")); err != nil {
 		return err
 	}
 	http.Redirect(w, r, "/trash", http.StatusFound)
@@ -369,20 +360,22 @@ func (c *Controller) deleteShares(w http.ResponseWriter, p *Page, _ *SharesConte
 }
 
 func (c *Controller) deleteFile(w http.ResponseWriter, p *Page, v *EditShareContent, r *http.Request) error {
-	handle := r.PathValue("handle")
-	p.Title = handle
-	if err := c.shareService.DeleteFile(handle, r.PathValue("fileID")); err != nil {
-		if sh, getErr := c.shareService.GetShareByHandle(handle); getErr == nil {
-			v.Share = sh
-		}
+	id := r.PathValue("id")
+	sh, err := c.shareService.GetShare(id)
+	if err != nil {
 		return err
 	}
-	http.Redirect(w, r, "/shares/"+handle+"/edit", http.StatusFound)
+	p.Title = sh.Handle
+	if err := c.shareService.DeleteFile(id, r.PathValue("fileID")); err != nil {
+		v.Share = sh
+		return err
+	}
+	http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusFound)
 	return nil
 }
 
 func (c *Controller) addFilesToShare(w http.ResponseWriter, r *http.Request) error {
-	handle := r.PathValue("handle")
+	shareID := r.PathValue("id")
 
 	var req struct {
 		Files []share.FileRequest `json:"files"`
@@ -391,7 +384,7 @@ func (c *Controller) addFilesToShare(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 
-	newFiles, err := c.shareService.UploadFiles(handle, req.Files)
+	newFiles, err := c.shareService.UploadFiles(shareID, req.Files)
 	if err != nil {
 		return err
 	}
@@ -414,20 +407,15 @@ func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) streamFile(w http.ResponseWriter, r *http.Request) error {
-	handle := r.PathValue("handle")
+	shareID := r.PathValue("id")
 	fileID := r.PathValue("fileID")
-
-	sh, err := c.shareService.GetShareByHandle(handle)
-	if err != nil {
-		return err
-	}
 
 	offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
 	if err != nil {
 		return NewHTTPError(http.StatusBadRequest, "invalid Upload-Offset header")
 	}
 
-	bytesWritten, err := c.shareService.StreamFile(sh.ID, fileID, offset, r.Body)
+	bytesWritten, err := c.shareService.StreamFile(shareID, fileID, offset, r.Body)
 	if err != nil {
 		if offsetError, ok := errors.AsType[*share.ChunkOffsetConflictError](err); ok {
 			w.Header().Set("Upload-Offset", strconv.FormatInt(offsetError.CurrentOffset, 10))

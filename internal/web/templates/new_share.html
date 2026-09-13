@@ -88,13 +88,13 @@
 
       try {
         status.textContent = "registering files...";
-        const files = await registerFiles(share.handle, selectedFiles);
+        const files = await registerFiles(share.id, selectedFiles);
 
         status.textContent = `uploading ${files.length} file(s)...`;
 
         for (let i = 0; i < files.length; i++) {
           const file = selectedFiles[i];
-          await streamFile(share.handle, files[i].id, file, (bytesWritten) => {
+          await streamFile(share.id, files[i].id, file, (bytesWritten) => {
             const percent = Math.round(
               (bytesWritten / file.size) * 100,
             );
@@ -106,7 +106,7 @@
         window.location.href = `/s/${share.handle}`;
       } catch (err) {
         status.textContent = err.message;
-        window.location.href = `/shares/${share.handle}/edit`;
+        window.location.href = `/shares/${share.id}/edit`;
       }
     });
 </script>

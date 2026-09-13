@@ -26,11 +26,11 @@
       <td>{{expiresIn .ExpiresAt}}</td>
       <td>
         <div class="row-actions">
-          <a href="/shares/{{.Handle}}/edit">edit</a>
+          <a href="/shares/{{.ID}}/edit">edit</a>
 
           <form
             method="post"
-            action="/shares/{{.Handle}}/trash"
+            action="/shares/{{.ID}}/trash"
             class="inline"
           >
             <button type="submit">trash</button>

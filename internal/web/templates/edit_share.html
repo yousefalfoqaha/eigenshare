@@ -25,7 +25,7 @@
       <td>
         <form
           method="post"
-          action="/shares/{{$.Content.Share.Handle}}/files/{{.ID}}/delete"
+          action="/shares/{{$.Content.Share.ID}}/files/{{.ID}}/delete"
           class="inline"
         >
           <button type="submit">delete</button>
@@ -56,7 +56,7 @@
 
 <script src="/static/uploader.js"></script>
 <script>
-  const handle = "{{.Content.Share.Handle}}";
+  const shareID = "{{.Content.Share.ID}}";
   const files = {{.Content.Share.Files}} || [];
   const progress = {{.Content.Progress}};
   const lines = document.getElementById("progress-lines");
@@ -110,7 +110,7 @@
         if (unmatched.length > 0) {
           status.textContent = "registering files...";
 
-          const newFiles = await registerFiles(handle, unmatched);
+          const newFiles = await registerFiles(shareID, unmatched);
           for (let i = 0; i < newFiles.length; i++) {
             files.push(newFiles[i]);
             uploads.push({ entry: newFiles[i], file: unmatched[i] });
@@ -121,7 +121,7 @@
 
         for (const { entry, file } of uploads) {
           fileLine(entry);
-          await streamFile(handle, entry.id, file, (bytesWritten) => {
+          await streamFile(shareID, entry.id, file, (bytesWritten) => {
             progress[entry.id] = bytesWritten;
             fileLine(entry);
           });
