@@ -61,30 +61,7 @@ func (s *ShareService) RequestShare(req ShareRequest) (*Share, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
 
-	var success bool
-	defer func() {
-		if !success {
-			_ = s.repo.Delete(sh.ID)
-		}
-	}()
-
-	for _, f := range req.Files {
-		file, err := NewFile(f.Name, f.ExpectedSize)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
-		}
-
-		file.ID = uuid.New().String()
-		sh.Files = append(sh.Files, *file)
-	}
-
-	sh, err = s.repo.Save(sh)
-	if err != nil {
-		return nil, err
-	}
-
-	success = true
-	return sh, nil
+	return s.repo.Save(sh)
 }
 
 func (s *ShareService) UploadFiles(handle string, fileReqs []FileRequest) ([]File, error) {

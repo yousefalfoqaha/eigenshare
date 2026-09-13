@@ -8,8 +8,8 @@ import (
 	"eigenshare/internal/user"
 )
 
-func page(r *http.Request, title string) Page {
-	return Page{Title: title, CurrentUser: auth.UserFromContext(r.Context())}
+func page(r *http.Request, title string) *Page {
+	return &Page{Title: title, CurrentUser: auth.UserFromContext(r.Context())}
 }
 
 type Page struct {
@@ -19,28 +19,28 @@ type Page struct {
 }
 
 type SharesView struct {
-	Page
+	*Page
 	Shares   []share.ShareSummary
 	Progress map[string]int64
 }
 
 type ShareView struct {
-	Page
+	*Page
 	Share    *share.Share
 	Progress map[string]int64
 }
 
 type SharePublicView struct {
-	Page
+	*Page
 	Share *share.Share
 }
 
 type UsersView struct {
-	Page
+	*Page
 	Users []*user.User
 }
 
 type UserFormView struct {
-	Page
+	*Page
 	User *user.User
 }

@@ -59,12 +59,9 @@
       const req = {
         handle: fd.get("handle"),
         expiryMinutes: parseInt(fd.get("expiryMinutes") || "0", 10),
-        files: selectedFiles.map((f) => ({
-          name: f.name,
-          expectedSize: f.size,
-        })),
       };
 
+      let share;
       try {
         const resp = await fetch("/shares", {
           method: "POST",
@@ -77,9 +74,23 @@
           throw new Error(err.message || `create failed: ${resp.status}`);
         }
 
-        const share = await resp.json();
-        const files = share.files || [];
-        status.textContent = `share ${share.handle} created, uploading ${files.length} file(s)...`;
+        share = await resp.json();
+      } catch (err) {
+        status.textContent = err.message;
+        btn.disabled = false;
+        return;
+      }
+
+      if (selectedFiles.length === 0) {
+        window.location.href = `/s/${share.handle}`;
+        return;
+      }
+
+      try {
+        status.textContent = "registering files...";
+        const files = await registerFiles(share.handle, selectedFiles);
+
+        status.textContent = `uploading ${files.length} file(s)...`;
 
         for (let i = 0; i < files.length; i++) {
           const file = selectedFiles[i];
@@ -95,7 +106,7 @@
         window.location.href = `/s/${share.handle}`;
       } catch (err) {
         status.textContent = err.message;
-        btn.disabled = false;
+        window.location.href = `/shares/${share.handle}/edit`;
       }
     });
 </script>

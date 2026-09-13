@@ -1,4 +1,5 @@
 {{define "content"}}
+{{if .Share}}
 <section class="title">
   <h1>{{.Share.Handle}}</h1>
 </section>
@@ -109,25 +110,7 @@
         if (unmatched.length > 0) {
           status.textContent = "registering files...";
 
-          const resp = await fetch(`/shares/${handle}/files`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              files: unmatched.map((f) => ({
-                name: f.name,
-                expectedSize: f.size,
-              })),
-            }),
-          });
-
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(
-              err.message || `failed to register files: ${resp.status}`,
-            );
-          }
-
-          const newFiles = (await resp.json()) || [];
+          const newFiles = await registerFiles(handle, unmatched);
           for (let i = 0; i < newFiles.length; i++) {
             files.push(newFiles[i]);
             uploads.push({ entry: newFiles[i], file: unmatched[i] });
@@ -152,4 +135,5 @@
       }
     });
 </script>
+{{end}}
 {{end}}

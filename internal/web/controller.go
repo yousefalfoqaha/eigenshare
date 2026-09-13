@@ -65,39 +65,39 @@ func NewController(authSvc *auth.AuthService, userSvc *user.UserService, shareSv
 
 func (c *Controller) RegisterHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /static/", c.serveStatic)
-	router.HandleFunc("GET /login", c.loginPage)
-	router.HandleFunc("POST /login", c.loginSubmit)
-	router.HandleFunc("POST /logout", c.makeHTMLHandler(c.logout))
+	router.HandleFunc("GET /login", c.makeHTMLHandler("login.html", c.loginPage))
+	router.HandleFunc("POST /login", c.makeHTMLHandler("login.html", c.loginSubmit))
+	router.HandleFunc("POST /logout", c.makeHTMLHandler("login.html", c.logout))
 
-	optional := func(h http.HandlerFunc) http.Handler {
+	optional := func(h http.Handler) http.Handler {
 		return OptionalAuth(c.authService, h)
 	}
-	router.Handle("GET /s/{handle}", optional(c.makeHTMLHandler(c.sharePage)))
+	router.Handle("GET /s/{handle}", optional(c.makeHTMLHandler("share.html", c.sharePage)))
 	router.Handle("GET /s/{handle}/download", optional(makeAPIHandler(c.downloadAll)))
 	router.Handle("GET /s/{handle}/files/{fileID}/download", optional(makeAPIHandler(c.downloadFile)))
 }
 
 func (c *Controller) RegisterProtectedHandlers(router *http.ServeMux) {
 	router.HandleFunc("GET /", c.index)
-	router.HandleFunc("GET /shares", c.sharesPage)
-	router.HandleFunc("GET /shares/new", c.newSharePage)
+	router.HandleFunc("GET /shares", c.makeHTMLHandler("shares.html", c.sharesPage))
+	router.HandleFunc("GET /shares/new", c.makeHTMLHandler("new_share.html", c.newSharePage))
 	router.HandleFunc("POST /shares", makeAPIHandler(c.createShare))
-	router.HandleFunc("POST /shares/delete", c.makeHTMLHandler(c.deleteShares))
-	router.HandleFunc("GET /shares/{handle}/edit", c.makeHTMLHandler(c.editSharePage))
-	router.HandleFunc("POST /shares/{handle}/trash", c.makeHTMLHandler(c.trashShare))
-	router.HandleFunc("POST /shares/{handle}/restore", c.makeHTMLHandler(c.restoreShare))
+	router.HandleFunc("POST /shares/delete", c.makeHTMLHandler("trash.html", c.deleteShares))
+	router.HandleFunc("GET /shares/{handle}/edit", c.makeHTMLHandler("edit_share.html", c.editSharePage))
+	router.HandleFunc("POST /shares/{handle}/trash", c.makeHTMLHandler("shares.html", c.trashShare))
+	router.HandleFunc("POST /shares/{handle}/restore", c.makeHTMLHandler("trash.html", c.restoreShare))
 	router.HandleFunc("POST /shares/{handle}/files", makeAPIHandler(c.addFilesToShare))
-	router.HandleFunc("POST /shares/{handle}/files/{fileID}/delete", c.makeHTMLHandler(c.deleteFile))
+	router.HandleFunc("POST /shares/{handle}/files/{fileID}/delete", c.makeHTMLHandler("edit_share.html", c.deleteFile))
 	router.HandleFunc("PUT /shares/{handle}/files/{fileID}/stream", makeAPIHandler(c.streamFile))
-	router.HandleFunc("GET /trash", c.trashPage)
+	router.HandleFunc("GET /trash", c.makeHTMLHandler("trash.html", c.trashPage))
 
-	router.HandleFunc("GET /users", c.usersPage)
+	router.HandleFunc("GET /users", c.makeHTMLHandler("users.html", c.usersPage))
 	admin := RequireAdmin
-	router.Handle("GET /users/new", admin(http.HandlerFunc(c.newUserPage)))
-	router.Handle("POST /users", admin(http.HandlerFunc(c.createUser)))
-	router.Handle("GET /users/{id}/edit", admin(c.makeHTMLHandler(c.editUserPage)))
-	router.Handle("POST /users/{id}", admin(http.HandlerFunc(c.updateUser)))
-	router.Handle("POST /users/{id}/delete", admin(c.makeHTMLHandler(c.deleteUser)))
+	router.Handle("GET /users/new", admin(c.makeHTMLHandler("user_form.html", c.newUserPage)))
+	router.Handle("POST /users", admin(c.makeHTMLHandler("user_form.html", c.createUser)))
+	router.Handle("GET /users/{id}/edit", admin(c.makeHTMLHandler("user_form.html", c.editUserPage)))
+	router.Handle("POST /users/{id}", admin(c.makeHTMLHandler("user_form.html", c.updateUser)))
+	router.Handle("POST /users/{id}/delete", admin(c.makeHTMLHandler("users.html", c.deleteUser)))
 }
 
 func (c *Controller) render(w http.ResponseWriter, page string, data any) {
@@ -113,17 +113,32 @@ func (c *Controller) renderStatus(w http.ResponseWriter, status int, page string
 	}
 }
 
-func (c *Controller) makeHTMLHandler(h func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
+// makeHTMLHandler wraps a page handler. The handler is handed the page and
+// writes to it (title, whatever data loads), returning the view to render
+// alongside any error. On success the wrapper renders the view; on error it
+// writes the message into the page and renders at the error's status, so the
+// layout shows the banner. A handler that has already responded (redirect)
+// returns a nil view.
+func (c *Controller) makeHTMLHandler(tmpl string, h func(w http.ResponseWriter, p *Page, r *http.Request) (any, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := h(w, r); err != nil {
+		p := page(r, "")
+		view, err := h(w, p, r)
+		if view == nil {
+			if err != nil {
+				log.Printf("INTERNAL ERROR: handler returned nil view with error: %v", err)
+			}
+			return
+		}
+		if err != nil {
 			httpErr := MapError(err)
 			if httpErr.Status == http.StatusInternalServerError {
 				log.Printf("INTERNAL ERROR: %v", err)
 			}
-			p := page(r, "error")
 			p.Error = httpErr.Message
-			c.renderStatus(w, httpErr.Status, "error.html", p)
+			c.renderStatus(w, httpErr.Status, tmpl, view)
+			return
 		}
+		c.render(w, tmpl, view)
 	}
 }
 
@@ -135,14 +150,15 @@ func (c *Controller) serveStatic(w http.ResponseWriter, r *http.Request) {
 	c.static.ServeHTTP(w, r)
 }
 
-func (c *Controller) loginPage(w http.ResponseWriter, r *http.Request) {
-	c.render(w, "login.html", page(r, "login"))
+func (c *Controller) loginPage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "login"
+	return p, nil
 }
 
-func (c *Controller) loginSubmit(w http.ResponseWriter, r *http.Request) {
+func (c *Controller) loginSubmit(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "login"
 	if err := r.ParseForm(); err != nil {
-		c.render(w, "login.html", Page{Title: "login", Error: err.Error()})
-		return
+		return p, NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	cred := auth.LoginRequest{
 		Username: r.PostForm.Get("username"),
@@ -150,45 +166,43 @@ func (c *Controller) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := c.authService.Login(cred)
 	if err != nil {
-		c.render(w, "login.html", Page{Title: "login", Error: err.Error()})
-		return
+		return p, err
 	}
 	SetSessionCookie(w, session.Token, 60*24*7)
 	http.Redirect(w, r, "/shares", http.StatusFound)
+	return nil, nil
 }
 
-func (c *Controller) logout(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) logout(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "login"
 	if cookie, err := r.Cookie(SessionCookieName); err == nil {
 		if err := c.authService.Logout(cookie.Value); err != nil {
-			return err
+			return p, err
 		}
 	}
 	ClearSessionCookie(w)
 	http.Redirect(w, r, "/login", http.StatusFound)
-	return nil
+	return nil, nil
 }
 
-func (c *Controller) usersPage(w http.ResponseWriter, r *http.Request) {
-	p := page(r, "users")
+func (c *Controller) usersPage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "users"
 	users, err := c.userService.GetAllUsers()
 	if err != nil {
-		p.Error = err.Error()
-		c.render(w, "users.html", UsersView{Page: p})
-		return
+		return UsersView{Page: p}, err
 	}
-	c.render(w, "users.html", UsersView{Page: p, Users: users})
+	return UsersView{Page: p, Users: users}, nil
 }
 
-func (c *Controller) newUserPage(w http.ResponseWriter, r *http.Request) {
-	c.render(w, "user_form.html", UserFormView{Page: page(r, "new user")})
+func (c *Controller) newUserPage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "new user"
+	return UserFormView{Page: p}, nil
 }
 
-func (c *Controller) createUser(w http.ResponseWriter, r *http.Request) {
+func (c *Controller) createUser(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "new user"
 	if err := r.ParseForm(); err != nil {
-		p := page(r, "new user")
-		p.Error = err.Error()
-		c.render(w, "user_form.html", UserFormView{Page: p})
-		return
+		return UserFormView{Page: p}, NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	req := user.CreateRequest{
 		Username: r.PostForm.Get("username"),
@@ -196,31 +210,26 @@ func (c *Controller) createUser(w http.ResponseWriter, r *http.Request) {
 		IsAdmin:  r.PostForm.Get("isAdmin") == "on",
 	}
 	if _, err := c.userService.CreateUser(req); err != nil {
-		p := page(r, "new user")
-		p.Error = err.Error()
-		c.render(w, "user_form.html", UserFormView{Page: p})
-		return
+		return UserFormView{Page: p}, err
 	}
 	http.Redirect(w, r, "/users", http.StatusFound)
+	return nil, nil
 }
 
-func (c *Controller) editUserPage(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	u, err := c.userService.GetUser(id)
+func (c *Controller) editUserPage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "edit user"
+	u, err := c.userService.GetUser(r.PathValue("id"))
 	if err != nil {
-		return err
+		return UserFormView{Page: p}, err
 	}
-	c.render(w, "user_form.html", UserFormView{Page: page(r, "edit user"), User: u})
-	return nil
+	return UserFormView{Page: p, User: u}, nil
 }
 
-func (c *Controller) updateUser(w http.ResponseWriter, r *http.Request) {
+func (c *Controller) updateUser(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "edit user"
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		p := page(r, "edit user")
-		p.Error = err.Error()
-		c.render(w, "user_form.html", UserFormView{Page: p})
-		return
+		return UserFormView{Page: p}, NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	req := user.UpdateRequest{
 		Username: r.PostForm.Get("username"),
@@ -229,133 +238,139 @@ func (c *Controller) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := c.userService.UpdateUser(id, auth.UserFromContext(r.Context()).ID, req); err != nil {
 		u, getErr := c.userService.GetUser(id)
-		p := page(r, "edit user")
-		p.Error = err.Error()
 		if getErr != nil {
-			p.Error = getErr.Error()
+			return UserFormView{Page: p}, err
 		}
-		c.render(w, "user_form.html", UserFormView{Page: p, User: u})
-		return
+		return UserFormView{Page: p, User: u}, err
 	}
 	http.Redirect(w, r, "/users", http.StatusFound)
+	return nil, nil
 }
 
-func (c *Controller) deleteUser(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) deleteUser(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "users"
 	id := r.PathValue("id")
 	actor := auth.UserFromContext(r.Context())
 	if err := c.userService.DeleteUser(id, actor.ID); err != nil {
-		return err
+		users, getErr := c.userService.GetAllUsers()
+		if getErr != nil {
+			return UsersView{Page: p}, err
+		}
+		return UsersView{Page: p, Users: users}, err
 	}
 	http.Redirect(w, r, "/users", http.StatusFound)
-	return nil
+	return nil, nil
 }
 
-func (c *Controller) sharesPage(w http.ResponseWriter, r *http.Request) {
-	p := page(r, "shares")
+func (c *Controller) sharesPage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "shares"
 	shares, err := c.shareService.GetShares()
 	if err != nil {
-		p.Error = err.Error()
-		c.render(w, "shares.html", SharesView{Page: p})
-		return
+		return SharesView{Page: p}, err
 	}
 	progress := make(map[string]int64, len(shares))
 	for _, s := range shares {
 		written, err := c.shareService.GetShareProgress(s.ID)
 		if err != nil {
-			p.Error = err.Error()
-			c.render(w, "shares.html", SharesView{Page: p})
-			return
+			return SharesView{Page: p, Shares: shares}, err
 		}
 		var total int64
-		for _, w := range written {
-			total += w
+		for _, n := range written {
+			total += n
 		}
 		progress[s.ID] = total
 	}
-	c.render(w, "shares.html", SharesView{Page: p, Shares: shares, Progress: progress})
+	return SharesView{Page: p, Shares: shares, Progress: progress}, nil
 }
 
-func (c *Controller) trashPage(w http.ResponseWriter, r *http.Request) {
-	p := page(r, "trash")
+func (c *Controller) trashPage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "trash"
 	shares, err := c.shareService.GetTrashedShares()
 	if err != nil {
-		p.Error = err.Error()
-		c.render(w, "trash.html", SharesView{Page: p})
-		return
+		return SharesView{Page: p}, err
 	}
-	c.render(w, "trash.html", SharesView{Page: p, Shares: shares})
+	return SharesView{Page: p, Shares: shares}, nil
 }
 
-func (c *Controller) newSharePage(w http.ResponseWriter, r *http.Request) {
-	c.render(w, "new_share.html", page(r, "new share"))
+func (c *Controller) newSharePage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "new share"
+	return p, nil
 }
 
-func (c *Controller) sharePage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) sharePage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
 	handle := r.PathValue("handle")
+	p.Title = handle
 	sh, err := c.shareService.GetShareByHandle(handle)
 	if err != nil {
-		return err
+		return SharePublicView{Page: p}, err
 	}
-
-	c.render(w, "share.html", SharePublicView{Page: page(r, sh.Handle), Share: sh})
-	return nil
+	return SharePublicView{Page: p, Share: sh}, nil
 }
 
-func (c *Controller) editSharePage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) editSharePage(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
 	handle := r.PathValue("handle")
+	p.Title = handle
 	sh, err := c.shareService.GetShareByHandle(handle)
 	if err != nil {
-		return err
+		return ShareView{Page: p}, err
 	}
 	progress, err := c.shareService.GetShareProgress(sh.ID)
 	if err != nil {
-		return err
+		return ShareView{Page: p, Share: sh}, err
 	}
-
-	c.render(w, "edit_share.html", ShareView{
-		Page:     page(r, sh.Handle),
-		Share:    sh,
-		Progress: progress,
-	})
-	return nil
+	return ShareView{Page: p, Share: sh, Progress: progress}, nil
 }
 
-func (c *Controller) trashShare(w http.ResponseWriter, r *http.Request) error {
-	handle := r.PathValue("handle")
-	sh, err := c.shareService.GetShareByHandle(handle)
+func (c *Controller) trashShare(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "shares"
+	sh, err := c.shareService.GetShareByHandle(r.PathValue("handle"))
 	if err != nil {
-		return err
+		return SharesView{Page: p}, err
 	}
 	if err := c.shareService.TrashShare(sh.ID); err != nil {
-		return err
+		return SharesView{Page: p}, err
 	}
 	http.Redirect(w, r, "/shares", http.StatusFound)
-	return nil
+	return nil, nil
 }
 
-func (c *Controller) restoreShare(w http.ResponseWriter, r *http.Request) error {
-	handle := r.PathValue("handle")
-	sh, err := c.shareService.GetShareByHandle(handle)
+func (c *Controller) restoreShare(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "trash"
+	sh, err := c.shareService.GetShareByHandle(r.PathValue("handle"))
 	if err != nil {
-		return err
+		return SharesView{Page: p}, err
 	}
 	if err := c.shareService.RecoverShare(sh.ID); err != nil {
-		return err
+		return SharesView{Page: p}, err
 	}
 	http.Redirect(w, r, "/trash", http.StatusFound)
-	return nil
+	return nil, nil
 }
 
-func (c *Controller) deleteShares(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) deleteShares(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	p.Title = "trash"
 	if err := r.ParseForm(); err != nil {
-		return NewHTTPError(http.StatusBadRequest, err.Error())
+		return SharesView{Page: p}, NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-
 	if err := c.shareService.Delete(r.PostForm["shareID"]...); err != nil {
-		return err
+		return SharesView{Page: p}, err
 	}
 	http.Redirect(w, r, "/trash", http.StatusFound)
-	return nil
+	return nil, nil
+}
+
+func (c *Controller) deleteFile(w http.ResponseWriter, p *Page, r *http.Request) (any, error) {
+	handle := r.PathValue("handle")
+	p.Title = handle
+	if err := c.shareService.DeleteFile(handle, r.PathValue("fileID")); err != nil {
+		sh, getErr := c.shareService.GetShareByHandle(handle)
+		if getErr != nil {
+			return ShareView{Page: p}, err
+		}
+		return ShareView{Page: p, Share: sh}, err
+	}
+	http.Redirect(w, r, "/shares/"+handle+"/edit", http.StatusFound)
+	return nil, nil
 }
 
 func (c *Controller) addFilesToShare(w http.ResponseWriter, r *http.Request) error {
@@ -374,16 +389,6 @@ func (c *Controller) addFilesToShare(w http.ResponseWriter, r *http.Request) err
 	}
 
 	return writeAPIResponse(w, http.StatusOK, newFiles)
-}
-
-func (c *Controller) deleteFile(w http.ResponseWriter, r *http.Request) error {
-	handle := r.PathValue("handle")
-	fileID := r.PathValue("fileID")
-	if err := c.shareService.DeleteFile(handle, fileID); err != nil {
-		return err
-	}
-	http.Redirect(w, r, "/shares/"+handle+"/edit", http.StatusFound)
-	return nil
 }
 
 func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {

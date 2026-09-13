@@ -12,6 +12,26 @@ function formatBytes(bytes) {
   return `${(bytes / div).toFixed(1)} ${"KMGTPE"[exp]}B`;
 }
 
+async function registerFiles(handle, files) {
+  const response = await fetch(`/shares/${handle}/files`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      files: files.map((f) => ({
+        name: f.name,
+        expectedSize: f.size,
+      })),
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `failed to register files: ${response.status}`);
+  }
+
+  return (await response.json()) || [];
+}
+
 async function streamFile(handle, fileID, file, onProgress) {
   const chunkSize = 1024 * 1024;
   let offset = 0;

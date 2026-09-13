@@ -1,4 +1,5 @@
 {{define "content"}}
+{{if .Share}}
 <div class="title">
   <h1>{{.Share.Handle}}</h1>
   <form
@@ -37,4 +38,5 @@
     {{end}}
   </tbody>
 </table>
+{{end}}
 {{end}}
