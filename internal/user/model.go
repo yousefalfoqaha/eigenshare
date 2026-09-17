@@ -1,9 +1,10 @@
 package user
 
 import (
-	"fmt"
+	"net/http"
 	"regexp"
 
+	"eigenshare/internal/apperr"
 	"eigenshare/internal/timestamp"
 
 	"golang.org/x/crypto/bcrypt"
@@ -24,13 +25,13 @@ type User struct {
 
 func NewUser(id, username, passwordHash string, isAdmin bool) (*User, error) {
 	if username == "" {
-		return nil, fmt.Errorf("username is required")
+		return nil, apperr.New(http.StatusBadRequest, "username is required")
 	}
 	if !validUsername.MatchString(username) {
-		return nil, fmt.Errorf("username may only contain letters, numbers, hyphens and underscores (max 64 chars)")
+		return nil, apperr.New(http.StatusBadRequest, "username may only contain letters, numbers, hyphens and underscores (max 64 chars)")
 	}
 	if passwordHash == "" {
-		return nil, fmt.Errorf("password hash is required")
+		return nil, apperr.New(http.StatusBadRequest, "password hash is required")
 	}
 
 	return &User{

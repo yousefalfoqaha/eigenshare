@@ -19,6 +19,14 @@
     <input type="number" name="expiryMinutes" value="60" min="0" />
   </label>
 
+  <label
+    >visibility
+    <select name="visibility" id="visibility-select">
+      <option value="private" selected>private (owners only)</option>
+      <option value="public">public (anyone with the link)</option>
+    </select>
+  </label>
+
   {{template "file-picker" "select files"}}
 
   <div id="status" role="status" aria-live="polite"></div>
@@ -59,6 +67,7 @@
       const req = {
         handle: fd.get("handle"),
         expiryMinutes: parseInt(fd.get("expiryMinutes") || "0", 10),
+        visibility: fd.get("visibility") || "private",
       };
 
       let share;

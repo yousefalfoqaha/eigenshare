@@ -8,6 +8,7 @@
   <thead>
     <tr>
       <th>handle</th>
+      <th>visibility</th>
       <th>files</th>
       <th>size</th>
       <th>expires</th>
@@ -18,6 +19,7 @@
     {{range .Content.Shares}}
     <tr>
       <td><a href="/s/{{.Handle}}">{{.Handle}}</a></td>
+      <td>{{.Visibility}}</td>
       <td>{{.TotalFiles}}</td>
       <td>
         {{$w := index $.Content.Progress .ID}}{{if ge $w .TotalSize}}{{formatSize
@@ -25,6 +27,7 @@
       </td>
       <td>{{expiresIn .ExpiresAt}}</td>
       <td>
+        {{if .CanManage $.CurrentUser}}
         <div class="row-actions">
           <a href="/shares/{{.ID}}/edit">edit</a>
 
@@ -36,11 +39,12 @@
             <button type="submit">trash</button>
           </form>
         </div>
+        {{end}}
       </td>
     </tr>
     {{else}}
     <tr>
-      <td colspan="5" class="empty-table">no shares yet</td>
+      <td colspan="6" class="empty-table">no shares yet</td>
     </tr>
     {{end}}
   </tbody>

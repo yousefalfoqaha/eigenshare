@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"eigenshare/internal/timestamp"
+	"eigenshare/internal/user"
 
 	"github.com/google/uuid"
 )
@@ -14,22 +16,38 @@ import (
 type ShareService struct {
 	repo    *ShareRepository
 	storage *FileStorage
+	users   *user.UserService
 }
 
-func NewShareService(repo *ShareRepository, fs *FileStorage) *ShareService {
+func NewShareService(repo *ShareRepository, fs *FileStorage, users *user.UserService) *ShareService {
 	return &ShareService{
 		repo:    repo,
 		storage: fs,
+		users:   users,
 	}
 }
 
-func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, stream io.Reader) (int64, error) {
-	sh, err := s.repo.Get(shareID)
+func (s *ShareService) manageableShare(id string, u *user.User) (*Share, error) {
+	sh, err := s.repo.Get(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrShareNotFound
+			return nil, ErrShareNotFound
 		}
+		return nil, err
+	}
+	if !sh.CanManage(u) {
+		return nil, ErrShareNotFound
+	}
+	return sh, nil
+}
+
+func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, stream io.Reader, u *user.User) (int64, error) {
+	sh, err := s.manageableShare(shareID, u)
+	if err != nil {
 		return 0, err
+	}
+	if sh.Trashed() {
+		return 0, ErrShareTrashed
 	}
 
 	var file *File
@@ -55,8 +73,12 @@ func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, s
 	return bytesWritten, nil
 }
 
-func (s *ShareService) RequestShare(req ShareRequest) (*Share, error) {
-	sh, err := NewShare("", req.Handle, req.ExpiryMinutes)
+func (s *ShareService) RequestShare(req ShareRequest, u *user.User) (*Share, error) {
+	var creatorID string
+	if u != nil {
+		creatorID = u.ID
+	}
+	sh, err := NewShare("", req.Handle, req.ExpiryMinutes, req.Visibility, creatorID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
@@ -64,10 +86,13 @@ func (s *ShareService) RequestShare(req ShareRequest) (*Share, error) {
 	return s.repo.Save(sh)
 }
 
-func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest) ([]File, error) {
-	sh, err := s.GetShare(shareID)
+func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest, u *user.User) ([]File, error) {
+	sh, err := s.manageableShare(shareID, u)
 	if err != nil {
 		return nil, err
+	}
+	if sh.Trashed() {
+		return nil, ErrShareTrashed
 	}
 
 	var newFiles []File
@@ -89,7 +114,7 @@ func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest) ([]Fi
 	return newFiles, nil
 }
 
-func (s *ShareService) GetShareByHandle(handle string) (*Share, error) {
+func (s *ShareService) GetShareByHandle(handle string, u *user.User) (*Share, error) {
 	sh, err := s.repo.GetByHandle(handle)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -97,30 +122,53 @@ func (s *ShareService) GetShareByHandle(handle string) (*Share, error) {
 		}
 		return nil, err
 	}
+	if !sh.CanView(u) {
+		return nil, ErrShareNotFound
+	}
 	return sh, nil
 }
 
-func (s *ShareService) Delete(ids ...string) error {
+func (s *ShareService) Delete(u *user.User, ids ...string) error {
 	if len(ids) == 0 {
 		return nil
 	}
 
-	if err := s.repo.Delete(ids...); err != nil {
-		return err
+	for _, id := range ids {
+		if _, err := s.manageableShare(id, u); err != nil {
+			return err
+		}
 	}
 
-	return nil
+	return s.repo.Delete(ids...)
 }
 
-func (s *ShareService) GetShares() ([]ShareSummary, error) {
-	return s.repo.GetAll()
+func (s *ShareService) GetShares(u *user.User) ([]ShareSummary, error) {
+	summaries, err := s.repo.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(summaries, func(sum ShareSummary) bool {
+		return !sum.CanView(u)
+	}), nil
 }
 
-func (s *ShareService) GetTrashedShares() ([]ShareSummary, error) {
-	return s.repo.GetAllTrashed()
+func (s *ShareService) GetTrashedShares(u *user.User) ([]ShareSummary, error) {
+	summaries, err := s.repo.GetAllTrashed()
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(summaries, func(sum ShareSummary) bool {
+		return !sum.CanManage(u)
+	}), nil
 }
 
-func (s *ShareService) GetShare(id string) (*Share, error) {
+func (s *ShareService) GetShare(id string, u *user.User) (*Share, error) {
+	return s.manageableShare(id, u)
+}
+
+func (s *ShareService) GetShareProgress(id string, u *user.User) (map[string]int64, error) {
 	sh, err := s.repo.Get(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -128,15 +176,7 @@ func (s *ShareService) GetShare(id string) (*Share, error) {
 		}
 		return nil, err
 	}
-	return sh, nil
-}
-
-func (s *ShareService) GetShareProgress(id string) (map[string]int64, error) {
-	exists, err := s.repo.Exists(id)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
+	if !sh.CanView(u) {
 		return nil, ErrShareNotFound
 	}
 
@@ -187,13 +227,13 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (string, erro
 	return s.storage.ShareFilePath(sh.ID, file.ID)
 }
 
-func (s *ShareService) DeleteFile(shareID, fileID string) error {
-	sh, err := s.repo.Get(shareID)
+func (s *ShareService) DeleteFile(shareID, fileID string, u *user.User) error {
+	sh, err := s.manageableShare(shareID, u)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrShareNotFound
-		}
 		return err
+	}
+	if sh.Trashed() {
+		return ErrShareTrashed
 	}
 
 	var removedFileID string
@@ -208,20 +248,19 @@ func (s *ShareService) DeleteFile(shareID, fileID string) error {
 		return ErrFileNotFound
 	}
 
-	if _, err := s.repo.Save(sh); err != nil {
+	_, err = s.repo.Save(sh)
+
+	return err
+}
+
+func (s *ShareService) TrashShare(shareID string, u *user.User) error {
+	sh, err := s.manageableShare(shareID, u)
+	if err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func (s *ShareService) TrashShare(shareID string) error {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrShareNotFound
-		}
-		return err
+	if sh.Trashed() {
+		return ErrShareTrashed
 	}
 
 	now := timestamp.Now()
@@ -232,16 +271,89 @@ func (s *ShareService) TrashShare(shareID string) error {
 	return err
 }
 
-func (s *ShareService) RecoverShare(shareID string) error {
-	sh, err := s.repo.Get(shareID)
+func (s *ShareService) RecoverShare(shareID string, u *user.User) error {
+	sh, err := s.manageableShare(shareID, u)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrShareNotFound
-		}
 		return err
 	}
 
+	if !sh.Trashed() {
+		return ErrShareNotTrashed
+	}
+
 	sh.TrashedAt = nil
+
+	_, err = s.repo.Save(sh)
+
+	return err
+}
+
+func (s *ShareService) AddOwner(shareID string, u *user.User, newOwnerID string) error {
+	sh, err := s.manageableShare(shareID, u)
+	if err != nil {
+		return err
+	}
+	if sh.Trashed() {
+		return ErrShareTrashed
+	}
+
+	if _, err := s.users.GetUser(newOwnerID); err != nil {
+		return err
+	}
+
+	if slices.Contains(sh.Owners, newOwnerID) {
+		return ErrOwnerExists
+	}
+
+	sh.Owners = append(sh.Owners, newOwnerID)
+
+	_, err = s.repo.Save(sh)
+
+	return err
+}
+
+func (s *ShareService) RemoveOwner(shareID string, u *user.User, ownerID string) error {
+	sh, err := s.manageableShare(shareID, u)
+	if err != nil {
+		return err
+	}
+	if sh.Trashed() {
+		return ErrShareTrashed
+	}
+
+	idx := slices.Index(sh.Owners, ownerID)
+	if idx == -1 {
+		return ErrShareNotFound
+	}
+	if len(sh.Owners) == 1 {
+		return ErrLastOwner
+	}
+
+	sh.Owners = slices.Delete(sh.Owners, idx, idx+1)
+
+	_, err = s.repo.Save(sh)
+
+	return err
+}
+
+func (s *ShareService) SetVisibility(shareID string, u *user.User, visibility Visibility) error {
+	if !visibility.Valid() {
+		return fmt.Errorf("%w: visibility must be public or private", ErrInvalidRequest)
+	}
+
+	sh, err := s.manageableShare(shareID, u)
+	if err != nil {
+		return err
+	}
+	if sh.Trashed() {
+		return ErrShareTrashed
+	}
+
+	if sh.Visibility == visibility {
+		return nil
+	}
+
+	sh.Visibility = visibility
 
 	_, err = s.repo.Save(sh)
 

@@ -19,10 +19,13 @@ func NewShareRepository(db *infra.Database) *ShareRepository {
 	return &ShareRepository{db: db}
 }
 
+// Get fetches a share by ID regardless of trash state. Callers are expected
+// to enforce authorization and trash-state rules in the service layer.
 func (r *ShareRepository) Get(id string) (*Share, error) {
-	return r.fetchShareAggregate("WHERE id = ? AND trashed_at IS NULL", id)
+	return r.fetchShareAggregate("WHERE id = ?", id)
 }
 
+// GetByHandle is the public lookup door: trashed shares are invisible.
 func (r *ShareRepository) GetByHandle(handle string) (*Share, error) {
 	return r.fetchShareAggregate("WHERE handle = ? AND trashed_at IS NULL", handle)
 }
@@ -34,13 +37,13 @@ func (r *ShareRepository) Exists(id string) (bool, error) {
 }
 
 func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (*Share, error) {
-	query := "SELECT id, handle, created_at, expires_at, trashed_at, version FROM share " + whereClause
+	query := "SELECT id, handle, visibility, created_at, expires_at, trashed_at, version FROM share " + whereClause
 
 	var sh Share
 	var expiresAt, trashedAt sql.NullString
 
 	err := r.db.DB.QueryRow(query, args...).Scan(
-		&sh.ID, &sh.Handle, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version,
+		&sh.ID, &sh.Handle, &sh.Visibility, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version,
 	)
 	if err != nil {
 		return nil, err
@@ -50,6 +53,10 @@ func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (
 		return nil, err
 	}
 	if sh.TrashedAt, err = parseTimestamp(trashedAt); err != nil {
+		return nil, err
+	}
+
+	if sh.Owners, err = r.getOwnersByShareID(sh.ID); err != nil {
 		return nil, err
 	}
 
@@ -68,11 +75,12 @@ func (r *ShareRepository) GetAllTrashed() ([]ShareSummary, error) {
 	return r.fetchShareSummaries("WHERE s.trashed_at IS NOT NULL")
 }
 
-func (r *ShareRepository) fetchShareSummaries(whereClause string) ([]ShareSummary, error) {
+func (r *ShareRepository) fetchShareSummaries(whereClause string, args ...any) ([]ShareSummary, error) {
 	query := `
 		SELECT
 			s.id,
 			s.handle,
+			s.visibility,
 			s.expires_at,
 			s.trashed_at,
 			COUNT(f.id) AS totalFiles,
@@ -80,9 +88,9 @@ func (r *ShareRepository) fetchShareSummaries(whereClause string) ([]ShareSummar
 		FROM share s
 		LEFT JOIN file f ON s.id = f.share_id
 		` + whereClause + `
-		GROUP BY s.id, s.handle`
+		GROUP BY s.id, s.handle, s.visibility`
 
-	rows, err := r.db.DB.Query(query)
+	rows, err := r.db.DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -91,13 +99,24 @@ func (r *ShareRepository) fetchShareSummaries(whereClause string) ([]ShareSummar
 	var summaries []ShareSummary
 	for rows.Next() {
 		var s ShareSummary
-		if err := rows.Scan(&s.ID, &s.Handle, &s.ExpiresAt, &s.TrashedAt, &s.TotalFiles, &s.TotalSize); err != nil {
+		if err := rows.Scan(&s.ID, &s.Handle, &s.Visibility, &s.ExpiresAt, &s.TrashedAt, &s.TotalFiles, &s.TotalSize); err != nil {
 			return nil, err
 		}
 		summaries = append(summaries, s)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-	return summaries, rows.Err()
+	owners, err := r.getAllOwners()
+	if err != nil {
+		return nil, err
+	}
+	for i := range summaries {
+		summaries[i].Owners = owners[summaries[i].ID]
+	}
+
+	return summaries, nil
 }
 
 func (r *ShareRepository) Save(share *Share) (*Share, error) {
@@ -205,6 +224,44 @@ func (r *ShareRepository) GetKeys() (map[string]struct{}, error) {
 	return keys, nil
 }
 
+func (r *ShareRepository) getOwnersByShareID(id string) ([]string, error) {
+	rows, err := r.db.DB.Query("SELECT user_id FROM share_owner WHERE share_id = ? ORDER BY user_id", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var owners []string
+	for rows.Next() {
+		var ownerID string
+		if err := rows.Scan(&ownerID); err != nil {
+			return nil, err
+		}
+		owners = append(owners, ownerID)
+	}
+
+	return owners, rows.Err()
+}
+
+func (r *ShareRepository) getAllOwners() (map[string][]string, error) {
+	rows, err := r.db.DB.Query("SELECT share_id, user_id FROM share_owner")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	owners := make(map[string][]string)
+	for rows.Next() {
+		var shareID, userID string
+		if err := rows.Scan(&shareID, &userID); err != nil {
+			return nil, err
+		}
+		owners[shareID] = append(owners[shareID], userID)
+	}
+
+	return owners, rows.Err()
+}
+
 func (r *ShareRepository) getAllFilesByShareID(id string) ([]File, error) {
 	rows, err := r.db.DB.Query("SELECT id, name, expected_size FROM file WHERE share_id = ?", id)
 	if err != nil {
@@ -235,10 +292,19 @@ func insertShareAggregate(tx *sql.Tx, share *Share) error {
 	}
 
 	if _, err := tx.Exec(
-		"INSERT INTO share (id, handle, created_at, expires_at, trashed_at, version) VALUES (?, ?, ?, ?, ?, ?)",
-		share.ID, share.Handle, share.CreatedAt.String(), expiresAt, trashedAt, share.Version,
+		"INSERT INTO share (id, handle, visibility, created_at, expires_at, trashed_at, version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		share.ID, share.Handle, string(share.Visibility), share.CreatedAt.String(), expiresAt, trashedAt, share.Version,
 	); err != nil {
 		return err
+	}
+
+	for _, ownerID := range share.Owners {
+		if _, err := tx.Exec(
+			"INSERT INTO share_owner (share_id, user_id) VALUES (?, ?)",
+			share.ID, ownerID,
+		); err != nil {
+			return err
+		}
 	}
 
 	for _, file := range share.Files {

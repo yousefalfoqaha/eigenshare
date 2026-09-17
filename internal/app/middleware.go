@@ -1,4 +1,4 @@
-package web
+package app
 
 import (
 	"log"
@@ -33,7 +33,7 @@ func ClearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-func RequireAuth(svc *auth.AuthService, next http.Handler) http.Handler {
+func (app *App) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(SessionCookieName)
 		if err != nil || c.Value == "" {
@@ -41,7 +41,7 @@ func RequireAuth(svc *auth.AuthService, next http.Handler) http.Handler {
 			return
 		}
 
-		u, err := svc.ValidateSession(c.Value)
+		u, err := app.Auth.ValidateSession(c.Value)
 		if err != nil {
 			ClearSessionCookie(w)
 			deny(w, r)
@@ -53,10 +53,10 @@ func RequireAuth(svc *auth.AuthService, next http.Handler) http.Handler {
 	})
 }
 
-func OptionalAuth(svc *auth.AuthService, next http.Handler) http.Handler {
+func (app *App) OptionalAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(SessionCookieName); err == nil && c.Value != "" {
-			if u, err := svc.ValidateSession(c.Value); err == nil {
+			if u, err := app.Auth.ValidateSession(c.Value); err == nil {
 				ctx := auth.WithUser(r.Context(), u)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
@@ -66,7 +66,7 @@ func OptionalAuth(svc *auth.AuthService, next http.Handler) http.Handler {
 	})
 }
 
-func RequireAdmin(next http.Handler) http.Handler {
+func (app *App) RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u := auth.UserFromContext(r.Context())
 		if u == nil || !u.IsAdmin {
@@ -123,7 +123,7 @@ func (w *WrappedWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-func Logging(next http.Handler) http.Handler {
+func (app *App) Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wrappedWriter := &WrappedWriter{
 			ResponseWriter: w,

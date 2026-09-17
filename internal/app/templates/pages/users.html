@@ -1,7 +1,7 @@
 {{define "content"}}
 <section class="title">
   <h1>users</h1>
-  {{if .IsAdmin}}
+  {{if .CurrentUser.IsAdmin}}
   <p><a href="/users/new">+ new user</a></p>
   {{end}}
 </section>
@@ -12,18 +12,18 @@
       <th>username</th>
       <th>admin</th>
       <th>created</th>
-      {{if .IsAdmin}}
+      {{if .CurrentUser.IsAdmin}}
       <th></th>
       {{end}}
     </tr>
   </thead>
   <tbody>
-    {{range .Content.Users}}
+    {{range .Users}}
     <tr>
       <td>{{.Username}}</td>
       <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
       <td>{{.CreatedAt.Time.Format "Jan 02, 2006"}}</td>
-      {{if $.IsAdmin}}
+      {{if $.CurrentUser.IsAdmin}}
       <td class="row-actions">
         <a href="/users/{{.ID}}/edit">edit</a>
 

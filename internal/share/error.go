@@ -1,19 +1,25 @@
 package share
 
 import (
-	"errors"
 	"fmt"
+	"net/http"
+
+	"eigenshare/internal/apperr"
 )
 
 var (
-	ErrHandleExists           = errors.New("handle already exists")
-	ErrShareNotFound          = errors.New("share not found")
-	ErrFileNotFound           = errors.New("file not found")
-	ErrShareNotComplete       = errors.New("share is not complete")
-	ErrChunkOffsetExceedsSize = errors.New("chunk offset exceeds declared file size")
-	ErrInvalidChunkOffset     = errors.New("invalid chunk offset")
-	ErrInvalidRequest         = errors.New("invalid request")
-	ErrShareVersionConflict   = errors.New("share was modified concurrently")
+	ErrHandleExists           = apperr.New(http.StatusConflict, "handle already exists")
+	ErrShareNotFound          = apperr.New(http.StatusNotFound, "share not found")
+	ErrFileNotFound           = apperr.New(http.StatusNotFound, "file not found")
+	ErrShareNotComplete       = apperr.New(http.StatusConflict, "share is not complete")
+	ErrChunkOffsetExceedsSize = apperr.New(http.StatusConflict, "chunk offset exceeds declared file size")
+	ErrInvalidChunkOffset     = apperr.New(http.StatusBadRequest, "invalid chunk offset")
+	ErrInvalidRequest         = apperr.New(http.StatusBadRequest, "invalid request")
+	ErrShareVersionConflict   = apperr.New(http.StatusConflict, "share was modified concurrently")
+	ErrShareTrashed           = apperr.New(http.StatusConflict, "share is trashed")
+	ErrShareNotTrashed        = apperr.New(http.StatusConflict, "share is not trashed")
+	ErrLastOwner              = apperr.New(http.StatusConflict, "cannot remove the last owner of a share")
+	ErrOwnerExists            = apperr.New(http.StatusConflict, "user is already an owner of this share")
 )
 
 type ChunkOffsetConflictError struct {
@@ -23,6 +29,10 @@ type ChunkOffsetConflictError struct {
 
 func (e *ChunkOffsetConflictError) Error() string {
 	return fmt.Sprintf("invalid chunk offset; current offset is %d", e.CurrentOffset)
+}
+
+func (e *ChunkOffsetConflictError) HTTPStatus() int {
+	return http.StatusConflict
 }
 
 func (e *ChunkOffsetConflictError) Unwrap() error {

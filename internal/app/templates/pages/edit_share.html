@@ -4,7 +4,70 @@
   <h1>{{.Content.Share.Handle}}</h1>
 </section>
 
+{{if .Content.Share.TrashedAt}}
+<p class="error">
+  this share is trashed - it is hidden from public links until
+  <a href="/trash">restored</a>
+</p>
+{{end}}
+
 <p>{{shareTotalFiles .Content.Share}} file(s)</p>
+
+<section class="title">
+  <h2>visibility</h2>
+  <form method="post" action="/shares/{{.Content.Share.ID}}/visibility" class="inline">
+    <input
+      type="hidden"
+      name="visibility"
+      value="{{if eq .Content.Share.Visibility "public"}}private{{else}}public{{end}}"
+    />
+    <button type="submit">
+      {{if eq .Content.Share.Visibility "public"}}make private{{else}}make
+      public{{end}}
+    </button>
+  </form>
+</section>
+
+<section class="title">
+  <h2>owners</h2>
+</section>
+
+<table>
+  <thead>
+    <tr>
+      <th>username</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Users}}{{if $.Content.Share.IsOwner .}}
+    <tr>
+      <td>{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</td>
+      <td>
+        <form
+          method="post"
+          action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete"
+          class="inline"
+        >
+          <button type="submit">remove</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}{{end}}
+  </tbody>
+</table>
+
+<form method="post" action="/shares/{{.Content.Share.ID}}/owners">
+  <label
+    >add owner
+    <select name="userID" required>
+      {{range .Users}}{{if not ($.Content.Share.IsOwner .)}}
+      <option value="{{.ID}}">{{.Username}}</option>
+      {{end}}{{end}}
+    </select>
+  </label>
+  <button type="submit" class="submit">add owner</button>
+</form>
 
 <table>
   <thead>
@@ -49,10 +112,6 @@
 
   <ul id="progress-lines"></ul>
 </form>
-
-<p>
-  <a href="/shares">back to shares</a>
-</p>
 
 <script src="/static/uploader.js"></script>
 <script>
@@ -136,4 +195,8 @@
     });
 </script>
 {{end}}
+
+<p>
+  <a href="/shares">back to shares</a>
+</p>
 {{end}}

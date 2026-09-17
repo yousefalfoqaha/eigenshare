@@ -27,7 +27,7 @@
     <main>
       {{if .Error}}
       <div class="error">{{.Error}}</div>
-      {{end}} {{template "content" .}}
+      {{end}} {{if not .NotFound}}{{template "content" .}}{{end}}
     </main>
   </body>
 </html>

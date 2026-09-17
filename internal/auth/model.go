@@ -1,9 +1,10 @@
 package auth
 
 import (
-	"fmt"
+	"net/http"
 	"time"
 
+	"eigenshare/internal/apperr"
 	"eigenshare/internal/timestamp"
 )
 
@@ -16,13 +17,13 @@ type Session struct {
 
 func NewSession(token, userID string, expiryMinutes int) (*Session, error) {
 	if token == "" {
-		return nil, fmt.Errorf("session token is required")
+		return nil, apperr.New(http.StatusBadRequest, "session token is required")
 	}
 	if userID == "" {
-		return nil, fmt.Errorf("user id is required")
+		return nil, apperr.New(http.StatusBadRequest, "user id is required")
 	}
 	if expiryMinutes < 0 {
-		return nil, fmt.Errorf("expiry minutes must be non-negative")
+		return nil, apperr.New(http.StatusBadRequest, "expiry minutes must be non-negative")
 	}
 
 	createdAt := timestamp.Now()

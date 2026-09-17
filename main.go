@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"eigenshare/internal/app"
 	"eigenshare/internal/auth"
 	"eigenshare/internal/infra"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
-	"eigenshare/internal/web"
 )
 
 const (
@@ -31,7 +31,7 @@ func main() {
 	sessionRepo := auth.NewSessionRepository(db)
 	shareRepo := share.NewShareRepository(db)
 	fileStorage := share.NewFileStorage(DATA_PATH)
-	shareService := share.NewShareService(shareRepo, fileStorage)
+	shareService := share.NewShareService(shareRepo, fileStorage, userSvc)
 	authService := auth.NewAuthService(userSvc, sessionRepo)
 	maintenanceCtx, stopMaintenance := context.WithCancel(context.Background())
 	defer stopMaintenance()
@@ -42,18 +42,11 @@ func main() {
 		log.Printf("Failed to seed admin: %v\n", err)
 	}
 
-	webController := web.NewController(authService, userSvc, shareService)
-
-	protectedMux := http.NewServeMux()
-	webController.RegisterProtectedHandlers(protectedMux)
-
-	router := http.NewServeMux()
-	router.Handle("/", web.RequireAuth(authService, protectedMux))
-	webController.RegisterHandlers(router)
+	app := app.New(authService, userSvc, shareService)
 
 	server := http.Server{
 		Addr:    ":" + strconv.Itoa(PORT),
-		Handler: web.Logging(router),
+		Handler: app.Routes(),
 	}
 
 	go func() {

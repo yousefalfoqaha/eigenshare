@@ -6,6 +6,7 @@ type FileRequest struct {
 }
 
 type ShareRequest struct {
-	Handle        string `json:"handle"`
-	ExpiryMinutes int    `json:"expiryMinutes"`
+	Handle        string     `json:"handle"`
+	ExpiryMinutes int        `json:"expiryMinutes"`
+	Visibility    Visibility `json:"visibility"`
 }

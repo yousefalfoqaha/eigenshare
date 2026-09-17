@@ -1,8 +1,12 @@
 package auth
 
-import "errors"
+import (
+	"net/http"
+
+	"eigenshare/internal/apperr"
+)
 
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrSessionNotFound    = errors.New("session not found")
+	ErrInvalidCredentials = apperr.New(http.StatusUnauthorized, "invalid credentials")
+	ErrSessionNotFound    = apperr.New(http.StatusUnauthorized, "session not found")
 )

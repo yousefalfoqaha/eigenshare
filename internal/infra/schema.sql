@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS share (
     id TEXT NOT NULL PRIMARY KEY,
     handle TEXT NOT NULL UNIQUE,
+    visibility TEXT NOT NULL DEFAULT 'private',
     created_at TEXT NOT NULL,
     expires_at TEXT,
     trashed_at TEXT,
@@ -29,5 +30,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
     expires_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS share_owner (
+    share_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    PRIMARY KEY (share_id, user_id),
+    FOREIGN KEY (share_id) REFERENCES share(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
