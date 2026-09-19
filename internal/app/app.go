@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"eigenshare/internal/app/views"
 	"eigenshare/internal/auth"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
@@ -25,29 +24,11 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 type App struct {
-	Auth   *auth.AuthService
-	User   *user.UserService
-	Share  *share.ShareService
-	Pages  map[string]*template.Template
-	Static http.Handler
-}
-
-type page struct {
-	Title         string
-	Error         string
-	NotFound      bool
-	CurrentUserID string
-	Users         []*user.User
-	Content       any
-}
-
-func (p *page) CurrentUser() *user.User {
-	for _, u := range p.Users {
-		if u.ID == p.CurrentUserID {
-			return u
-		}
-	}
-	return nil
+	Auth      *auth.AuthService
+	User      *user.UserService
+	Share     *share.ShareService
+	templates map[string]*template.Template
+	static    http.Handler
 }
 
 func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.ShareService) *App {
@@ -80,121 +61,143 @@ func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.S
 	}
 
 	return &App{
-		Auth:   authSvc,
-		User:   userSvc,
-		Share:  shareSvc,
-		Pages:  pages,
-		Static: http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
+		Auth:      authSvc,
+		User:      userSvc,
+		Share:     shareSvc,
+		templates: pages,
+		static:    http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
 	}
 }
 
 func (app *App) Routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /static/", app.Static)
-	mux.HandleFunc("GET /login", app.loginPage)
-	mux.HandleFunc("POST /login", app.loginSubmit)
-	mux.HandleFunc("POST /logout", app.logout)
+	mux.Handle("GET /static/", app.static)
 
+	// login and public share links, no auth required
 	pub := http.NewServeMux()
+	pub.HandleFunc("GET /login", app.loginPage)
+	pub.HandleFunc("POST /login", app.loginSubmit)
+	pub.HandleFunc("POST /logout", app.logout)
 	pub.HandleFunc("GET /s/{handle}", app.sharePage)
 	pub.HandleFunc("GET /s/{handle}/download", app.downloadAll)
 	pub.HandleFunc("GET /s/{handle}/files/{fileID}/download", app.downloadFile)
-	mux.Handle("/s/", app.OptionalAuth(pub))
+	mux.Handle("/login", app.optionalAuth(pub))
+	mux.Handle("/logout", app.optionalAuth(pub))
+	mux.Handle("/s/", app.optionalAuth(pub))
 
+	// logged-in pages
 	prot := http.NewServeMux()
 	prot.HandleFunc("GET /", app.index)
 	prot.HandleFunc("GET /shares", app.sharesPage)
 	prot.HandleFunc("GET /shares/new", app.newSharePage)
-	prot.HandleFunc("POST /shares", app.createShare)
-	prot.HandleFunc("POST /shares/delete", app.deleteShares)
 	prot.HandleFunc("GET /shares/{id}/edit", app.editSharePage)
+	prot.HandleFunc("POST /shares/delete", app.deleteShares)
 	prot.HandleFunc("POST /shares/{id}/trash", app.trashShare)
 	prot.HandleFunc("POST /shares/{id}/restore", app.restoreShare)
-	prot.HandleFunc("POST /shares/{id}/files", app.addFilesToShare)
-	prot.HandleFunc("POST /shares/{id}/files/{fileID}/delete", app.deleteFile)
-	prot.HandleFunc("PUT /shares/{id}/files/{fileID}/stream", app.streamFile)
+	prot.HandleFunc("POST /shares/{id}/visibility", app.setVisibility)
 	prot.HandleFunc("POST /shares/{id}/owners", app.addOwner)
 	prot.HandleFunc("POST /shares/{id}/owners/{ownerID}/delete", app.removeOwner)
-	prot.HandleFunc("POST /shares/{id}/visibility", app.setVisibility)
+	prot.HandleFunc("POST /shares/{id}/files/{fileID}/delete", app.deleteFile)
 	prot.HandleFunc("GET /trash", app.trashPage)
 	prot.HandleFunc("GET /users", app.usersPage)
-	admin := func(h http.HandlerFunc) http.Handler { return app.RequireAdmin(h) }
-	prot.Handle("GET /users/new", admin(app.newUserPage))
-	prot.Handle("POST /users", admin(app.createUser))
-	prot.Handle("GET /users/{id}/edit", admin(app.editUserPage))
-	prot.Handle("POST /users/{id}", admin(app.updateUser))
-	prot.Handle("POST /users/{id}/delete", admin(app.deleteUser))
-	mux.Handle("/", app.RequireAuth(prot))
+	prot.HandleFunc("GET /users/new", app.admin(app.newUserPage))
+	prot.HandleFunc("POST /users", app.admin(app.createUser))
+	prot.HandleFunc("GET /users/{id}/edit", app.admin(app.editUserPage))
+	prot.HandleFunc("POST /users/{id}", app.admin(app.updateUser))
+	prot.HandleFunc("POST /users/{id}/delete", app.admin(app.deleteUser))
+	mux.Handle("/", app.requireLogin(prot))
+
+	// the fetch world
+	api := http.NewServeMux()
+	api.HandleFunc("POST /shares", app.createShare)
+	api.HandleFunc("POST /shares/{id}/files", app.addFilesToShare)
+	api.HandleFunc("PUT /shares/{id}/files/{fileID}/stream", app.streamFile)
+	mux.Handle("/api/", http.StripPrefix("/api", app.requireLoginJSON(api)))
 
 	return app.Logging(mux)
 }
 
-func (app *App) render(w http.ResponseWriter, r *http.Request, template, title string, content any, err error) {
-	t, ok := app.Pages[template]
+// page is the data every template renders against. Content is the service
+// model (or an inline struct when a template needs several values).
+type page struct {
+	Banner      string
+	CurrentUser *user.User
+	Content     any
+}
+
+// writePage renders a page template through the layout. The banner is read
+// from ?err= in the URL, so GET handlers never pass messages around: POSTs
+// redirect back with ?err= and the banner shows up on its own.
+func (app *App) writePage(w http.ResponseWriter, r *http.Request, template string, content any) {
+	t, ok := app.templates[template]
 	if !ok {
-		log.Printf("INTERNAL ERROR: template not found: %s", template)
-		app.clientError(w, r, fmt.Errorf("template not found: %s", template))
+		log.Printf("template not found: %s", template)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	status := http.StatusOK
-	message := ""
-	if err != nil {
-		status, message = errorResponse(r, err)
-	}
-
-	if v, ok := content.(views.View); ok {
-		if loadErr := v.Load(r); loadErr != nil {
-			err = loadErr
-			status, message = errorResponse(r, err)
-		}
-		title = v.Title()
-	}
-
-	page := page{
-		Title:    title,
-		Error:    message,
-		NotFound: status == http.StatusNotFound,
-		Content:  content,
-	}
-	if u := auth.UserFromContext(r.Context()); u != nil {
-		page.CurrentUserID = u.ID
-		users, err := app.User.GetAllUsers()
-		if err != nil {
-			log.Printf("INTERNAL ERROR: fetching users for page: %v (path: %s)", err, r.URL.Path)
-		} else {
-			page.Users = users
-		}
+	pg := page{
+		Banner:      r.URL.Query().Get("err"),
+		CurrentUser: auth.UserFromContext(r.Context()),
+		Content:     content,
 	}
 
 	buf := new(bytes.Buffer)
-	if execErr := t.ExecuteTemplate(buf, "layout", &page); execErr != nil {
-		log.Printf("INTERNAL ERROR: executing template %s: %v", template, execErr)
-		app.clientError(w, r, execErr)
+	if err := t.ExecuteTemplate(buf, "layout", &pg); err != nil {
+		log.Printf("executing template %s: %v", template, err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	buf.WriteTo(w)
+	w.WriteHeader(http.StatusOK)
+	_, _ = buf.WriteTo(w)
 }
 
-func (app *App) clientError(w http.ResponseWriter, r *http.Request, err error) {
+// writeAPI emits a successful JSON response. Errors never pass through here;
+// they exit early through apiError.
+func (app *App) writeAPI(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// apiError translates err and writes the JSON error body.
+func (app *App) apiError(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := errorResponse(r, err)
-
-	if wantsJSON(r) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "message": message})
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	fmt.Fprintf(w, "<!doctype html><html><head><title>error - eigenshare</title></head><body><h1>%d</h1><p>%s</p></body></html>", status, message)
+	app.writeAPI(w, status, map[string]any{"status": status, "message": message})
 }
 
+// pageError writes the terminal error page: what you emit when rendering has
+// become impossible. It is not a template; it is a terminal state.
+func (app *App) pageError(w http.ResponseWriter, r *http.Request, err error) {
+	status, message := errorResponse(r, err)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	fmt.Fprintf(w, errorPageHTML, status, message)
+}
+
+const errorPageHTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>error - eigenshare</title>
+    <link rel="stylesheet" href="/static/static.css" />
+  </head>
+  <body>
+    <main>
+      <h1>%d</h1>
+      <p>%s</p>
+      <p><a href="/shares">back to shares</a></p>
+    </main>
+  </body>
+</html>
+`
+
+// errorResponse translates any error into an HTTP status and a message that
+// is safe to show the client. It is the single translation layer shared by
+// both writers; neither HTML nor JSON is decided here.
 func errorResponse(r *http.Request, err error) (int, string) {
 	status := http.StatusInternalServerError
 	var statusErr interface{ HTTPStatus() int }
@@ -203,17 +206,7 @@ func errorResponse(r *http.Request, err error) (int, string) {
 	}
 	if status == http.StatusInternalServerError {
 		log.Printf("INTERNAL ERROR: %v (path: %s)", err, r.URL.Path)
-		return status, "An unexpected error occurred"
+		return status, "an unexpected error occurred"
 	}
 	return status, err.Error()
-}
-
-func writeAPIResponse(w http.ResponseWriter, status int, v any) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-
-	return enc.Encode(v)
 }

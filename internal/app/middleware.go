@@ -3,9 +3,9 @@ package app
 import (
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
+	"eigenshare/internal/apperr"
 	"eigenshare/internal/auth"
 )
 
@@ -33,32 +33,28 @@ func ClearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-func (app *App) RequireAuth(next http.Handler) http.Handler {
+func (app *App) requireLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(SessionCookieName)
 		if err != nil || c.Value == "" {
-			deny(w, r)
+			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
-
 		u, err := app.Auth.ValidateSession(c.Value)
 		if err != nil {
 			ClearSessionCookie(w)
-			deny(w, r)
+			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
-
-		ctx := auth.WithUser(r.Context(), u)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), u)))
 	})
 }
 
-func (app *App) OptionalAuth(next http.Handler) http.Handler {
+func (app *App) optionalAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(SessionCookieName); err == nil && c.Value != "" {
 			if u, err := app.Auth.ValidateSession(c.Value); err == nil {
-				ctx := auth.WithUser(r.Context(), u)
-				next.ServeHTTP(w, r.WithContext(ctx))
+				next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), u)))
 				return
 			}
 		}
@@ -66,44 +62,32 @@ func (app *App) OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
-func (app *App) RequireAdmin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (app *App) admin(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		u := auth.UserFromContext(r.Context())
 		if u == nil || !u.IsAdmin {
-			if wantsJSON(r) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"status":403,"message":"forbidden"}`))
-				return
-			}
 			http.Redirect(w, r, "/shares", http.StatusFound)
 			return
 		}
-		next.ServeHTTP(w, r)
+		h(w, r)
+	}
+}
+
+func (app *App) requireLoginJSON(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(SessionCookieName)
+		if err != nil || c.Value == "" {
+			app.apiError(w, r, apperr.New(http.StatusUnauthorized, "unauthorized"))
+			return
+		}
+		u, err := app.Auth.ValidateSession(c.Value)
+		if err != nil {
+			ClearSessionCookie(w)
+			app.apiError(w, r, apperr.New(http.StatusUnauthorized, "unauthorized"))
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), u)))
 	})
-}
-
-func deny(w http.ResponseWriter, r *http.Request) {
-	if wantsJSON(r) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"status":401,"message":"unauthorized"}`))
-		return
-	}
-	http.Redirect(w, r, "/login", http.StatusFound)
-}
-
-func wantsJSON(r *http.Request) bool {
-	if accept := r.Header.Get("Accept"); strings.Contains(accept, "application/json") {
-		return true
-	}
-	if ct := r.Header.Get("Content-Type"); strings.Contains(ct, "application/json") {
-		return true
-	}
-	if r.Method == http.MethodPut || r.Method == http.MethodDelete {
-		return true
-	}
-	return false
 }
 
 type WrappedWriter struct {

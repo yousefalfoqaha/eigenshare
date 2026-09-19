@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{.Title}} - eigenshare</title>
+    <title>{{template "title" .}} - eigenshare</title>
     <link rel="stylesheet" href="/static/static.css" />
   </head>
   <body>
@@ -25,9 +25,15 @@
       </nav>
     </header>
     <main>
-      {{if .Error}}
-      <div class="error">{{.Error}}</div>
-      {{end}} {{if not .NotFound}}{{template "content" .}}{{end}}
+      {{if .Banner}}
+      <div class="error">{{.Banner}}</div>
+      <script>
+        // consume the banner: the message came in via ?err=, strip it so a
+        // refresh doesn't show the same failure twice
+        history.replaceState(null, "", location.pathname);
+      </script>
+      {{end}}
+      {{template "content" .}}
     </main>
   </body>
 </html>

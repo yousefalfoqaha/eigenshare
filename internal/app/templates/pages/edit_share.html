@@ -1,3 +1,4 @@
+{{define "title"}}{{.Content.Share.Handle}}{{end}}
 {{define "content"}}
 {{if .Content.Share}}
 <section class="title">
@@ -40,10 +41,11 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Users}}{{if $.Content.Share.IsOwner .}}
+    {{range .Content.Users}}{{if $.Content.Share.IsOwner .}}
     <tr>
       <td>{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</td>
       <td>
+        {{if gt (len $.Content.Share.Owners) 1}}
         <form
           method="post"
           action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete"
@@ -51,6 +53,7 @@
         >
           <button type="submit">remove</button>
         </form>
+        {{end}}
       </td>
     </tr>
     {{end}}{{end}}
@@ -61,7 +64,7 @@
   <label
     >add owner
     <select name="userID" required>
-      {{range .Users}}{{if not ($.Content.Share.IsOwner .)}}
+      {{range .Content.Users}}{{if not ($.Content.Share.IsOwner .)}}
       <option value="{{.ID}}">{{.Username}}</option>
       {{end}}{{end}}
     </select>

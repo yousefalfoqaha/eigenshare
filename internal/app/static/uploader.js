@@ -13,7 +13,7 @@ function formatBytes(bytes) {
 }
 
 async function registerFiles(shareID, files) {
-  const response = await fetch(`/shares/${shareID}/files`, {
+  const response = await fetch(`/api/shares/${shareID}/files`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -38,7 +38,7 @@ async function streamFile(shareID, fileID, file, onProgress) {
 
   while (offset < file.size) {
     const end = Math.min(offset + chunkSize, file.size);
-    const response = await fetch(`/shares/${shareID}/files/${fileID}/stream`, {
+    const response = await fetch(`/api/shares/${shareID}/files/${fileID}/stream`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/octet-stream",

@@ -1,8 +1,9 @@
+{{define "title"}}{{if .Content}}{{.Content.Username}}{{else}}new user{{end}}{{end}}
 {{define "content"}}
-<h1>{{if .Content.User}} {{.Content.User.Username}} {{else}}new user{{end}}</h1>
+<h1>{{if .Content}} {{.Content.Username}} {{else}}new user{{end}}</h1>
 <form
   method="post"
-  action="{{if .Content.User}}/users/{{.Content.User.ID}}{{else}}/users{{end}}"
+  action="{{if .Content}}/users/{{.Content.ID}}{{else}}/users{{end}}"
 >
   <label
     >username
@@ -10,25 +11,25 @@
       type="text"
       name="username"
       required
-      value="{{if .Content.User}}{{.Content.User.Username}}{{end}}"
+      value="{{if .Content}}{{.Content.Username}}{{end}}"
       autofocus
   /></label>
   <label
-    >password (leave blank to keep current) {{if .Content.User}}{{end}}
-    <input type="password" name="password" {{if not .Content.User}}required{{end}}
+    >password (leave blank to keep current) {{if .Content}}{{end}}
+    <input type="password" name="password" {{if not .Content}}required{{end}}
   /></label>
   <label class="inline"
     ><input
       type="checkbox"
       name="isAdmin"
       {{if
-      .Content.User}}{{if
-      .Content.User.IsAdmin}}checked{{end}}{{end}}
+      .Content}}{{if
+      .Content.IsAdmin}}checked{{end}}{{end}}
     />
     admin</label
   >
   <button type="submit" class="submit">
-    {{if .Content.User}}update{{else}}create{{end}}
+    {{if .Content}}update{{else}}create{{end}}
   </button>
 </form>
 <p><a href="/users">back to users</a></p>
