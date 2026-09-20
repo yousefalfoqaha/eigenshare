@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"eigenshare/internal/share"
@@ -19,6 +20,10 @@ func formatSize(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func formatCommaSeparated(items []string) string {
+	return strings.Join(items, ", ")
 }
 
 func shareTotalSize(sh *share.Share) int64 {

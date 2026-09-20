@@ -1,77 +1,57 @@
 {{define "title"}}{{.Content.Share.Handle}}{{end}}
 {{define "content"}}
-{{if .Content.Share}}
-<section class="title">
-  <h1>{{.Content.Share.Handle}}</h1>
-</section>
 
 {{if .Content.Share.TrashedAt}}
-<p class="error">
-  this share is trashed - it is hidden from public links until
-  <a href="/trash">restored</a>
+<p class="info">
+  this share has been trashed {{timeAgo .Content.Share.TrashedAt}}, it is hidden
+  from public links until restored
 </p>
 {{end}}
 
-<p>{{shareTotalFiles .Content.Share}} file(s)</p>
-
+{{if .Content.Share}}
 <section class="title">
-  <h2>visibility</h2>
-  <form method="post" action="/shares/{{.Content.Share.ID}}/visibility" class="inline">
-    <input
-      type="hidden"
-      name="visibility"
-      value="{{if eq .Content.Share.Visibility "public"}}private{{else}}public{{end}}"
-    />
-    <button type="submit">
-      {{if eq .Content.Share.Visibility "public"}}make private{{else}}make
-      public{{end}}
-    </button>
-  </form>
+  <h1>{{.Content.Share.Handle}} <small><a href="/s/{{.Content.Share.Handle}}">(view)</a></small></h1>
+  <div class="row-actions">
+    <button type="button" id="copy-link-btn">copy link</button>
+
+    <form method="post" action="/shares/{{.Content.Share.ID}}/visibility" class="inline">
+      <input
+        type="hidden"
+        name="visibility"
+        value="{{if eq .Content.Share.Visibility "public"}}private{{else}}public{{end}}"
+      />
+      <button type="submit">
+        {{if eq .Content.Share.Visibility "public"}}make private{{else}}make public{{end}}
+      </button>
+    </form>
+
+    {{if .Content.Share.TrashedAt}}
+    <form method="post" action="/shares/{{.Content.Share.ID}}/restore" class="inline">
+      <input type="hidden" name="redirect" value="edit" />
+      <button type="submit">restore</button>
+    </form>
+    {{else}}
+    <form method="post" action="/shares/{{.Content.Share.ID}}/trash" class="inline">
+      <button type="submit">trash</button>
+    </form>
+    {{end}}
+  </div>
 </section>
 
-<section class="title">
-  <h2>owners</h2>
-</section>
+<p>
+  {{shareTotalFiles .Content.Share}} file(s) ·
+  {{shareTotalSize .Content.Share | formatSize}} ·
+  {{formatCommaSeparated .Content.OwnerNames}} ·
+  {{.Content.Share.Visibility}} ·
+  expires {{expiresIn .Content.Share.ExpiresAt}}
+</p>
 
-<table>
-  <thead>
-    <tr>
-      <th>username</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {{range .Content.Users}}{{if $.Content.Share.IsOwner .}}
-    <tr>
-      <td>{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</td>
-      <td>
-        {{if gt (len $.Content.Share.Owners) 1}}
-        <form
-          method="post"
-          action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete"
-          class="inline"
-        >
-          <button type="submit">remove</button>
-        </form>
-        {{end}}
-      </td>
-    </tr>
-    {{end}}{{end}}
-  </tbody>
-</table>
+<nav>
+  {{if eq .Content.Tab "files"}}files{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=files">files</a>{{end}}
+  {{if eq .Content.Tab "owners"}}owners{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=owners">owners</a>{{end}}
+</nav>
 
-<form method="post" action="/shares/{{.Content.Share.ID}}/owners">
-  <label
-    >add owner
-    <select name="userID" required>
-      {{range .Content.Users}}{{if not ($.Content.Share.IsOwner .)}}
-      <option value="{{.ID}}">{{.Username}}</option>
-      {{end}}{{end}}
-    </select>
-  </label>
-  <button type="submit" class="submit">add owner</button>
-</form>
-
+{{if eq .Content.Tab "files"}}
 <table>
   <thead>
     <tr>
@@ -112,6 +92,8 @@
   <div id="status" role="status" aria-live="polite"></div>
 
   <button type="submit" id="add-btn" class="submit">upload</button>
+
+  <p id="pending-label">uploads pending</p>
 
   <ul id="progress-lines"></ul>
 </form>
@@ -196,6 +178,69 @@
         btn.disabled = false;
       }
     });
+</script>
+{{end}}
+
+{{if eq .Content.Tab "owners"}}
+<table>
+  <thead>
+    <tr>
+      <th>username</th>
+      <th>admin</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Content.Users}}{{if $.Content.Share.IsOwner .}}
+    <tr>
+      <td>{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</td>
+      <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
+      <td>
+        {{if gt (len $.Content.Share.Owners) 1}}
+        <form
+          method="post"
+          action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete"
+          class="inline"
+        >
+          <button type="submit">remove</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}{{end}}
+  </tbody>
+</table>
+
+<form method="post" action="/shares/{{.Content.Share.ID}}/owners">
+  <label
+    >add owner
+    <select name="userID" required>
+      {{range .Content.Users}}{{if not ($.Content.Share.IsOwner .)}}
+      <option value="{{.ID}}">{{.Username}}</option>
+      {{end}}{{end}}
+    </select>
+  </label>
+  <button type="submit" class="submit">add</button>
+</form>
+{{end}}
+
+<script>
+  const copyBtn = document.getElementById("copy-link-btn");
+  copyBtn.addEventListener("click", async () => {
+    const url = location.origin + "/s/{{.Content.Share.Handle}}";
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    copyBtn.textContent = "copied";
+    setTimeout(() => (copyBtn.textContent = "copy link"), 1500);
+  });
 </script>
 {{end}}
 

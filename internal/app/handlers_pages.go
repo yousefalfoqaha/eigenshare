@@ -139,10 +139,28 @@ func (app *App) sharesPage(w http.ResponseWriter, r *http.Request) {
 		progress[s.ID] = total
 	}
 
+	users, _ := app.User.GetAllUsers()
+	namesByID := make(map[string]string, len(users))
+	for _, u := range users {
+		namesByID[u.ID] = u.Username
+	}
+
+	ownerNames := make(map[string][]string, len(shares))
+	for _, s := range shares {
+		names := make([]string, 0, len(s.Owners))
+		for _, id := range s.Owners {
+			if name, ok := namesByID[id]; ok {
+				names = append(names, name)
+			}
+		}
+		ownerNames[s.ID] = names
+	}
+
 	app.writePage(w, r, "shares.html", &struct {
-		Shares   []share.ShareSummary
-		Progress map[string]int64
-	}{shares, progress})
+		Shares     []share.ShareSummary
+		Progress   map[string]int64
+		OwnerNames map[string][]string
+	}{shares, progress, ownerNames})
 }
 
 func (app *App) trashPage(w http.ResponseWriter, r *http.Request) {
@@ -179,11 +197,25 @@ func (app *App) editSharePage(w http.ResponseWriter, r *http.Request) {
 	progress, _ := app.Share.GetShareProgress(sh.ID, actor)
 	users, _ := app.User.GetAllUsers()
 
+	tab := r.URL.Query().Get("tab")
+	if tab != "owners" {
+		tab = "files"
+	}
+
+	ownerNames := make([]string, 0, len(sh.Owners))
+	for _, u := range users {
+		if sh.IsOwner(u) {
+			ownerNames = append(ownerNames, u.Username)
+		}
+	}
+
 	app.writePage(w, r, "edit_share.html", &struct {
-		Share    *share.Share
-		Progress map[string]int64
-		Users    []*user.User
-	}{sh, progress, users})
+		Share      *share.Share
+		Progress   map[string]int64
+		Users      []*user.User
+		Tab        string
+		OwnerNames []string
+	}{sh, progress, users, tab, ownerNames})
 }
 
 func (app *App) trashShare(w http.ResponseWriter, r *http.Request) {
@@ -196,12 +228,17 @@ func (app *App) trashShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) restoreShare(w http.ResponseWriter, r *http.Request) {
-	if err := app.Share.RecoverShare(r.PathValue("id"), auth.UserFromContext(r.Context())); err != nil {
+	id := r.PathValue("id")
+	dest := "/trash"
+	if r.PostFormValue("redirect") == "edit" {
+		dest = "/shares/" + id + "/edit"
+	}
+	if err := app.Share.RecoverShare(id, auth.UserFromContext(r.Context())); err != nil {
 		_, message := errorResponse(r, err)
-		http.Redirect(w, r, "/trash?err="+url.QueryEscape(message), http.StatusSeeOther)
+		http.Redirect(w, r, dest+"?err="+url.QueryEscape(message), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/trash", http.StatusFound)
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 func (app *App) deleteShares(w http.ResponseWriter, r *http.Request) {
@@ -230,25 +267,25 @@ func (app *App) deleteFile(w http.ResponseWriter, r *http.Request) {
 func (app *App) addOwner(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/shares/"+id+"/edit?err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners&err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 	if err := app.Share.AddOwner(id, auth.UserFromContext(r.Context()), r.PostForm.Get("userID")); err != nil {
 		_, message := errorResponse(r, err)
-		http.Redirect(w, r, "/shares/"+id+"/edit?err="+url.QueryEscape(message), http.StatusSeeOther)
+		http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners&err="+url.QueryEscape(message), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusFound)
+	http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners", http.StatusFound)
 }
 
 func (app *App) removeOwner(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := app.Share.RemoveOwner(id, auth.UserFromContext(r.Context()), r.PathValue("ownerID")); err != nil {
 		_, message := errorResponse(r, err)
-		http.Redirect(w, r, "/shares/"+id+"/edit?err="+url.QueryEscape(message), http.StatusSeeOther)
+		http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners&err="+url.QueryEscape(message), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusFound)
+	http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners", http.StatusFound)
 }
 
 func (app *App) setVisibility(w http.ResponseWriter, r *http.Request) {

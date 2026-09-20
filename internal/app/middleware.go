@@ -107,7 +107,7 @@ func (w *WrappedWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-func (app *App) Logging(next http.Handler) http.Handler {
+func (app *App) logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wrappedWriter := &WrappedWriter{
 			ResponseWriter: w,

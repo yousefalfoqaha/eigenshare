@@ -67,6 +67,12 @@ main {
   justify-content: space-between;
 }
 
+.info {
+  border: 1px solid #f90; /* strong orange */
+  background: #fdc; /* pale orange */
+  padding: 0.5rem;
+}
+
 .error {
   border: 1px solid #c00;
   background: #fee;
@@ -147,4 +153,16 @@ a:hover {
 
 #status {
   min-height: 1.2em;
+}
+
+/* uploads pending: hidden until the progress list has at least one line */
+#pending-label,
+#progress-lines {
+  display: none;
+}
+
+#add-files-form:has(#progress-lines li) #pending-label,
+#add-files-form:has(#progress-lines li) #progress-lines {
+  display: block;
+  margin: 0;
 }

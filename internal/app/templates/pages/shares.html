@@ -10,6 +10,7 @@
     <tr>
       <th>handle</th>
       <th>visibility</th>
+      <th>owners</th>
       <th>files</th>
       <th>size</th>
       <th>expires</th>
@@ -21,6 +22,7 @@
     <tr>
       <td><a href="/s/{{.Handle}}">{{.Handle}}</a></td>
       <td>{{.Visibility}}</td>
+      <td>{{formatCommaSeparated (index $.Content.OwnerNames .ID)}}</td>
       <td>{{.TotalFiles}}</td>
       <td>
         {{$w := index $.Content.Progress .ID}}{{if ge $w .TotalSize}}{{formatSize
@@ -45,7 +47,7 @@
     </tr>
     {{else}}
     <tr>
-      <td colspan="6" class="empty-table">no shares yet</td>
+      <td colspan="7" class="empty-table">no shares yet</td>
     </tr>
     {{end}}
   </tbody>

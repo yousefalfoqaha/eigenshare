@@ -13,7 +13,7 @@
       <nav>
         {{if .CurrentUser}}
         <a href="/shares">shares</a>
-		<a href="/trash">trash</a>
+        <a href="/trash">trash</a>
         <a href="/users">users</a>
         <span>logged in as {{.CurrentUser.Username}}</span>
         <form method="post" action="/logout">
@@ -27,13 +27,7 @@
     <main>
       {{if .Banner}}
       <div class="error">{{.Banner}}</div>
-      <script>
-        // consume the banner: the message came in via ?err=, strip it so a
-        // refresh doesn't show the same failure twice
-        history.replaceState(null, "", location.pathname);
-      </script>
-      {{end}}
-      {{template "content" .}}
+      {{end}} {{template "content" .}}
     </main>
   </body>
 </html>

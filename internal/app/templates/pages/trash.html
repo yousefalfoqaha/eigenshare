@@ -29,6 +29,7 @@
       <td>{{timeAgo .TrashedAt}}</td>
       <td>
         <div class="row-actions">
+          <a href="/shares/{{.ID}}/edit">edit</a>
           <form
             method="post"
             action="/shares/{{.ID}}/restore"

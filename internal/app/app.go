@@ -33,11 +33,12 @@ type App struct {
 
 func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.ShareService) *App {
 	funcs := template.FuncMap{
-		"shareTotalSize":  shareTotalSize,
-		"formatSize":      formatSize,
-		"shareTotalFiles": shareTotalFiles,
-		"expiresIn":       expiresIn,
-		"timeAgo":         timeAgo,
+		"shareTotalSize":       shareTotalSize,
+		"formatSize":           formatSize,
+		"shareTotalFiles":      shareTotalFiles,
+		"formatCommaSeparated": formatCommaSeparated,
+		"expiresIn":            expiresIn,
+		"timeAgo":              timeAgo,
 	}
 
 	base := template.Must(template.New("layout").Funcs(funcs).
@@ -74,7 +75,6 @@ func (app *App) Routes() http.Handler {
 
 	mux.Handle("GET /static/", app.static)
 
-	// login and public share links, no auth required
 	pub := http.NewServeMux()
 	pub.HandleFunc("GET /login", app.loginPage)
 	pub.HandleFunc("POST /login", app.loginSubmit)
@@ -86,7 +86,6 @@ func (app *App) Routes() http.Handler {
 	mux.Handle("/logout", app.optionalAuth(pub))
 	mux.Handle("/s/", app.optionalAuth(pub))
 
-	// logged-in pages
 	prot := http.NewServeMux()
 	prot.HandleFunc("GET /", app.index)
 	prot.HandleFunc("GET /shares", app.sharesPage)
@@ -108,27 +107,21 @@ func (app *App) Routes() http.Handler {
 	prot.HandleFunc("POST /users/{id}/delete", app.admin(app.deleteUser))
 	mux.Handle("/", app.requireLogin(prot))
 
-	// the fetch world
 	api := http.NewServeMux()
 	api.HandleFunc("POST /shares", app.createShare)
 	api.HandleFunc("POST /shares/{id}/files", app.addFilesToShare)
 	api.HandleFunc("PUT /shares/{id}/files/{fileID}/stream", app.streamFile)
 	mux.Handle("/api/", http.StripPrefix("/api", app.requireLoginJSON(api)))
 
-	return app.Logging(mux)
+	return app.logging(mux)
 }
 
-// page is the data every template renders against. Content is the service
-// model (or an inline struct when a template needs several values).
 type page struct {
 	Banner      string
 	CurrentUser *user.User
 	Content     any
 }
 
-// writePage renders a page template through the layout. The banner is read
-// from ?err= in the URL, so GET handlers never pass messages around: POSTs
-// redirect back with ?err= and the banner shows up on its own.
 func (app *App) writePage(w http.ResponseWriter, r *http.Request, template string, content any) {
 	t, ok := app.templates[template]
 	if !ok {
@@ -155,22 +148,17 @@ func (app *App) writePage(w http.ResponseWriter, r *http.Request, template strin
 	_, _ = buf.WriteTo(w)
 }
 
-// writeAPI emits a successful JSON response. Errors never pass through here;
-// they exit early through apiError.
 func (app *App) writeAPI(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// apiError translates err and writes the JSON error body.
 func (app *App) apiError(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := errorResponse(r, err)
 	app.writeAPI(w, status, map[string]any{"status": status, "message": message})
 }
 
-// pageError writes the terminal error page: what you emit when rendering has
-// become impossible. It is not a template; it is a terminal state.
 func (app *App) pageError(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := errorResponse(r, err)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -195,9 +183,6 @@ const errorPageHTML = `<!doctype html>
 </html>
 `
 
-// errorResponse translates any error into an HTTP status and a message that
-// is safe to show the client. It is the single translation layer shared by
-// both writers; neither HTML nor JSON is decided here.
 func errorResponse(r *http.Request, err error) (int, string) {
 	status := http.StatusInternalServerError
 	var statusErr interface{ HTTPStatus() int }
