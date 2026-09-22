@@ -82,3 +82,16 @@ func timeAgo(t *timestamp.Timestamp) string {
 
 	return fmt.Sprintf("%d days ago", int(d.Hours()/24))
 }
+
+// dict builds a map from key/value pairs so a template component can be
+// invoked with several named arguments: {{template "x" (dict "a" 1 "b" 2)}}
+func dict(kv ...any) map[string]any {
+	if len(kv)%2 != 0 {
+		panic("dict: odd number of arguments")
+	}
+	m := make(map[string]any, len(kv)/2)
+	for i := 0; i < len(kv); i += 2 {
+		m[kv[i].(string)] = kv[i+1]
+	}
+	return m
+}

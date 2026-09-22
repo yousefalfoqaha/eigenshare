@@ -28,21 +28,14 @@
     </select>
   </label>
 
-  {{template "file-picker" "select files"}}
-
-  <div id="status" role="status" aria-live="polite"></div>
-
-  <button type="submit" id="create-btn" class="submit">create</button>
+  {{template "uploader" (dict "label" "create")}}
 </form>
 
 <p>
   <a href="/shares">back to shares</a>
 </p>
 
-<script src="/static/uploader.js"></script>
 <script>
-  const selectedFiles = window.filePicker.files;
-
   function randomHandle() {
     const chars =
       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -54,15 +47,15 @@
 
   document.getElementById("handle-input").value = randomHandle();
 
+  // share creation is deliberately decoupled from file upload: create the
+  // share via the api, then hand it to the uploader component
   document
     .getElementById("new-share-form")
     .addEventListener("submit", async (e) => {
       e.preventDefault();
-      const btn = document.getElementById("create-btn");
-      const status = document.getElementById("status");
 
-      btn.disabled = true;
-      status.textContent = "creating share...";
+      const files = window.uploader.files();
+      window.uploader.setBusy(true);
 
       const fd = new FormData(e.target);
       const req = {
@@ -86,36 +79,22 @@
 
         share = await resp.json();
       } catch (err) {
-        status.textContent = err.message;
-        btn.disabled = false;
+        window.uploader.fail(err.message);
+        window.uploader.setBusy(false);
         return;
       }
 
-      if (selectedFiles.length === 0) {
+      if (files.length === 0) {
         window.location.href = `/s/${share.handle}`;
         return;
       }
 
       try {
-        status.textContent = "registering files...";
-        const files = await registerFiles(share.id, selectedFiles);
-
-        status.textContent = `uploading ${files.length} file(s)...`;
-
-        for (let i = 0; i < files.length; i++) {
-          const file = selectedFiles[i];
-          await streamFile(share.id, files[i].id, file, (bytesWritten) => {
-            const percent = Math.round(
-              (bytesWritten / file.size) * 100,
-            );
-            status.textContent = `uploading ${file.name}: ${percent}%`;
-          });
-        }
-
-        status.textContent = "done. redirecting...";
+        await window.uploader.submitAll(share.id);
         window.location.href = `/s/${share.handle}`;
       } catch (err) {
-        status.textContent = err.message;
+        // the edit page's queue shows what made it and what is resumable
+        window.uploader.fail(err.message);
         window.location.href = `/shares/${share.id}/edit`;
       }
     });

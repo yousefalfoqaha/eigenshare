@@ -1,6 +1,5 @@
-{{define "title"}}{{.Content.Handle}}{{end}}
-{{define "content"}}
-{{if .Content}}
+{{define "title"}}{{.Content.Handle}}{{end}} {{define "content"}} {{if
+.Content}}
 <div class="title">
   <h1>{{.Content.Handle}}</h1>
   <form
@@ -13,8 +12,8 @@
 </div>
 
 <p>
-  {{shareTotalFiles .Content}} file(s) - {{shareTotalSize .Content | formatSize}}
-  total
+  {{shareTotalFiles .Content}} file(s) · {{shareTotalSize .Content |
+  formatSize}} total · expires {{expiresIn .Content.ExpiresAt}}
 </p>
 
 <table>
@@ -28,16 +27,13 @@
   <tbody>
     {{range .Content.Files}}
     <tr>
-      <td>{{.Name}}</td>
+      <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
       <td>{{formatSize .ExpectedSize}}</td>
       <td>
-        <button href="/s/{{$.Content.Handle}}/files/{{.ID}}/download">
-          download
-        </button>
+        <a href="/s/{{$.Content.Handle}}/files/{{.ID}}/download">download</a>
       </td>
     </tr>
     {{end}}
   </tbody>
 </table>
-{{end}}
-{{end}}
+{{end}} {{end}}

@@ -39,6 +39,7 @@ func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.S
 		"formatCommaSeparated": formatCommaSeparated,
 		"expiresIn":            expiresIn,
 		"timeAgo":              timeAgo,
+		"dict":                 dict,
 	}
 
 	base := template.Must(template.New("layout").Funcs(funcs).

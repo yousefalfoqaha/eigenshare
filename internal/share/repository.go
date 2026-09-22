@@ -19,13 +19,10 @@ func NewShareRepository(db *infra.Database) *ShareRepository {
 	return &ShareRepository{db: db}
 }
 
-// Get fetches a share by ID regardless of trash state. Callers are expected
-// to enforce authorization and trash-state rules in the service layer.
 func (r *ShareRepository) Get(id string) (*Share, error) {
 	return r.fetchShareAggregate("WHERE id = ?", id)
 }
 
-// GetByHandle is the public lookup door: trashed shares are invisible.
 func (r *ShareRepository) GetByHandle(handle string) (*Share, error) {
 	return r.fetchShareAggregate("WHERE handle = ? AND trashed_at IS NULL", handle)
 }

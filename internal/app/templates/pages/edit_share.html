@@ -63,7 +63,9 @@
   <tbody>
     {{range .Content.Share.Files}}
     <tr>
-      <td>{{.Name}}</td>
+      <td>
+        <span class="truncate" title="{{.Name}}">{{.Name}}</span>
+      </td>
       <td>
         {{$w := index $.Content.Progress .ID}}{{if lt $w .ExpectedSize}}in
         progress{{else}}{{formatSize .ExpectedSize}}{{end}}
@@ -86,99 +88,9 @@
   </tbody>
 </table>
 
-<form id="add-files-form">
-  {{template "file-picker" "add files"}}
-
-  <div id="status" role="status" aria-live="polite"></div>
-
-  <button type="submit" id="add-btn" class="submit">upload</button>
-
-  <p id="pending-label">uploads pending</p>
-
-  <ul id="progress-lines"></ul>
+<form>
+  {{template "uploader" (dict "shareID" .Content.Share.ID "files" .Content.Share.Files "progress" .Content.Progress "label" "upload")}}
 </form>
-
-<script src="/static/uploader.js"></script>
-<script>
-  const shareID = "{{.Content.Share.ID}}";
-  const files = {{.Content.Share.Files}} || [];
-  const progress = {{.Content.Progress}};
-  const lines = document.getElementById("progress-lines");
-
-  function incompleteFiles() {
-    return files.filter((f) => progress[f.id] !== f.expectedSize);
-  }
-
-  function fileLine(f) {
-    let line = document.querySelector(`[data-progress-file="${f.id}"]`);
-    if (!line) {
-      line = document.createElement("li");
-      line.dataset.progressFile = f.id;
-      lines.appendChild(line);
-    }
-    line.textContent = `${f.name}: ${formatBytes(progress[f.id] || 0)} / ${formatBytes(f.expectedSize)}`;
-  }
-
-  incompleteFiles().forEach(fileLine);
-
-  document
-    .getElementById("add-files-form")
-    .addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const selectedFiles = window.filePicker.files;
-      if (selectedFiles.length === 0) return;
-
-      const btn = document.getElementById("add-btn");
-      const status = document.getElementById("status");
-
-      const uploads = [];
-      const unmatched = [];
-      const pending = incompleteFiles();
-
-      for (const file of selectedFiles) {
-        const match = pending.find(
-          (f) =>
-            !f.claimed && f.name === file.name && f.expectedSize === file.size,
-        );
-        if (match) {
-          match.claimed = true;
-          uploads.push({ entry: match, file });
-        } else {
-          unmatched.push(file);
-        }
-      }
-
-      btn.disabled = true;
-
-      try {
-        if (unmatched.length > 0) {
-          status.textContent = "registering files...";
-
-          const newFiles = await registerFiles(shareID, unmatched);
-          for (let i = 0; i < newFiles.length; i++) {
-            files.push(newFiles[i]);
-            uploads.push({ entry: newFiles[i], file: unmatched[i] });
-          }
-        }
-
-        status.textContent = `uploading ${uploads.length} file(s)...`;
-
-        for (const { entry, file } of uploads) {
-          fileLine(entry);
-          await streamFile(shareID, entry.id, file, (bytesWritten) => {
-            progress[entry.id] = bytesWritten;
-            fileLine(entry);
-          });
-        }
-
-        status.textContent = "done. refreshing...";
-        window.location.reload();
-      } catch (err) {
-        status.textContent = err.message;
-        btn.disabled = false;
-      }
-    });
-</script>
 {{end}}
 
 {{if eq .Content.Tab "owners"}}

@@ -68,8 +68,8 @@ main {
 }
 
 .info {
-  border: 1px solid #f90; /* strong orange */
-  background: #fdc; /* pale orange */
+  border: 1px solid #f90;
+  background: #fdc;
   padding: 0.5rem;
 }
 
@@ -151,18 +151,98 @@ a:hover {
   color: light-blue;
 }
 
-#status {
-  min-height: 1.2em;
+[data-uploader] {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
-/* uploads pending: hidden until the progress list has at least one line */
-#pending-label,
-#progress-lines {
+[data-uploader] [data-status] {
+  color: #c00;
+}
+
+[data-uploader] [data-status]:empty {
   display: none;
 }
 
-#add-files-form:has(#progress-lines li) #pending-label,
-#add-files-form:has(#progress-lines li) #progress-lines {
+[data-uploader] [data-upload-btn] {
   display: block;
+}
+
+[data-uploader] [data-lines] {
+  list-style: none;
   margin: 0;
+  padding: 0;
+}
+
+[data-uploader] [data-lines]:empty {
+  display: none;
+}
+
+[data-uploader] [data-lines] li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.25rem 0;
+}
+
+[data-uploader] .line-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+[data-uploader] .line-head .truncate {
+  flex: 1;
+  max-width: none;
+}
+
+[data-uploader] .line-head .state,
+[data-uploader] .line-meter .bytes {
+  flex-shrink: 0;
+}
+
+[data-uploader] .line-meter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+[data-uploader] .line-meter progress {
+  flex: 1;
+  min-width: 0;
+}
+
+/* [data-uploader] li[data-state="pending"], */
+/* [data-uploader] li[data-state="paused"] { */
+/*   color: #777; */
+/* } */
+
+[data-uploader] li[data-state="uploading"] {
+  font-weight: 600;
+}
+
+/* [data-uploader] li[data-state="done"] { */
+/*   color: #060; */
+/* } */
+
+/* bar tint follows the state */
+[data-uploader] li[data-state="paused"] progress {
+  accent-color: #777;
+}
+
+[data-uploader] li[data-state="done"] progress {
+  accent-color: #060;
+}
+
+.truncate {
+  display: block;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-uploader] .truncate {
+  min-width: 0;
 }

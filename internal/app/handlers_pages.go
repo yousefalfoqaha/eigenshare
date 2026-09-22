@@ -1,6 +1,7 @@
 package app
 
 import (
+	"mime"
 	"net/http"
 	"net/url"
 
@@ -302,6 +303,13 @@ func (app *App) setVisibility(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusFound)
 }
 
+// contentDisposition builds an "attachment" header value. file names (and
+// share handles) end up in here, so use FormatMediaType: it quotes/escapes
+// per RFC 2045 and percent-encodes anything unsafe per RFC 2231
+func contentDisposition(filename string) string {
+	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+}
+
 func (app *App) downloadAll(w http.ResponseWriter, r *http.Request) {
 	sh, err := app.Share.GetShareByHandle(r.PathValue("handle"), auth.UserFromContext(r.Context()))
 	if err != nil {
@@ -310,7 +318,7 @@ func (app *App) downloadAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="share.zip"`)
+	w.Header().Set("Content-Disposition", contentDisposition(sh.Handle+".zip"))
 	if err := app.Share.DownloadAll(sh.ID, w); err != nil {
 		app.pageError(w, r, err)
 	}
@@ -323,11 +331,14 @@ func (app *App) downloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath, err := app.Share.DownloadFile(sh.ID, r.PathValue("fileID"))
+	file, filePath, err := app.Share.DownloadFile(sh.ID, r.PathValue("fileID"))
 	if err != nil {
 		app.pageError(w, r, err)
 		return
 	}
 
+	// the on-disk path is a bare file id, so name the download after the
+	// original file; without this the browser saves it as "download"
+	w.Header().Set("Content-Disposition", contentDisposition(file.Name))
 	http.ServeFile(w, r, filePath)
 }

@@ -195,13 +195,15 @@ func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
 	return s.storage.CreateShareZipStream(*sh, w)
 }
 
-func (s *ShareService) DownloadFile(shareID string, fileID string) (string, error) {
+// DownloadFile returns the file record and its on-disk path for serving.
+// The record carries the original name: the on-disk path is a bare file id.
+func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, string, error) {
 	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", ErrShareNotFound
+			return nil, "", ErrShareNotFound
 		}
-		return "", err
+		return nil, "", err
 	}
 
 	var file *File
@@ -212,19 +214,24 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (string, erro
 		}
 	}
 	if file == nil {
-		return "", ErrFileNotFound
+		return nil, "", ErrFileNotFound
 	}
 
 	isComplete, err := s.storage.IsShareComplete(*sh)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
 	if !isComplete {
-		return "", ErrShareNotComplete
+		return nil, "", ErrShareNotComplete
 	}
 
-	return s.storage.ShareFilePath(sh.ID, file.ID)
+	path, err := s.storage.ShareFilePath(sh.ID, file.ID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return file, path, nil
 }
 
 func (s *ShareService) DeleteFile(shareID, fileID string, u *user.User) error {
