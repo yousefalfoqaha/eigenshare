@@ -117,14 +117,22 @@ func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest, u *us
 func (s *ShareService) GetShareByHandle(handle string, u *user.User) (*Share, error) {
 	sh, err := s.repo.GetByHandle(handle)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrShareNotFound
-		}
 		return nil, err
 	}
 	if !sh.CanView(u) {
 		return nil, ErrShareNotFound
 	}
+
+	written, err := s.storage.GetShareBytesWritten(sh.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	files, err := slices.DeleteFunc(sh.Files, func(f File) bool {
+		return written[f.ID] < f.ExpectedSize
+	}), nil
+	sh.Files = files
+
 	return sh, nil
 }
 
@@ -171,9 +179,6 @@ func (s *ShareService) GetShare(id string, u *user.User) (*Share, error) {
 func (s *ShareService) GetShareProgress(id string, u *user.User) (map[string]int64, error) {
 	sh, err := s.repo.Get(id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrShareNotFound
-		}
 		return nil, err
 	}
 	if !sh.CanView(u) {
@@ -186,23 +191,15 @@ func (s *ShareService) GetShareProgress(id string, u *user.User) (map[string]int
 func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
 	sh, err := s.repo.Get(shareID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrShareNotFound
-		}
 		return err
 	}
 
 	return s.storage.CreateShareZipStream(*sh, w)
 }
 
-// DownloadFile returns the file record and its on-disk path for serving.
-// The record carries the original name: the on-disk path is a bare file id.
 func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, string, error) {
 	sh, err := s.repo.Get(shareID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, "", ErrShareNotFound
-		}
 		return nil, "", err
 	}
 
@@ -217,13 +214,15 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, strin
 		return nil, "", ErrFileNotFound
 	}
 
-	isComplete, err := s.storage.IsShareComplete(*sh)
+	written, err := s.storage.GetShareBytesWritten(sh.ID)
 	if err != nil {
 		return nil, "", err
 	}
 
+	isComplete := written[file.ID] == file.ExpectedSize
+
 	if !isComplete {
-		return nil, "", ErrShareNotComplete
+		return nil, "", ErrFileNotComplete
 	}
 
 	path, err := s.storage.ShareFilePath(sh.ID, file.ID)

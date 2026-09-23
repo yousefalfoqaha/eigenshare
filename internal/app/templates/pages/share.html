@@ -2,13 +2,7 @@
 .Content}}
 <div class="title">
   <h1>{{.Content.Handle}}</h1>
-  <form
-    action="/s/{{.Content.Handle}}/download"
-    method="get"
-    style="display: inline"
-  >
-    <button class="submit" type="submit">download all (zip)</button>
-  </form>
+  <a href="/s/{{.Content.Handle}}/download" download> download all (zip) </a>
 </div>
 
 <p>
@@ -30,7 +24,9 @@
       <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
       <td>{{formatSize .ExpectedSize}}</td>
       <td>
-        <a href="/s/{{$.Content.Handle}}/files/{{.ID}}/download">download</a>
+        <a href="/s/{{$.Content.Handle}}/files/{{.ID}}/download" download
+          >download</a
+        >
       </td>
     </tr>
     {{end}}

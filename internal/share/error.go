@@ -11,7 +11,7 @@ var (
 	ErrHandleExists           = apperr.New(http.StatusConflict, "handle already exists")
 	ErrShareNotFound          = apperr.New(http.StatusNotFound, "share not found")
 	ErrFileNotFound           = apperr.New(http.StatusNotFound, "file not found")
-	ErrShareNotComplete       = apperr.New(http.StatusConflict, "share is not complete")
+	ErrFileNotComplete        = apperr.New(http.StatusConflict, "file is not complete")
 	ErrChunkOffsetExceedsSize = apperr.New(http.StatusConflict, "chunk offset exceeds declared file size")
 	ErrInvalidChunkOffset     = apperr.New(http.StatusBadRequest, "invalid chunk offset")
 	ErrInvalidRequest         = apperr.New(http.StatusBadRequest, "invalid request")

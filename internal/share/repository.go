@@ -2,6 +2,7 @@ package share
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -42,6 +43,11 @@ func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (
 	err := r.db.DB.QueryRow(query, args...).Scan(
 		&sh.ID, &sh.Handle, &sh.Visibility, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version,
 	)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrShareNotFound
+	}
+
 	if err != nil {
 		return nil, err
 	}
