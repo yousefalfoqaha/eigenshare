@@ -1,10 +1,9 @@
-{{define "title"}}trash{{end}}
-{{define "content"}}
+{{define "title"}}trash{{end}} {{define "content"}}
 <section class="title">
   <h1>trash</h1>
-  {{if .Content}}
+  {{if .Content.Shares}}
   <form method="post" action="/shares/delete" class="inline">
-    {{range .Content}}
+    {{range .Content.Shares}}
     <input type="hidden" name="shareID" value="{{.ID}}" />
     {{end}}
     <button class="submit" type="submit">delete all</button>
@@ -16,25 +15,26 @@
   <thead>
     <tr>
       <th>handle</th>
-      <th>total size</th>
+      <th>files</th>
+      <th>size</th>
       <th>trashed</th>
       <th></th>
     </tr>
   </thead>
   <tbody>
-    {{range .Content}}
+    {{range .Content.Shares}}
     <tr>
       <td>{{.Handle}}</td>
-      <td>{{formatSize .TotalSize}}</td>
+      <td>
+        {{$p := index $.Content.Progress .ID}}{{.TotalFiles}}{{if gt
+        $p.IncompleteFiles 0}} ({{$p.IncompleteFiles}} in progress){{end}}
+      </td>
+      <td>{{formatSize $p.CompletedSize}}</td>
       <td>{{timeAgo .TrashedAt}}</td>
       <td>
         <div class="row-actions">
           <a href="/shares/{{.ID}}/edit">edit</a>
-          <form
-            method="post"
-            action="/shares/{{.ID}}/restore"
-            class="inline"
-          >
+          <form method="post" action="/shares/{{.ID}}/restore" class="inline">
             <button type="submit">restore</button>
           </form>
           <form method="post" action="/shares/delete" class="inline">
@@ -46,7 +46,7 @@
     </tr>
     {{else}}
     <tr>
-      <td colspan="4" class="empty-table">trash is empty</td>
+      <td colspan="5" class="empty-table">trash is empty</td>
     </tr>
     {{end}}
   </tbody>

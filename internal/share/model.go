@@ -78,14 +78,14 @@ func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creat
 }
 
 type ShareSummary struct {
-	ID         string               `json:"id"`
-	Handle     string               `json:"handle"`
-	Visibility Visibility           `json:"visibility"`
-	Owners     []string             `json:"owners"`
-	TotalFiles int                  `json:"totalFiles"`
-	TotalSize  int64                `json:"totalSize"`
-	ExpiresAt  *timestamp.Timestamp `json:"expiresAt"`
-	TrashedAt  *timestamp.Timestamp `json:"trashedAt"`
+	ID                string               `json:"id"`
+	Handle            string               `json:"handle"`
+	Visibility        Visibility           `json:"visibility"`
+	Owners            []string             `json:"owners"`
+	TotalFiles        int                  `json:"totalFiles"`
+	TotalExpectedSize int64                `json:"totalExpectedSize"`
+	ExpiresAt         *timestamp.Timestamp `json:"expiresAt"`
+	TrashedAt         *timestamp.Timestamp `json:"trashedAt"`
 }
 
 func (s *Share) Trashed() bool {
@@ -132,4 +132,31 @@ func NewFile(name string, expectedSize int64) (*File, error) {
 		Name:         name,
 		ExpectedSize: expectedSize,
 	}, nil
+}
+
+type ShareProgress struct {
+	Written         map[string]int64 `json:"written"`
+	CompletedSize   int64            `json:"completedSize"`
+	IncompleteFiles int              `json:"incompleteFiles"`
+}
+
+func NewShareProgress(files []File, written map[string]int64) *ShareProgress {
+	if written == nil {
+		written = map[string]int64{}
+	}
+
+	p := &ShareProgress{Written: written}
+	for _, f := range files {
+		if fileComplete(f, written) {
+			p.CompletedSize += f.ExpectedSize
+		} else {
+			p.IncompleteFiles++
+		}
+	}
+
+	return p
+}
+
+func fileComplete(f File, written map[string]int64) bool {
+	return written[f.ID] >= f.ExpectedSize
 }

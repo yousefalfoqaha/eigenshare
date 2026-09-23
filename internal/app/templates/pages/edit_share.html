@@ -39,8 +39,9 @@
 </section>
 
 <p>
-  {{shareTotalFiles .Content.Share}} file(s) ·
-  {{shareTotalSize .Content.Share | formatSize}} ·
+  {{shareTotalFiles .Content.Share}} file(s){{if gt .Content.Progress.IncompleteFiles 0}}
+  ({{.Content.Progress.IncompleteFiles}} uploading){{end}} ·
+  {{formatSize .Content.Progress.CompletedSize}} ·
   {{formatCommaSeparated .Content.OwnerNames}} ·
   {{.Content.Share.Visibility}} ·
   expires {{expiresIn .Content.Share.ExpiresAt}}
@@ -67,7 +68,7 @@
         <span class="truncate" title="{{.Name}}">{{.Name}}</span>
       </td>
       <td>
-        {{$w := index $.Content.Progress .ID}}{{if lt $w .ExpectedSize}}in
+        {{$w := index $.Content.Progress.Written .ID}}{{if lt $w .ExpectedSize}}in
         progress{{else}}{{formatSize .ExpectedSize}}{{end}}
       </td>
       <td>
@@ -82,14 +83,14 @@
     </tr>
     {{else}}
     <tr>
-      <td colspan="5" class="empty-table">no files</td>
+      <td colspan="3" class="empty-table">no files</td>
     </tr>
     {{end}}
   </tbody>
 </table>
 
 <form>
-  {{template "uploader" (dict "shareID" .Content.Share.ID "files" .Content.Share.Files "progress" .Content.Progress "label" "upload")}}
+  {{template "uploader" (dict "shareID" .Content.Share.ID "files" .Content.Share.Files "progress" .Content.Progress.Written "label" "upload")}}
 </form>
 {{end}}
 
@@ -127,6 +128,7 @@
   <label
     >add owner
     <select name="userID" required>
+  <option value="">select a user</option>
       {{range .Content.Users}}{{if not ($.Content.Share.IsOwner .)}}
       <option value="{{.ID}}">{{.Username}}</option>
       {{end}}{{end}}

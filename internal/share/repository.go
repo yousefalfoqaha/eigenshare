@@ -87,7 +87,7 @@ func (r *ShareRepository) fetchShareSummaries(whereClause string, args ...any) (
 			s.expires_at,
 			s.trashed_at,
 			COUNT(f.id) AS totalFiles,
-			COALESCE(SUM(f.expected_size), 0) AS totalSize
+			COALESCE(SUM(f.expected_size), 0) AS totalExpectedSize
 		FROM share s
 		LEFT JOIN file f ON s.id = f.share_id
 		` + whereClause + `
@@ -102,7 +102,7 @@ func (r *ShareRepository) fetchShareSummaries(whereClause string, args ...any) (
 	var summaries []ShareSummary
 	for rows.Next() {
 		var s ShareSummary
-		if err := rows.Scan(&s.ID, &s.Handle, &s.Visibility, &s.ExpiresAt, &s.TrashedAt, &s.TotalFiles, &s.TotalSize); err != nil {
+		if err := rows.Scan(&s.ID, &s.Handle, &s.Visibility, &s.ExpiresAt, &s.TrashedAt, &s.TotalFiles, &s.TotalExpectedSize); err != nil {
 			return nil, err
 		}
 		summaries = append(summaries, s)

@@ -129,7 +129,7 @@ func (s *ShareService) GetShareByHandle(handle string, u *user.User) (*Share, er
 	}
 
 	files, err := slices.DeleteFunc(sh.Files, func(f File) bool {
-		return written[f.ID] < f.ExpectedSize
+		return !fileComplete(f, written)
 	}), nil
 	sh.Files = files
 
@@ -176,7 +176,7 @@ func (s *ShareService) GetShare(id string, u *user.User) (*Share, error) {
 	return s.manageableShare(id, u)
 }
 
-func (s *ShareService) GetShareProgress(id string, u *user.User) (map[string]int64, error) {
+func (s *ShareService) GetShareProgress(id string, u *user.User) (*ShareProgress, error) {
 	sh, err := s.repo.Get(id)
 	if err != nil {
 		return nil, err
@@ -185,7 +185,12 @@ func (s *ShareService) GetShareProgress(id string, u *user.User) (map[string]int
 		return nil, ErrShareNotFound
 	}
 
-	return s.storage.GetShareBytesWritten(id)
+	written, err := s.storage.GetShareBytesWritten(id)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewShareProgress(sh.Files, written), nil
 }
 
 func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
@@ -219,9 +224,7 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, strin
 		return nil, "", err
 	}
 
-	isComplete := written[file.ID] == file.ExpectedSize
-
-	if !isComplete {
+	if !fileComplete(*file, written) {
 		return nil, "", ErrFileNotComplete
 	}
 

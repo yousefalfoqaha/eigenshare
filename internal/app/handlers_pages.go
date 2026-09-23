@@ -126,18 +126,14 @@ func (app *App) sharesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progress := make(map[string]int64, len(shares))
+	progress := make(map[string]*share.ShareProgress, len(shares))
 	for _, s := range shares {
-		written, err := app.Share.GetShareProgress(s.ID, actor)
+		p, err := app.Share.GetShareProgress(s.ID, actor)
 		if err != nil {
 			app.pageError(w, r, err)
 			return
 		}
-		var total int64
-		for _, n := range written {
-			total += n
-		}
-		progress[s.ID] = total
+		progress[s.ID] = p
 	}
 
 	users, _ := app.User.GetAllUsers()
@@ -159,18 +155,34 @@ func (app *App) sharesPage(w http.ResponseWriter, r *http.Request) {
 
 	app.writePage(w, r, "shares.html", &struct {
 		Shares     []share.ShareSummary
-		Progress   map[string]int64
+		Progress   map[string]*share.ShareProgress
 		OwnerNames map[string][]string
 	}{shares, progress, ownerNames})
 }
 
 func (app *App) trashPage(w http.ResponseWriter, r *http.Request) {
-	shares, err := app.Share.GetTrashedShares(auth.UserFromContext(r.Context()))
+	actor := auth.UserFromContext(r.Context())
+
+	shares, err := app.Share.GetTrashedShares(actor)
 	if err != nil {
 		app.pageError(w, r, err)
 		return
 	}
-	app.writePage(w, r, "trash.html", shares)
+
+	progress := make(map[string]*share.ShareProgress, len(shares))
+	for _, s := range shares {
+		p, err := app.Share.GetShareProgress(s.ID, actor)
+		if err != nil {
+			app.pageError(w, r, err)
+			return
+		}
+		progress[s.ID] = p
+	}
+
+	app.writePage(w, r, "trash.html", &struct {
+		Shares   []share.ShareSummary
+		Progress map[string]*share.ShareProgress
+	}{shares, progress})
 }
 
 func (app *App) newSharePage(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +207,11 @@ func (app *App) editSharePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progress, _ := app.Share.GetShareProgress(sh.ID, actor)
+	progress, err := app.Share.GetShareProgress(sh.ID, actor)
+	if err != nil {
+		app.pageError(w, r, err)
+		return
+	}
 	users, _ := app.User.GetAllUsers()
 
 	tab := r.URL.Query().Get("tab")
@@ -212,7 +228,7 @@ func (app *App) editSharePage(w http.ResponseWriter, r *http.Request) {
 
 	app.writePage(w, r, "edit_share.html", &struct {
 		Share      *share.Share
-		Progress   map[string]int64
+		Progress   *share.ShareProgress
 		Users      []*user.User
 		Tab        string
 		OwnerNames []string

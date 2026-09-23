@@ -1,5 +1,4 @@
-{{define "title"}}shares{{end}}
-{{define "content"}}
+{{define "title"}}shares{{end}} {{define "content"}}
 <section class="title">
   <h1>shares</h1>
   <p><a href="/shares/new">+ new share</a></p>
@@ -23,22 +22,18 @@
       <td><a href="/s/{{.Handle}}">{{.Handle}}</a></td>
       <td>{{.Visibility}}</td>
       <td>{{formatCommaSeparated (index $.Content.OwnerNames .ID)}}</td>
-      <td>{{.TotalFiles}}</td>
       <td>
-        {{$w := index $.Content.Progress .ID}}{{if ge $w .TotalSize}}{{formatSize
-        .TotalSize}}{{else}}{{formatSize $w}} / {{formatSize .TotalSize}}{{end}}
+        {{$p := index $.Content.Progress .ID}}{{.TotalFiles}}{{if gt
+        $p.IncompleteFiles 0}} ({{$p.IncompleteFiles}} uploading) {{end}}
       </td>
+      <td>{{formatSize $p.CompletedSize}}</td>
       <td>{{expiresIn .ExpiresAt}}</td>
       <td>
         {{if .CanManage $.CurrentUser}}
         <div class="row-actions">
           <a href="/shares/{{.ID}}/edit">edit</a>
 
-          <form
-            method="post"
-            action="/shares/{{.ID}}/trash"
-            class="inline"
-          >
+          <form method="post" action="/shares/{{.ID}}/trash" class="inline">
             <button type="submit">trash</button>
           </form>
         </div>

@@ -7,7 +7,6 @@ body {
   font-family: system-ui, sans-serif;
   max-width: 960px;
   margin: 0 auto;
-  padding: 1rem;
 }
 
 input {
@@ -23,8 +22,7 @@ header {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #ccc;
-  padding-bottom: 1rem;
-  /* margin-bottom: 1rem; */
+  padding: 1rem 0;
 }
 
 header .brand {
@@ -63,11 +61,14 @@ main {
   font-size: 1rem;
 }
 
+h1 {
+  margin: 1.5rem 0;
+}
+
 .title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 1.5rem 0;
 }
 
 .info {
