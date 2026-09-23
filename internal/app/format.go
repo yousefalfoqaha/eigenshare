@@ -45,7 +45,7 @@ func expiresIn(t *timestamp.Timestamp) string {
 
 	d := time.Until(t.Time())
 	if d <= 0 {
-		return "expired"
+		return "now (cleaning up)"
 	}
 
 	hours := int(d.Hours())
