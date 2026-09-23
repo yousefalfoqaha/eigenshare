@@ -65,3 +65,12 @@ func (app *App) streamFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (app *App) deleteShareFile(w http.ResponseWriter, r *http.Request) {
+	if err := app.Share.DeleteFile(r.PathValue("id"), r.PathValue("fileID"), auth.UserFromContext(r.Context())); err != nil {
+		app.apiError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

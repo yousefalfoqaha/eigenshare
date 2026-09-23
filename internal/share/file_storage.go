@@ -144,10 +144,10 @@ func (s *FileStorage) IsShareComplete(sh Share) (bool, error) {
 	return true, nil
 }
 
-func (s *FileStorage) GetShareBytesWritten(shareID string) (map[string]int64, error) {
+func (s *FileStorage) UploadState(shareID string) (*UploadState, error) {
 	entries, err := os.ReadDir(filepath.Join(s.dataDir, shareID))
 	if os.IsNotExist(err) {
-		return map[string]int64{}, nil
+		return &UploadState{written: map[string]int64{}}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -166,7 +166,7 @@ func (s *FileStorage) GetShareBytesWritten(shareID string) (map[string]int64, er
 		written[entry.Name()] = info.Size()
 	}
 
-	return written, nil
+	return &UploadState{written: written}, nil
 }
 
 func (s *FileStorage) ShareFilePath(shareID string, fileID string) (string, error) {

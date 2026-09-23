@@ -70,28 +70,16 @@ func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (
 	return &sh, nil
 }
 
-func (r *ShareRepository) GetAll() ([]ShareSummary, error) {
-	return r.fetchShareSummaries("WHERE s.trashed_at IS NULL")
+func (r *ShareRepository) GetAll() ([]*Share, error) {
+	return r.fetchAllShares("WHERE trashed_at IS NULL")
 }
 
-func (r *ShareRepository) GetAllTrashed() ([]ShareSummary, error) {
-	return r.fetchShareSummaries("WHERE s.trashed_at IS NOT NULL")
+func (r *ShareRepository) GetAllTrashed() ([]*Share, error) {
+	return r.fetchAllShares("WHERE trashed_at IS NOT NULL")
 }
 
-func (r *ShareRepository) fetchShareSummaries(whereClause string, args ...any) ([]ShareSummary, error) {
-	query := `
-		SELECT
-			s.id,
-			s.handle,
-			s.visibility,
-			s.expires_at,
-			s.trashed_at,
-			COUNT(f.id) AS totalFiles,
-			COALESCE(SUM(f.expected_size), 0) AS totalExpectedSize
-		FROM share s
-		LEFT JOIN file f ON s.id = f.share_id
-		` + whereClause + `
-		GROUP BY s.id, s.handle, s.visibility`
+func (r *ShareRepository) fetchAllShares(whereClause string, args ...any) ([]*Share, error) {
+	query := "SELECT id, handle, visibility, created_at, expires_at, trashed_at, version FROM share " + whereClause
 
 	rows, err := r.db.DB.Query(query, args...)
 	if err != nil {
@@ -99,13 +87,22 @@ func (r *ShareRepository) fetchShareSummaries(whereClause string, args ...any) (
 	}
 	defer rows.Close()
 
-	var summaries []ShareSummary
+	var shares []*Share
 	for rows.Next() {
-		var s ShareSummary
-		if err := rows.Scan(&s.ID, &s.Handle, &s.Visibility, &s.ExpiresAt, &s.TrashedAt, &s.TotalFiles, &s.TotalExpectedSize); err != nil {
+		var sh Share
+		var expiresAt, trashedAt sql.NullString
+
+		if err := rows.Scan(&sh.ID, &sh.Handle, &sh.Visibility, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version); err != nil {
 			return nil, err
 		}
-		summaries = append(summaries, s)
+		if sh.ExpiresAt, err = parseTimestamp(expiresAt); err != nil {
+			return nil, err
+		}
+		if sh.TrashedAt, err = parseTimestamp(trashedAt); err != nil {
+			return nil, err
+		}
+
+		shares = append(shares, &sh)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -115,11 +112,16 @@ func (r *ShareRepository) fetchShareSummaries(whereClause string, args ...any) (
 	if err != nil {
 		return nil, err
 	}
-	for i := range summaries {
-		summaries[i].Owners = owners[summaries[i].ID]
+	files, err := r.getAllFiles()
+	if err != nil {
+		return nil, err
+	}
+	for _, sh := range shares {
+		sh.Owners = owners[sh.ID]
+		sh.Files = files[sh.ID]
 	}
 
-	return summaries, nil
+	return shares, nil
 }
 
 func (r *ShareRepository) Save(share *Share) (*Share, error) {
@@ -279,6 +281,26 @@ func (r *ShareRepository) getAllFilesByShareID(id string) ([]File, error) {
 			return nil, err
 		}
 		files = append(files, file)
+	}
+
+	return files, rows.Err()
+}
+
+func (r *ShareRepository) getAllFiles() (map[string][]File, error) {
+	rows, err := r.db.DB.Query("SELECT share_id, id, name, expected_size FROM file")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	files := make(map[string][]File)
+	for rows.Next() {
+		var shareID string
+		var file File
+		if err := rows.Scan(&shareID, &file.ID, &file.Name, &file.ExpectedSize); err != nil {
+			return nil, err
+		}
+		files[shareID] = append(files[shareID], file)
 	}
 
 	return files, rows.Err()

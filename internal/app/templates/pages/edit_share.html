@@ -2,10 +2,7 @@
 {{define "content"}}
 
 {{if .Content.Share.TrashedAt}}
-<p class="info">
-  this share has been trashed {{timeAgo .Content.Share.TrashedAt}}, it is hidden
-  from public links until restored
-</p>
+<p class="info">this share has been trashed {{timeAgo .Content.Share.TrashedAt}}, it is hidden from public links until restored</p>
 {{end}}
 
 {{if .Content.Share}}
@@ -15,14 +12,8 @@
     <button type="button" id="copy-link-btn">copy link</button>
 
     <form method="post" action="/shares/{{.Content.Share.ID}}/visibility" class="inline">
-      <input
-        type="hidden"
-        name="visibility"
-        value="{{if eq .Content.Share.Visibility "public"}}private{{else}}public{{end}}"
-      />
-      <button type="submit">
-        {{if eq .Content.Share.Visibility "public"}}make private{{else}}make public{{end}}
-      </button>
+      <input type="hidden" name="visibility" value="{{if eq .Content.Share.Visibility "public"}}private{{else}}public{{end}}" />
+      <button type="submit">{{if eq .Content.Share.Visibility "public"}}make private{{else}}make public{{end}}</button>
     </form>
 
     {{if .Content.Share.TrashedAt}}
@@ -38,10 +29,10 @@
   </div>
 </section>
 
+{{$u := .Content.Upload}}{{$done := uploadedFiles $u .Content.Share.Files}}
 <p>
-  {{shareTotalFiles .Content.Share}} file(s){{if gt .Content.Progress.IncompleteFiles 0}}
-  ({{.Content.Progress.IncompleteFiles}} uploading){{end}} ·
-  {{formatSize .Content.Progress.CompletedSize}} ·
+  {{len $done}} file(s){{if lt (len $done) (len .Content.Share.Files)}} (uploading){{end}} ·
+  {{formatSize (uploadedSize $done)}} ·
   {{formatCommaSeparated .Content.OwnerNames}} ·
   {{.Content.Share.Visibility}} ·
   expires {{expiresIn .Content.Share.ExpiresAt}}
@@ -55,53 +46,199 @@
 {{if eq .Content.Tab "files"}}
 <table>
   <thead>
-    <tr>
-      <th>name</th>
-      <th>size</th>
-      <th></th>
-    </tr>
+    <tr><th>name</th><th>size</th><th></th></tr>
   </thead>
   <tbody>
-    {{range .Content.Share.Files}}
+    {{range $done}}
     <tr>
+      <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
+      <td>{{formatSize .ExpectedSize}}</td>
       <td>
-        <span class="truncate" title="{{.Name}}">{{.Name}}</span>
-      </td>
-      <td>
-        {{$w := index $.Content.Progress.Written .ID}}{{if lt $w .ExpectedSize}}in
-        progress{{else}}{{formatSize .ExpectedSize}}{{end}}
-      </td>
-      <td>
-        <form
-          method="post"
-          action="/shares/{{$.Content.Share.ID}}/files/{{.ID}}/delete"
-          class="inline"
-        >
+        <form method="post" action="/shares/{{$.Content.Share.ID}}/files/{{.ID}}/delete" class="inline">
           <button type="submit">delete</button>
         </form>
       </td>
     </tr>
     {{else}}
-    <tr>
-      <td colspan="3" class="empty-table">no files</td>
-    </tr>
+    <tr><td colspan="3" class="empty-table">no files</td></tr>
     {{end}}
   </tbody>
 </table>
 
-<form>
-  {{template "uploader" (dict "shareID" .Content.Share.ID "files" .Content.Share.Files "progress" .Content.Progress.Written "label" "upload")}}
+<form id="upload-form" data-uploader>
+  <fieldset data-file-picker>
+    <legend>upload files</legend>
+    <input type="file" data-file-input multiple hidden />
+    <button type="button" data-file-select>Browse...</button>
+    <ul class="file-picker-list" data-file-list></ul>
+  </fieldset>
+
+  <div data-status role="status"></div>
+  <ul data-lines></ul>
+
+  <input type="file" data-resume-input hidden />
+  <button type="submit" class="submit" data-upload-btn>upload files</button>
 </form>
+
+<script src="/static/uploader.js"></script>
+<script>
+  (function() {
+    const shareID = "{{.Content.Share.ID}}";
+    
+    const root = document.getElementById("upload-form");
+    const fileInput = root.querySelector("[data-file-input]");
+    const fileList = root.querySelector("[data-file-list]");
+    const fileSelectBtn = root.querySelector("[data-file-select]");
+    const statusEl = root.querySelector("[data-status]");
+    const linesEl = root.querySelector("[data-lines]");
+    const resumeInput = root.querySelector("[data-resume-input]");
+    const uploadBtn = root.querySelector("[data-upload-btn]");
+
+    let stagedFiles = [];
+    let activeResumeId = null;
+    let completedAny = false;
+    const domNodes = new Map();
+
+    fileSelectBtn.addEventListener("click", () => fileInput.click());
+    
+    fileInput.addEventListener("change", () => {
+      stagedFiles.push(...fileInput.files);
+      fileInput.value = "";
+      renderUploadingFiles();
+    });
+
+    function renderUploadingFiles() {
+      fileList.replaceChildren();
+      stagedFiles.forEach((file, index) => {
+        const li = document.createElement("li");
+        li.className = "file-picker-row";
+        
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "truncate";
+        nameSpan.title = file.name;
+        nameSpan.textContent = file.name;
+
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.textContent = "remove";
+        removeBtn.onclick = () => {
+          stagedFiles.splice(index, 1);
+          renderUploadingFiles();
+        };
+
+        li.append(nameSpan, removeBtn);
+        fileList.appendChild(li);
+      });
+    }
+
+    resumeInput.addEventListener("change", () => {
+      const file = resumeInput.files[0];
+      resumeInput.value = "";
+      if (!file || !activeResumeId) return;
+      queue.resumeTask(activeResumeId, file);
+      activeResumeId = null;
+    });
+
+    const queue = new HeadlessQueue({
+      onDrained: () => {
+        if (completedAny) window.location.reload();
+      },
+      onError: (msg) => { 
+        statusEl.textContent = msg; 
+      },
+      onDelete: (id) => {
+        domNodes.get(id)?.remove();
+        domNodes.delete(id);
+      },
+      onUpdate: (task) => {
+        if (task.status === "done") completedAny = true;
+
+        if (!domNodes.has(task.id)) {
+          const li = document.createElement("li");
+          
+          const head = document.createElement("div");
+          head.className = "line-head";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "truncate";
+          nameSpan.title = task.name;
+          nameSpan.textContent = task.name;
+          head.append(nameSpan);
+
+          if (task.status === "incomplete") {
+            const resumeBtn = document.createElement("button");
+            resumeBtn.type = "button";
+            resumeBtn.textContent = "resume";
+            resumeBtn.onclick = () => {
+              activeResumeId = task.id;
+              resumeInput.click();
+            };
+            head.append(resumeBtn);
+          }
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.textContent = "delete";
+          deleteBtn.onclick = async () => {
+            try { await queue.deleteTask(task.id); } 
+            catch (err) { statusEl.textContent = `delete failed: ${err.message}`; }
+          };
+          head.append(deleteBtn);
+
+          const meter = document.createElement("div");
+          meter.className = "line-meter";
+
+          const bar = document.createElement("progress");
+          const meta = document.createElement("span");
+          meta.className = "meta";
+
+          meter.append(bar, meta);
+          li.append(head, meter);
+
+          linesEl.appendChild(li);
+          domNodes.set(task.id, li);
+        }
+
+        const li = domNodes.get(task.id);
+        li.dataset.state = task.status;
+        
+        const bar = li.querySelector("progress");
+        bar.max = task.expectedSize || 1;
+        bar.value = task.status === "done" ? bar.max : task.loaded;
+        
+        li.querySelector(".meta").textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${task.status}`;
+      }
+    });
+
+    queue.seed({{.Content.Share.Files}}, {{$u}});
+
+    root.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (stagedFiles.length === 0) return;
+      
+      const filesToUpload = [...stagedFiles];
+      stagedFiles = [];
+      renderUploadingFiles();
+      
+      statusEl.textContent = ""; 
+      // uploadBtn.disabled = true;
+
+      try {
+        await queue.submit(shareID, filesToUpload);
+      } catch (err) {
+        statusEl.textContent = err.message;
+      } finally {
+        uploadBtn.disabled = false;
+      }
+    });
+  })();
+</script>
 {{end}}
 
 {{if eq .Content.Tab "owners"}}
 <table>
   <thead>
-    <tr>
-      <th>username</th>
-      <th>admin</th>
-      <th></th>
-    </tr>
+    <tr><th>username</th><th>admin</th><th></th></tr>
   </thead>
   <tbody>
     {{range .Content.Users}}{{if $.Content.Share.IsOwner .}}
@@ -110,11 +247,7 @@
       <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
       <td>
         {{if gt (len $.Content.Share.Owners) 1}}
-        <form
-          method="post"
-          action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete"
-          class="inline"
-        >
+        <form method="post" action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete" class="inline">
           <button type="submit">remove</button>
         </form>
         {{end}}
@@ -125,10 +258,9 @@
 </table>
 
 <form method="post" action="/shares/{{.Content.Share.ID}}/owners">
-  <label
-    >add owner
+  <label>add owner
     <select name="userID" required>
-  <option value="">select a user</option>
+      <option value="">select a user</option>
       {{range .Content.Users}}{{if not ($.Content.Share.IsOwner .)}}
       <option value="{{.ID}}">{{.Username}}</option>
       {{end}}{{end}}
@@ -158,7 +290,5 @@
 </script>
 {{end}}
 
-<p>
-  <a href="/shares">back to shares</a>
-</p>
+<p><a href="/shares">back to shares</a></p>
 {{end}}

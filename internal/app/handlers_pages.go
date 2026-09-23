@@ -126,14 +126,14 @@ func (app *App) sharesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progress := make(map[string]*share.ShareProgress, len(shares))
+	uploads := make(map[string]*share.UploadState, len(shares))
 	for _, s := range shares {
-		p, err := app.Share.GetShareProgress(s.ID, actor)
+		u, err := app.Share.GetUploadState(s, actor)
 		if err != nil {
 			app.pageError(w, r, err)
 			return
 		}
-		progress[s.ID] = p
+		uploads[s.ID] = u
 	}
 
 	users, _ := app.User.GetAllUsers()
@@ -154,10 +154,10 @@ func (app *App) sharesPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.writePage(w, r, "shares.html", &struct {
-		Shares     []share.ShareSummary
-		Progress   map[string]*share.ShareProgress
+		Shares     []*share.Share
+		Uploads    map[string]*share.UploadState
 		OwnerNames map[string][]string
-	}{shares, progress, ownerNames})
+	}{shares, uploads, ownerNames})
 }
 
 func (app *App) trashPage(w http.ResponseWriter, r *http.Request) {
@@ -169,20 +169,20 @@ func (app *App) trashPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progress := make(map[string]*share.ShareProgress, len(shares))
+	uploads := make(map[string]*share.UploadState, len(shares))
 	for _, s := range shares {
-		p, err := app.Share.GetShareProgress(s.ID, actor)
+		u, err := app.Share.GetUploadState(s, actor)
 		if err != nil {
 			app.pageError(w, r, err)
 			return
 		}
-		progress[s.ID] = p
+		uploads[s.ID] = u
 	}
 
 	app.writePage(w, r, "trash.html", &struct {
-		Shares   []share.ShareSummary
-		Progress map[string]*share.ShareProgress
-	}{shares, progress})
+		Shares  []*share.Share
+		Uploads map[string]*share.UploadState
+	}{shares, uploads})
 }
 
 func (app *App) newSharePage(w http.ResponseWriter, r *http.Request) {
@@ -190,12 +190,23 @@ func (app *App) newSharePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) sharePage(w http.ResponseWriter, r *http.Request) {
-	sh, err := app.Share.GetShareByHandle(r.PathValue("handle"), auth.UserFromContext(r.Context()))
+	actor := auth.UserFromContext(r.Context())
+
+	sh, err := app.Share.GetShareByHandle(r.PathValue("handle"), actor)
 	if err != nil {
 		app.pageError(w, r, err)
 		return
 	}
-	app.writePage(w, r, "share.html", sh)
+	upload, err := app.Share.GetUploadState(sh, actor)
+	if err != nil {
+		app.pageError(w, r, err)
+		return
+	}
+
+	app.writePage(w, r, "share.html", &struct {
+		Share  *share.Share
+		Upload *share.UploadState
+	}{sh, upload})
 }
 
 func (app *App) editSharePage(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +218,7 @@ func (app *App) editSharePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progress, err := app.Share.GetShareProgress(sh.ID, actor)
+	upload, err := app.Share.GetUploadState(sh, actor)
 	if err != nil {
 		app.pageError(w, r, err)
 		return
@@ -228,11 +239,11 @@ func (app *App) editSharePage(w http.ResponseWriter, r *http.Request) {
 
 	app.writePage(w, r, "edit_share.html", &struct {
 		Share      *share.Share
-		Progress   *share.ShareProgress
+		Upload     *share.UploadState
 		Users      []*user.User
 		Tab        string
 		OwnerNames []string
-	}{sh, progress, users, tab, ownerNames})
+	}{sh, upload, users, tab, ownerNames})
 }
 
 func (app *App) trashShare(w http.ResponseWriter, r *http.Request) {

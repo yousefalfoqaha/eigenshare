@@ -123,16 +123,6 @@ func (s *ShareService) GetShareByHandle(handle string, u *user.User) (*Share, er
 		return nil, ErrShareNotFound
 	}
 
-	written, err := s.storage.GetShareBytesWritten(sh.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	files, err := slices.DeleteFunc(sh.Files, func(f File) bool {
-		return !fileComplete(f, written)
-	}), nil
-	sh.Files = files
-
 	return sh, nil
 }
 
@@ -150,25 +140,25 @@ func (s *ShareService) Delete(u *user.User, ids ...string) error {
 	return s.repo.Delete(ids...)
 }
 
-func (s *ShareService) GetShares(u *user.User) ([]ShareSummary, error) {
-	summaries, err := s.repo.GetAll()
+func (s *ShareService) GetShares(u *user.User) ([]*Share, error) {
+	shares, err := s.repo.GetAll()
 	if err != nil {
 		return nil, err
 	}
 
-	return slices.DeleteFunc(summaries, func(sum ShareSummary) bool {
-		return !sum.CanView(u)
+	return slices.DeleteFunc(shares, func(sh *Share) bool {
+		return !sh.CanView(u)
 	}), nil
 }
 
-func (s *ShareService) GetTrashedShares(u *user.User) ([]ShareSummary, error) {
-	summaries, err := s.repo.GetAllTrashed()
+func (s *ShareService) GetTrashedShares(u *user.User) ([]*Share, error) {
+	shares, err := s.repo.GetAllTrashed()
 	if err != nil {
 		return nil, err
 	}
 
-	return slices.DeleteFunc(summaries, func(sum ShareSummary) bool {
-		return !sum.CanManage(u)
+	return slices.DeleteFunc(shares, func(sh *Share) bool {
+		return !sh.CanManage(u)
 	}), nil
 }
 
@@ -176,21 +166,14 @@ func (s *ShareService) GetShare(id string, u *user.User) (*Share, error) {
 	return s.manageableShare(id, u)
 }
 
-func (s *ShareService) GetShareProgress(id string, u *user.User) (*ShareProgress, error) {
-	sh, err := s.repo.Get(id)
-	if err != nil {
-		return nil, err
-	}
+// GetUploadState returns the share's live upload state. It takes the
+// share the caller already fetched so the aggregate is never re-read.
+func (s *ShareService) GetUploadState(sh *Share, u *user.User) (*UploadState, error) {
 	if !sh.CanView(u) {
 		return nil, ErrShareNotFound
 	}
 
-	written, err := s.storage.GetShareBytesWritten(id)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewShareProgress(sh.Files, written), nil
+	return s.storage.UploadState(sh.ID)
 }
 
 func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
@@ -219,12 +202,12 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, strin
 		return nil, "", ErrFileNotFound
 	}
 
-	written, err := s.storage.GetShareBytesWritten(sh.ID)
+	upload, err := s.storage.UploadState(sh.ID)
 	if err != nil {
 		return nil, "", err
 	}
 
-	if !fileComplete(*file, written) {
+	if !upload.Uploaded(*file) {
 		return nil, "", ErrFileNotComplete
 	}
 

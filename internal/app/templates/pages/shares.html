@@ -18,15 +18,15 @@
   </thead>
   <tbody>
     {{range .Content.Shares}}
+    {{$u := index $.Content.Uploads .ID}}{{$done := uploadedFiles $u .Files}}
     <tr>
       <td><a href="/s/{{.Handle}}">{{.Handle}}</a></td>
       <td>{{.Visibility}}</td>
       <td>{{formatCommaSeparated (index $.Content.OwnerNames .ID)}}</td>
       <td>
-        {{$p := index $.Content.Progress .ID}}{{.TotalFiles}}{{if gt
-        $p.IncompleteFiles 0}} ({{$p.IncompleteFiles}} uploading) {{end}}
+        {{len $done}}{{if lt (len $done) (len .Files)}} (uploading){{end}}
       </td>
-      <td>{{formatSize $p.CompletedSize}}</td>
+      <td>{{formatSize (uploadedSize $done)}}</td>
       <td>{{expiresIn .ExpiresAt}}</td>
       <td>
         {{if .CanManage $.CurrentUser}}

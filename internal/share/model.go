@@ -1,6 +1,7 @@
 package share
 
 import (
+	"encoding/json"
 	"net/http"
 	"regexp"
 	"slices"
@@ -77,17 +78,6 @@ func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creat
 	return s, nil
 }
 
-type ShareSummary struct {
-	ID                string               `json:"id"`
-	Handle            string               `json:"handle"`
-	Visibility        Visibility           `json:"visibility"`
-	Owners            []string             `json:"owners"`
-	TotalFiles        int                  `json:"totalFiles"`
-	TotalExpectedSize int64                `json:"totalExpectedSize"`
-	ExpiresAt         *timestamp.Timestamp `json:"expiresAt"`
-	TrashedAt         *timestamp.Timestamp `json:"trashedAt"`
-}
-
 func (s *Share) Trashed() bool {
 	return s.TrashedAt != nil
 }
@@ -101,14 +91,6 @@ func (s *Share) CanManage(u *user.User) bool {
 }
 
 func (s *Share) CanView(u *user.User) bool {
-	return s.Visibility == VisibilityPublic || s.CanManage(u)
-}
-
-func (s ShareSummary) CanManage(u *user.User) bool {
-	return u != nil && (u.IsAdmin || slices.Contains(s.Owners, u.ID))
-}
-
-func (s ShareSummary) CanView(u *user.User) bool {
 	return s.Visibility == VisibilityPublic || s.CanManage(u)
 }
 
@@ -134,29 +116,23 @@ func NewFile(name string, expectedSize int64) (*File, error) {
 	}, nil
 }
 
-type ShareProgress struct {
-	Written         map[string]int64 `json:"written"`
-	CompletedSize   int64            `json:"completedSize"`
-	IncompleteFiles int              `json:"incompleteFiles"`
+// UploadState is a share's live upload state: the bytes written to disk
+// per file. The map is an internal detail — the file storage hands the
+// state to the service, and consumers only ask it questions. The state
+// is share-scoped: it answers for the files of the share it came from.
+type UploadState struct {
+	written map[string]int64
 }
 
-func NewShareProgress(files []File, written map[string]int64) *ShareProgress {
-	if written == nil {
-		written = map[string]int64{}
-	}
-
-	p := &ShareProgress{Written: written}
-	for _, f := range files {
-		if fileComplete(f, written) {
-			p.CompletedSize += f.ExpectedSize
-		} else {
-			p.IncompleteFiles++
-		}
-	}
-
-	return p
+// Uploaded reports whether f's bytes are all on disk. The whole File is
+// the minimal sufficient question — the rule needs the file's expected
+// size, which the id alone does not carry.
+func (u *UploadState) Uploaded(f File) bool {
+	return u != nil && u.written[f.ID] >= f.ExpectedSize
 }
 
-func fileComplete(f File, written map[string]int64) bool {
-	return written[f.ID] >= f.ExpectedSize
+// MarshalJSON presents the state as its bytes-written map — the
+// uploader's inline seed ({"fileID": bytes}).
+func (u *UploadState) MarshalJSON() ([]byte, error) {
+	return json.Marshal(u.written)
 }

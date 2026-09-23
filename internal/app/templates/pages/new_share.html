@@ -1,5 +1,4 @@
-{{define "title"}}new share{{end}}
-{{define "content"}}
+{{define "title"}}new share{{end}} {{define "content"}}
 <h1>new share</h1>
 <form id="new-share-form">
   <label
@@ -28,12 +27,15 @@
     </select>
   </label>
 
-  {{template "uploader" (dict "label" "create")}}
+  <button type="submit" class="submit" id="create-btn">create share</button>
+  <div
+    id="create-error"
+    class="error"
+    style="display: none; margin-top: 1rem"
+  ></div>
 </form>
 
-<p>
-  <a href="/shares">back to shares</a>
-</p>
+<p><a href="/shares">back to shares</a></p>
 
 <script>
   function randomHandle() {
@@ -47,15 +49,15 @@
 
   document.getElementById("handle-input").value = randomHandle();
 
-  // share creation is deliberately decoupled from file upload: create the
-  // share via the api, then hand it to the uploader component
   document
     .getElementById("new-share-form")
     .addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const files = window.uploader.files();
-      window.uploader.setBusy(true);
+      const btn = document.getElementById("create-btn");
+      const errEl = document.getElementById("create-error");
+      btn.disabled = true;
+      errEl.style.display = "none";
 
       const fd = new FormData(e.target);
       const req = {
@@ -64,7 +66,6 @@
         visibility: fd.get("visibility") || "private",
       };
 
-      let share;
       try {
         const resp = await fetch("/api/shares", {
           method: "POST",
@@ -77,25 +78,13 @@
           throw new Error(err.message || `create failed: ${resp.status}`);
         }
 
-        share = await resp.json();
-      } catch (err) {
-        window.uploader.fail(err.message);
-        window.uploader.setBusy(false);
-        return;
-      }
-
-      if (files.length === 0) {
-        window.location.href = `/s/${share.handle}`;
-        return;
-      }
-
-      try {
-        await window.uploader.submitAll(share.id);
-        window.location.href = `/s/${share.handle}`;
-      } catch (err) {
-        // the edit page's queue shows what made it and what is resumable
-        window.uploader.fail(err.message);
+        const share = await resp.json();
+        // Instantly redirect to the Edit page so they can upload files
         window.location.href = `/shares/${share.id}/edit`;
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = "block";
+        btn.disabled = false;
       }
     });
 </script>

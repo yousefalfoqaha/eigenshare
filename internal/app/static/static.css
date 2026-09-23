@@ -201,8 +201,8 @@ a:hover {
   max-width: none;
 }
 
-[data-uploader] .line-head .state,
-[data-uploader] .line-meter .bytes {
+[data-uploader] .line-head button,
+[data-uploader] .line-meter .meta {
   flex-shrink: 0;
 }
 
@@ -217,26 +217,8 @@ a:hover {
   min-width: 0;
 }
 
-/* [data-uploader] li[data-state="pending"], */
-/* [data-uploader] li[data-state="paused"] { */
-/*   color: #777; */
-/* } */
-
 [data-uploader] li[data-state="uploading"] {
   font-weight: 600;
-}
-
-/* [data-uploader] li[data-state="done"] { */
-/*   color: #060; */
-/* } */
-
-/* bar tint follows the state */
-[data-uploader] li[data-state="paused"] progress {
-  accent-color: #777;
-}
-
-[data-uploader] li[data-state="done"] progress {
-  accent-color: #060;
 }
 
 .truncate {

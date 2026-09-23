@@ -33,9 +33,9 @@ type App struct {
 
 func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.ShareService) *App {
 	funcs := template.FuncMap{
-		"shareTotalSize":       shareTotalSize,
+		"uploadedFiles":        uploadedFiles,
+		"uploadedSize":         uploadedSize,
 		"formatSize":           formatSize,
-		"shareTotalFiles":      shareTotalFiles,
 		"formatCommaSeparated": formatCommaSeparated,
 		"expiresIn":            expiresIn,
 		"timeAgo":              timeAgo,
@@ -43,7 +43,7 @@ func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.S
 	}
 
 	base := template.Must(template.New("layout").Funcs(funcs).
-		ParseFS(templateFS, "templates/layout.html", "templates/components/*.html"))
+		ParseFS(templateFS, "templates/layout.html"))
 
 	pageFiles, err := fs.Glob(templateFS, "templates/pages/*.html")
 	if err != nil {
@@ -112,6 +112,7 @@ func (app *App) Routes() http.Handler {
 	api.HandleFunc("POST /shares", app.createShare)
 	api.HandleFunc("POST /shares/{id}/files", app.addFilesToShare)
 	api.HandleFunc("PUT /shares/{id}/files/{fileID}/stream", app.streamFile)
+	api.HandleFunc("DELETE /shares/{id}/files/{fileID}", app.deleteShareFile)
 	mux.Handle("/api/", http.StripPrefix("/api", app.requireLoginJSON(api)))
 
 	return app.logging(mux)

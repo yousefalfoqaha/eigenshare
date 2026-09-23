@@ -23,13 +23,13 @@
   </thead>
   <tbody>
     {{range .Content.Shares}}
+    {{$u := index $.Content.Uploads .ID}}{{$done := uploadedFiles $u .Files}}
     <tr>
       <td>{{.Handle}}</td>
       <td>
-        {{$p := index $.Content.Progress .ID}}{{.TotalFiles}}{{if gt
-        $p.IncompleteFiles 0}} ({{$p.IncompleteFiles}} in progress){{end}}
+        {{len $done}}{{if lt (len $done) (len .Files)}} (in progress){{end}}
       </td>
-      <td>{{formatSize $p.CompletedSize}}</td>
+      <td>{{formatSize (uploadedSize $done)}}</td>
       <td>{{timeAgo .TrashedAt}}</td>
       <td>
         <div class="row-actions">

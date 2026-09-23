@@ -26,16 +26,24 @@ func formatCommaSeparated(items []string) string {
 	return strings.Join(items, ", ")
 }
 
-func shareTotalSize(sh *share.Share) int64 {
+// uploadedFiles returns the files of the share that are fully uploaded.
+func uploadedFiles(u *share.UploadState, files []share.File) []share.File {
+	uploaded := make([]share.File, 0, len(files))
+	for _, f := range files {
+		if u.Uploaded(f) {
+			uploaded = append(uploaded, f)
+		}
+	}
+	return uploaded
+}
+
+// uploadedSize sums the sizes of the uploaded files handed to it.
+func uploadedSize(files []share.File) int64 {
 	var total int64
-	for _, f := range sh.Files {
+	for _, f := range files {
 		total += f.ExpectedSize
 	}
 	return total
-}
-
-func shareTotalFiles(sh *share.Share) int {
-	return len(sh.Files)
 }
 
 func expiresIn(t *timestamp.Timestamp) string {
