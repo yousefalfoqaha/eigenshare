@@ -35,7 +35,7 @@ async function streamFile(shareID, fileID, file, onProgress, signal) {
           "Content-Type": "application/octet-stream",
           "Upload-Offset": String(offset),
         },
-        body: await file.slice(offset, end).arrayBuffer(),
+        body: file.slice(offset, end),
         signal,
       },
     );
@@ -54,134 +54,200 @@ async function streamFile(shareID, fileID, file, onProgress, signal) {
 }
 
 class HeadlessQueue {
-  constructor(callbacks) {
+  constructor(shareID, handlers) {
     this.shareID = shareID;
+    this.on = handlers;
     this.tasks = new Map();
-    this.isDraining = false;
-    this.callbacks = callbacks;
   }
 
-  seed(entries, progressMap) {
-    for (const entry of entries || []) {
-      const loaded = progressMap?.[entry.id] || 0;
-      if (loaded >= entry.expectedSize) continue;
+  // Helper to ensure EVERY state strictly implements the uniform base signature
+  #base(id, name, expectedSize, loaded) {
+    return {
+      id,
+      name,
+      expectedSize,
+      loaded,
+      remove: () => this.#deleteFromServer(id),
+    };
+  }
 
-      const task = {
-        id: entry.id,
-        name: entry.name,
-        expectedSize: entry.expectedSize,
-        file: null,
-        loaded,
-        status: "incomplete",
-        controller: null,
-      };
-      this.tasks.set(entry.id, task);
-      this.callbacks.onUpdate(task);
+  // ---- THE STATE MACHINE ----
+
+  INCOMPLETE(id, name, expectedSize, loaded) {
+    return {
+      ...this.#base(id, name, expectedSize, loaded),
+      status: "INCOMPLETE",
+      resume: (file) => {
+        if (file.name !== name || file.size !== expectedSize) {
+          this.on.onError?.(`Expected ${name} (${formatBytes(expectedSize)})`);
+          return;
+        }
+        this.#transition(id, this.PENDING(id, file, loaded));
+        this.#drain();
+      },
+    };
+  }
+
+  PENDING(id, file, loaded) {
+    return {
+      ...this.#base(id, file.name, file.size, loaded),
+      status: "PENDING",
+      file,
+    };
+  }
+
+  UPLOADING(id, file, loaded, controller) {
+    return {
+      ...this.#base(id, file.name, file.size, loaded),
+      status: "UPLOADING",
+      file,
+      abort: () => controller.abort(),
+    };
+  }
+
+  DONE(id, file, loaded) {
+    return {
+      ...this.#base(id, file.name, file.size, loaded),
+      status: "DONE",
+      file,
+    };
+  }
+
+  ERROR(id, file, loaded, message) {
+    return {
+      ...this.#base(id, file.name, file.size, loaded),
+      status: "ERROR",
+      file,
+      message,
+      retry: () => {
+        this.#transition(id, this.PENDING(id, file, loaded));
+        this.#drain();
+      },
+    };
+  }
+
+  // ---- PUBLIC API ----
+
+  seed(entries, progressMap = {}) {
+    for (const e of entries || []) {
+      const loaded = progressMap[e.id] || 0;
+      if (loaded >= e.expectedSize) continue;
+
+      const task = this.INCOMPLETE(e.id, e.name, e.expectedSize, loaded);
+      this.tasks.set(e.id, task);
+      this.on.onAdd?.(task);
     }
   }
 
-  async submit(shareID, files) {
-    this.shareID = shareID;
-    const freshFiles = [];
+  async submit(files) {
+    const fresh = [];
 
     for (const file of files) {
-      const existing = Array.from(this.tasks.values()).find(
+      const stale = Array.from(this.tasks.values()).find(
         (t) =>
-          t.status === "incomplete" &&
+          t.status === "INCOMPLETE" &&
           t.name === file.name &&
           t.expectedSize === file.size,
       );
-      if (existing) {
-        existing.file = file;
-        existing.status = "pending";
-        this.callbacks.onUpdate(existing);
+      if (stale) {
+        stale.resume(file);
       } else {
-        freshFiles.push(file);
+        fresh.push(file);
       }
     }
 
-    if (freshFiles.length > 0) {
-      const newEntries = await registerFiles(shareID, freshFiles);
-      newEntries.forEach((entry, i) => {
-        const task = {
-          id: entry.id,
-          name: entry.name,
-          expectedSize: entry.expectedSize,
-          file: freshFiles[i],
-          loaded: 0,
-          status: "pending",
-          controller: null,
-        };
-        this.tasks.set(task.id, task);
-        this.callbacks.onUpdate(task);
+    if (fresh.length) {
+      const entries = await registerFiles(this.shareID, fresh);
+      entries.forEach((e, i) => {
+        const task = this.PENDING(e.id, fresh[i], 0);
+        this.tasks.set(e.id, task);
+        this.on.onAdd?.(task);
       });
     }
-    await this.drain();
+    this.#drain();
   }
 
-  async drain() {
-    if (this.isDraining) return;
-    this.isDraining = true;
-    let didWork = false;
+  // ---- INTERNALS ----
 
-    for (const task of this.tasks.values()) {
-      if (task.status !== "pending") continue;
-      task.status = "uploading";
-      task.controller = new AbortController();
-      this.callbacks.onUpdate(task);
+  #transition(id, nextState) {
+    const prev = this.tasks.get(id)?.status;
+    this.tasks.set(id, nextState);
+    this.on.onStatus?.(nextState, prev);
+  }
+
+  async #deleteFromServer(id) {
+    const task = this.tasks.get(id);
+    if (!task) return;
+
+    if (task.status === "UPLOADING") task.abort();
+
+    try {
+      const res = await fetch(`/api/shares/${this.shareID}/files/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+      this.tasks.delete(id);
+      this.on.onRemove?.(id);
+    } catch (err) {
+      this.on.onError?.(err.message);
+    }
+  }
+
+  async #drain() {
+    if (Array.from(this.tasks.values()).some((t) => t.status === "UPLOADING"))
+      return;
+
+    let completed = 0;
+    let pendingTask;
+
+    while (
+      (pendingTask = Array.from(this.tasks.values()).find(
+        (t) => t.status === "PENDING",
+      ))
+    ) {
+      const controller = new AbortController();
+      const uploadingTask = this.UPLOADING(
+        pendingTask.id,
+        pendingTask.file,
+        pendingTask.loaded,
+        controller,
+      );
+      this.#transition(pendingTask.id, uploadingTask);
 
       try {
         await streamFile(
           this.shareID,
-          task.id,
-          task.file,
+          uploadingTask.id,
+          uploadingTask.file,
           (bytes) => {
-            task.loaded = bytes;
-            this.callbacks.onUpdate(task);
+            uploadingTask.loaded = bytes;
+            this.on.onProgress?.(uploadingTask);
           },
-          task.controller.signal,
+          controller.signal,
         );
-
-        task.status = "done";
-        didWork = true;
+        this.#transition(
+          uploadingTask.id,
+          this.DONE(uploadingTask.id, uploadingTask.file, uploadingTask.loaded),
+        );
+        completed++;
       } catch (err) {
-        const isAborted = task.controller && task.controller.signal.aborted;
-        task.status = isAborted ? "incomplete" : "error";
-
-        // Only trigger the error callback if it wasn't an intentional abort
-        if (!isAborted && this.callbacks.onError) {
-          this.callbacks.onError(
-            `Failed to upload ${task.name}: ${err.message}`,
+        if (!controller.signal.aborted) {
+          this.#transition(
+            uploadingTask.id,
+            this.ERROR(
+              uploadingTask.id,
+              uploadingTask.file,
+              uploadingTask.loaded,
+              err.message,
+            ),
+          );
+          this.on.onError?.(
+            `Failed to upload ${uploadingTask.name}: ${err.message}`,
           );
         }
-      } finally {
-        task.controller = null;
-        this.callbacks.onUpdate(task);
       }
     }
-    this.isDraining = false;
-    if (didWork) this.callbacks.onDrained();
-  }
 
-  async deleteTask(id) {
-    const task = this.tasks.get(id);
-    if (!task) return;
-    if (task.controller) task.controller.abort();
-
-    await fetch(`/api/shares/${this.shareID}/files/${id}`, {
-      method: "DELETE",
-    });
-    this.tasks.delete(id);
-    this.callbacks.onDelete(id);
-    this.callbacks.onDrained();
-  }
-
-  resumeTask(id, file) {
-    const task = this.tasks.get(id);
-    if (!task) return;
-    task.file = file;
-    task.status = "pending";
-    this.callbacks.onUpdate(task);
-    this.drain().catch(() => {});
+    if (completed) this.on.onDrained?.();
   }
 }

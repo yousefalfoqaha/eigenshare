@@ -15,7 +15,7 @@ data.db*
 *.so
 *.dylib
 
-# Test binary, built with `go test -c`
+# Test binary, built with ?   	eigenshare	[no test files]
 *.test
 
 # Output of the go coverage tool, specifically when used with LiteIDE

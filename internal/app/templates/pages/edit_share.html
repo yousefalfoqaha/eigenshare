@@ -76,8 +76,7 @@
   <div data-status role="status"></div>
   <ul data-lines></ul>
 
-  <input type="file" data-resume-input hidden />
-  <button type="submit" class="submit" data-upload-btn>upload files</button>
+  <button type="submit" class="submit" data-upload-btn>upload</button>
 </form>
 
 <script src="/static/uploader.js"></script>
@@ -91,13 +90,20 @@
     const fileSelectBtn = root.querySelector("[data-file-select]");
     const statusEl = root.querySelector("[data-status]");
     const linesEl = root.querySelector("[data-lines]");
-    const resumeInput = root.querySelector("[data-resume-input]");
     const uploadBtn = root.querySelector("[data-upload-btn]");
 
     let stagedFiles = [];
-    let activeResumeId = null;
-    let completedAny = false;
-    const domNodes = new Map();
+    const rows = new Map();
+
+    function pickFile() {
+      return new Promise((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.addEventListener("change", () => resolve(input.files[0] ?? null), { once: true });
+        input.addEventListener("cancel", () => resolve(null), { once: true });
+        input.click();
+      });
+    }
 
     fileSelectBtn.addEventListener("click", () => fileInput.click());
     
@@ -131,83 +137,76 @@
       });
     }
 
-    resumeInput.addEventListener("change", () => {
-      const file = resumeInput.files[0];
-      resumeInput.value = "";
-      if (!file || !activeResumeId) return;
-      queue.resumeTask(activeResumeId, file);
-      activeResumeId = null;
-    });
+    // Creates the skeleton of the row. Buttons are strictly bound in renderStatus.
+    function createRow(task) {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <div class="line-head">
+          <span class="truncate"></span>
+          <button type="button" data-resume hidden>resume</button>
+          <button type="button" data-retry hidden>retry</button>
+          <button type="button" data-delete>delete</button>
+        </div>
+        <div class="line-meter"><progress></progress><span class="meta"></span></div>`;
 
-    const queue = new HeadlessQueue({
-      onDrained: () => {
-        if (completedAny) window.location.reload();
-      },
-      onError: (msg) => { 
-        statusEl.textContent = msg; 
-      },
-      onDelete: (id) => {
-        domNodes.get(id)?.remove();
-        domNodes.delete(id);
-      },
-      onUpdate: (task) => {
-        if (task.status === "done") completedAny = true;
+      linesEl.append(li);
+      return li;
+    }
 
-        if (!domNodes.has(task.id)) {
-          const li = document.createElement("li");
-          
-          const head = document.createElement("div");
-          head.className = "line-head";
+    // The UI is now completely declarative based on the State Machine's capabilities.
+    function renderStatus(task) {
+      const li = rows.get(task.id);
+      if (!li) return;
+      
+      li.dataset.state = task.status.toLowerCase();
+      
+      const resumeBtn = li.querySelector("[data-resume]");
+      const retryBtn = li.querySelector("[data-retry]");
+      const deleteBtn = li.querySelector("[data-delete]");
+      const nameEl = li.querySelector(".truncate");
+      const bar = li.querySelector("progress");
+      const meta = li.querySelector(".meta");
 
-          const nameSpan = document.createElement("span");
-          nameSpan.className = "truncate";
-          nameSpan.title = task.name;
-          nameSpan.textContent = task.name;
-          head.append(nameSpan);
-
-          if (task.status === "incomplete") {
-            const resumeBtn = document.createElement("button");
-            resumeBtn.type = "button";
-            resumeBtn.textContent = "resume";
-            resumeBtn.onclick = () => {
-              activeResumeId = task.id;
-              resumeInput.click();
-            };
-            head.append(resumeBtn);
-          }
-
-          const deleteBtn = document.createElement("button");
-          deleteBtn.type = "button";
-          deleteBtn.textContent = "delete";
-          deleteBtn.onclick = async () => {
-            try { await queue.deleteTask(task.id); } 
-            catch (err) { statusEl.textContent = `delete failed: ${err.message}`; }
-          };
-          head.append(deleteBtn);
-
-          const meter = document.createElement("div");
-          meter.className = "line-meter";
-
-          const bar = document.createElement("progress");
-          const meta = document.createElement("span");
-          meta.className = "meta";
-
-          meter.append(bar, meta);
-          li.append(head, meter);
-
-          linesEl.appendChild(li);
-          domNodes.set(task.id, li);
-        }
-
-        const li = domNodes.get(task.id);
-        li.dataset.state = task.status;
-        
-        const bar = li.querySelector("progress");
-        bar.max = task.expectedSize || 1;
-        bar.value = task.status === "done" ? bar.max : task.loaded;
-        
-        li.querySelector(".meta").textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${task.status}`;
+      // Actions Feature Detection
+      resumeBtn.hidden = !task.resume;
+      if (task.resume) {
+        resumeBtn.onclick = async () => {
+          const file = await pickFile();
+          if (file) task.resume(file); // Calls action on the state
+        };
       }
+
+      retryBtn.hidden = !task.retry;
+      if (task.retry) {
+        retryBtn.onclick = () => task.retry();
+      }
+
+      deleteBtn.onclick = () => task.remove(); 
+
+      // Uniform Properties
+      nameEl.textContent = nameEl.title = task.name;
+      bar.max = task.expectedSize || 1;
+      bar.value = task.status === "DONE" ? bar.max : task.loaded;
+      meta.textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${task.status}`;
+    }
+
+    const queue = new HeadlessQueue(shareID, {
+      onAdd: (task) => {
+        rows.set(task.id, createRow(task));
+        renderStatus(task);
+      },
+      onStatus: renderStatus,
+      onProgress: renderStatus,
+      onRemove: (id) => {
+        rows.get(id)?.remove();
+        rows.delete(id);
+      },
+      onError: (msg) => {
+        statusEl.textContent = msg;
+      },
+      onDrained: () => {
+        location.reload();
+      },
     });
 
     queue.seed({{.Content.Share.Files}}, {{$u}});
@@ -219,12 +218,11 @@
       const filesToUpload = [...stagedFiles];
       stagedFiles = [];
       renderUploadingFiles();
-      
       statusEl.textContent = ""; 
-      // uploadBtn.disabled = true;
+      uploadBtn.disabled = true;
 
       try {
-        await queue.submit(shareID, filesToUpload);
+        await queue.submit(filesToUpload);
       } catch (err) {
         statusEl.textContent = err.message;
       } finally {
