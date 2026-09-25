@@ -70,13 +70,10 @@
     <legend>upload files</legend>
     <input type="file" data-file-input multiple hidden />
     <button type="button" data-file-select>Browse...</button>
-    <ul class="file-picker-list" data-file-list></ul>
+    <ul class="file-picker-list" data-lines></ul>
   </fieldset>
 
   <div data-status role="status"></div>
-  <ul data-lines></ul>
-
-  <button type="submit" class="submit" data-upload-btn>upload</button>
 </form>
 
 <script src="/static/uploader.js"></script>
@@ -86,13 +83,10 @@
     
     const root = document.getElementById("upload-form");
     const fileInput = root.querySelector("[data-file-input]");
-    const fileList = root.querySelector("[data-file-list]");
     const fileSelectBtn = root.querySelector("[data-file-select]");
     const statusEl = root.querySelector("[data-status]");
     const linesEl = root.querySelector("[data-lines]");
-    const uploadBtn = root.querySelector("[data-upload-btn]");
 
-    let stagedFiles = [];
     const rows = new Map();
 
     function pickFile() {
@@ -106,36 +100,6 @@
     }
 
     fileSelectBtn.addEventListener("click", () => fileInput.click());
-    
-    fileInput.addEventListener("change", () => {
-      stagedFiles.push(...fileInput.files);
-      fileInput.value = "";
-      renderUploadingFiles();
-    });
-
-    function renderUploadingFiles() {
-      fileList.replaceChildren();
-      stagedFiles.forEach((file, index) => {
-        const li = document.createElement("li");
-        li.className = "file-picker-row";
-        
-        const nameSpan = document.createElement("span");
-        nameSpan.className = "truncate";
-        nameSpan.title = file.name;
-        nameSpan.textContent = file.name;
-
-        const removeBtn = document.createElement("button");
-        removeBtn.type = "button";
-        removeBtn.textContent = "remove";
-        removeBtn.onclick = () => {
-          stagedFiles.splice(index, 1);
-          renderUploadingFiles();
-        };
-
-        li.append(nameSpan, removeBtn);
-        fileList.appendChild(li);
-      });
-    }
 
     // Creates the skeleton of the row. Buttons are strictly bound in renderStatus.
     function createRow(task) {
@@ -211,24 +175,23 @@
 
     queue.seed({{.Content.Share.Files}}, {{$u}});
 
-    root.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (stagedFiles.length === 0) return;
+    // Immediately queue the files when selected
+    fileInput.addEventListener("change", async () => {
+      if (fileInput.files.length === 0) return;
       
-      const filesToUpload = [...stagedFiles];
-      stagedFiles = [];
-      renderUploadingFiles();
+      const filesToUpload = [...fileInput.files];
+      fileInput.value = ""; // Clear the input so selecting the same file again works
       statusEl.textContent = ""; 
-      uploadBtn.disabled = true;
 
       try {
         await queue.submit(filesToUpload);
       } catch (err) {
         statusEl.textContent = err.message;
-      } finally {
-        uploadBtn.disabled = false;
       }
     });
+
+    // Prevent default form submission if the user presses enter anywhere
+    root.addEventListener("submit", (e) => e.preventDefault());
   })();
 </script>
 {{end}}

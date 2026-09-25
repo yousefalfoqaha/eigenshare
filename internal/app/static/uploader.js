@@ -23,7 +23,7 @@ async function registerFiles(shareID, files) {
 }
 
 async function streamFile(shareID, fileID, file, onProgress, signal) {
-  const chunkSize = 1024 * 1024;
+  const chunkSize = 25 * 1024 * 1024;
   let offset = 0;
   while (offset < file.size) {
     const end = Math.min(offset + chunkSize, file.size);
