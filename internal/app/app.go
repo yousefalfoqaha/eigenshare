@@ -111,6 +111,7 @@ func (app *App) Routes() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("POST /shares", app.createShare)
 	api.HandleFunc("POST /shares/{id}/files", app.addFilesToShare)
+	api.HandleFunc("HEAD /shares/{id}/files/{fileID}/stream", app.getUploadOffset)
 	api.HandleFunc("PUT /shares/{id}/files/{fileID}/stream", app.streamFile)
 	api.HandleFunc("DELETE /shares/{id}/files/{fileID}", app.deleteShareFile)
 	mux.Handle("/api/", http.StripPrefix("/api", app.requireLoginJSON(api)))

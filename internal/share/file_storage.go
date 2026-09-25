@@ -5,14 +5,21 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 type FileStorage struct {
 	dataDir string
+	locks   sync.Map
 }
 
 func NewFileStorage(dataDir string) *FileStorage {
-	return &FileStorage{dataDir}
+	return &FileStorage{dataDir: dataDir}
+}
+
+func (s *FileStorage) lockFor(fileID string) *sync.Mutex {
+	l, _ := s.locks.LoadOrStore(fileID, &sync.Mutex{})
+	return l.(*sync.Mutex)
 }
 
 func (s *FileStorage) CreateShareFolder(sh Share) error {
@@ -90,6 +97,12 @@ func (s *FileStorage) RemoveFile(shareID, fileID string) error {
 }
 
 func (s *FileStorage) WriteFileStream(shareID string, fileID string, expectedSize int64, offset int64, fileReader io.Reader) (int64, error) {
+	lock := s.lockFor(fileID)
+	if !lock.TryLock() {
+		return 0, ErrUploadInProgress
+	}
+	defer lock.Unlock()
+
 	if err := os.MkdirAll(filepath.Join(s.dataDir, shareID), 0o755); err != nil {
 		return 0, err
 	}

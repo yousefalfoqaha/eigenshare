@@ -22,36 +22,105 @@ async function registerFiles(shareID, files) {
   return (await response.json()) || [];
 }
 
+// ---- NETWORK ABSTRACTIONS ----
+
+async function syncOffset(shareID, fileID, signal) {
+  try {
+    const res = await fetch(`/api/shares/${shareID}/files/${fileID}/stream`, {
+      method: "HEAD",
+      signal,
+    });
+    if (!res.ok) return null;
+    const header = res.headers.get("Upload-Offset");
+    return header !== null ? Number(header) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function putChunk(shareID, fileID, offset, data, onProgress, signal) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", `/api/shares/${shareID}/files/${fileID}/stream`);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.setRequestHeader("Upload-Offset", String(offset));
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(offset + e.loaded);
+    };
+
+    xhr.onload = () => {
+      const header = xhr.getResponseHeader("Upload-Offset");
+      if (xhr.status === 204 || xhr.status === 409) {
+        resolve(header !== null ? Number(header) : null);
+      } else {
+        reject(new Error(`HTTP ${xhr.status}`));
+      }
+    };
+
+    xhr.onerror = () => resolve(null); // TCP drop -> trigger backoff
+    xhr.onabort = () => reject(new Error("Upload aborted"));
+
+    if (signal) {
+      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+    xhr.send(data);
+  });
+}
+
+// ---- UPLOAD ENGINE ----
+
 async function streamFile(shareID, fileID, file, onProgress, signal) {
   const chunkSize = 25 * 1024 * 1024;
   let offset = 0;
-  while (offset < file.size) {
-    const end = Math.min(offset + chunkSize, file.size);
-    const response = await fetch(
-      `/api/shares/${shareID}/files/${fileID}/stream`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Upload-Offset": String(offset),
-        },
-        body: file.slice(offset, end),
-        signal,
-      },
-    );
-    if (!response.ok) {
-      const uploadOffset = Number(response.headers.get("Upload-Offset"));
-      if (response.status === 409 && uploadOffset > offset) {
-        offset = uploadOffset;
-        if (onProgress) onProgress(offset);
-        continue;
-      }
-      throw new Error(`upload failed: ${response.status}`);
-    }
-    offset = Number(response.headers.get("Upload-Offset"));
+  let retries = 0;
+
+  // Scout the true offset before starting
+  const initialSync = await syncOffset(shareID, fileID, signal);
+  if (initialSync !== null) {
+    offset = initialSync;
     if (onProgress) onProgress(offset);
   }
+
+  while (offset < file.size) {
+    if (signal?.aborted) throw new Error("Upload aborted");
+
+    const chunk = file.slice(offset, offset + chunkSize);
+    const nextOffset = await putChunk(
+      shareID,
+      fileID,
+      offset,
+      chunk,
+      onProgress,
+      signal,
+    );
+
+    // Path A: Clean update
+    if (nextOffset !== null) {
+      offset = nextOffset;
+      if (onProgress) onProgress(offset);
+      retries = 0;
+      continue;
+    }
+
+    // Path B: Locked or Dropped. Graceful backoff.
+    retries++;
+    if (retries > 3) {
+      throw new Error("Upload is already in progress. Please try again.");
+    }
+
+    await new Promise((r) => setTimeout(r, 1000));
+
+    // The Graceful Sync: Ask the server for the exact offset
+    const sync = await syncOffset(shareID, fileID, signal);
+    if (sync !== null) {
+      offset = sync;
+      if (onProgress) onProgress(offset);
+    }
+  }
 }
+
+// ---- QUEUE MANAGER ----
 
 class HeadlessQueue {
   constructor(shareID, handlers) {
@@ -60,7 +129,6 @@ class HeadlessQueue {
     this.tasks = new Map();
   }
 
-  // Helper to ensure EVERY state strictly implements the uniform base signature
   #base(id, name, expectedSize, loaded) {
     return {
       id,
@@ -70,8 +138,6 @@ class HeadlessQueue {
       remove: () => this.#deleteFromServer(id),
     };
   }
-
-  // ---- THE STATE MACHINE ----
 
   INCOMPLETE(id, name, expectedSize, loaded) {
     return {
@@ -126,8 +192,6 @@ class HeadlessQueue {
     };
   }
 
-  // ---- PUBLIC API ----
-
   seed(entries, progressMap = {}) {
     for (const e of entries || []) {
       const loaded = progressMap[e.id] || 0;
@@ -166,8 +230,6 @@ class HeadlessQueue {
     }
     this.#drain();
   }
-
-  // ---- INTERNALS ----
 
   #transition(id, nextState) {
     const prev = this.tasks.get(id)?.status;

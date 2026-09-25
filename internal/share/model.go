@@ -116,23 +116,21 @@ func NewFile(name string, expectedSize int64) (*File, error) {
 	}, nil
 }
 
-// UploadState is a share's live upload state: the bytes written to disk
-// per file. The map is an internal detail — the file storage hands the
-// state to the service, and consumers only ask it questions. The state
-// is share-scoped: it answers for the files of the share it came from.
 type UploadState struct {
 	written map[string]int64
 }
 
-// Uploaded reports whether f's bytes are all on disk. The whole File is
-// the minimal sufficient question — the rule needs the file's expected
-// size, which the id alone does not carry.
 func (u *UploadState) Uploaded(f File) bool {
 	return u != nil && u.written[f.ID] >= f.ExpectedSize
 }
 
-// MarshalJSON presents the state as its bytes-written map — the
-// uploader's inline seed ({"fileID": bytes}).
 func (u *UploadState) MarshalJSON() ([]byte, error) {
 	return json.Marshal(u.written)
+}
+
+func (u *UploadState) Written(fileID string) int64 {
+	if u == nil {
+		return 0
+	}
+	return u.written[fileID]
 }

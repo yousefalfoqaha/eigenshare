@@ -27,6 +27,26 @@ func (app *App) createShare(w http.ResponseWriter, r *http.Request) {
 	app.writeAPI(w, http.StatusCreated, sh)
 }
 
+func (app *App) getUploadOffset(w http.ResponseWriter, r *http.Request) {
+	actor := auth.UserFromContext(r.Context())
+	sh, err := app.Share.GetShare(r.PathValue("id"), actor)
+	if err != nil {
+		app.apiError(w, r, err)
+		return
+	}
+
+	upload, err := app.Share.GetUploadState(sh, actor)
+	if err != nil {
+		app.apiError(w, r, err)
+		return
+	}
+
+	offset := upload.Written(r.PathValue("fileID"))
+
+	w.Header().Set("Upload-Offset", strconv.FormatInt(offset, 10))
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (app *App) addFilesToShare(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Files []share.FileRequest `json:"files"`
