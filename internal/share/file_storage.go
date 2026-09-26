@@ -2,6 +2,8 @@ package share
 
 import (
 	"archive/zip"
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -133,6 +135,10 @@ func (s *FileStorage) WriteFileStream(shareID string, fileID string, expectedSiz
 	remaining := expectedSize - offset
 	written, err := io.Copy(f, io.LimitReader(fileReader, remaining))
 	if err != nil {
+		if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, context.Canceled) {
+			return offset + written, nil
+		}
+
 		return 0, err
 	}
 

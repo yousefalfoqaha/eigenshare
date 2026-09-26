@@ -20,7 +20,7 @@ var (
 	ErrShareNotTrashed        = apperr.New(http.StatusConflict, "share is not trashed")
 	ErrLastOwner              = apperr.New(http.StatusConflict, "cannot remove the last owner of a share")
 	ErrOwnerExists            = apperr.New(http.StatusConflict, "user is already an owner of this share")
-	ErrUploadInProgress       = apperr.New(http.StatusConflict, "an upload is already in progress for this file")
+	ErrUploadInProgress       = apperr.New(http.StatusLocked, "an upload is already in progress for this file")
 )
 
 type ChunkOffsetConflictError struct {

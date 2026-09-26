@@ -1,10 +1,12 @@
-{{define "title"}}{{.Content.Share.Handle}}{{end}}
-{{define "content"}}
-
-{{$u := .Content.Upload}}{{$done := uploadedFiles $u .Content.Share.Files}}
+{{define "title"}}{{.Content.Share.Handle}}{{end}} {{define "content"}} {{$u :=
+.Content.Upload}}{{$done := uploadedFiles $u .Content.Share.Files}}
 <div class="title">
   <h1>{{.Content.Share.Handle}}</h1>
-  <a href="/s/{{.Content.Share.Handle}}/download" download> download all (zip) </a>
+  {{if gt (len $done) 0}}
+  <a href="/s/{{.Content.Share.Handle}}/download" download>
+    download all (zip)
+  </a>
+  {{end}}
 </div>
 
 <p>
@@ -30,6 +32,11 @@
           >download</a
         >
       </td>
+    </tr>
+
+    {{else}}
+    <tr>
+      <td colspan="3" class="empty-table">no files</td>
     </tr>
     {{end}}
   </tbody>

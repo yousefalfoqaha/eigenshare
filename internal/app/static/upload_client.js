@@ -22,8 +22,6 @@ async function registerFiles(shareID, files) {
   return (await response.json()) || [];
 }
 
-// ---- NETWORK ABSTRACTIONS ----
-
 async function syncOffset(shareID, fileID, signal) {
   try {
     const res = await fetch(`/api/shares/${shareID}/files/${fileID}/stream`, {
@@ -50,15 +48,37 @@ function putChunk(shareID, fileID, offset, data, onProgress, signal) {
     };
 
     xhr.onload = () => {
-      const header = xhr.getResponseHeader("Upload-Offset");
       if (xhr.status === 204 || xhr.status === 409) {
-        resolve(header !== null ? Number(header) : null);
-      } else {
-        reject(new Error(`HTTP ${xhr.status}`));
+        const header = xhr.getResponseHeader("Upload-Offset");
+        if (header !== null) return resolve(Number(header));
+
+        return reject(
+          new Error(
+            `Server returned ${xhr.status} but missing Upload-Offset header`,
+          ),
+        );
       }
+
+      if (xhr.status === 423 || xhr.status >= 500) {
+        return resolve(null);
+      }
+
+      let errorMsg = "";
+      try {
+        const payload = JSON.parse(xhr.responseText);
+        if (payload.message) errorMsg = payload.message;
+      } catch (e) {}
+
+      reject(
+        new Error(
+          errorMsg
+            ? `Upload rejected: ${errorMsg}`
+            : `Upload rejected (HTTP ${xhr.status})`,
+        ),
+      );
     };
 
-    xhr.onerror = () => resolve(null); // TCP drop -> trigger backoff
+    xhr.onerror = () => resolve(null);
     xhr.onabort = () => reject(new Error("Upload aborted"));
 
     if (signal) {
@@ -68,14 +88,11 @@ function putChunk(shareID, fileID, offset, data, onProgress, signal) {
   });
 }
 
-// ---- UPLOAD ENGINE ----
-
 async function streamFile(shareID, fileID, file, onProgress, signal) {
   const chunkSize = 25 * 1024 * 1024;
   let offset = 0;
   let retries = 0;
 
-  // Scout the true offset before starting
   const initialSync = await syncOffset(shareID, fileID, signal);
   if (initialSync !== null) {
     offset = initialSync;
@@ -95,7 +112,6 @@ async function streamFile(shareID, fileID, file, onProgress, signal) {
       signal,
     );
 
-    // Path A: Clean update
     if (nextOffset !== null) {
       offset = nextOffset;
       if (onProgress) onProgress(offset);
@@ -103,15 +119,13 @@ async function streamFile(shareID, fileID, file, onProgress, signal) {
       continue;
     }
 
-    // Path B: Locked or Dropped. Graceful backoff.
     retries++;
     if (retries > 3) {
-      throw new Error("Upload is already in progress. Please try again.");
+      throw new Error("Connection lost or file is locked. Please try again.");
     }
 
     await new Promise((r) => setTimeout(r, 1000));
 
-    // The Graceful Sync: Ask the server for the exact offset
     const sync = await syncOffset(shareID, fileID, signal);
     if (sync !== null) {
       offset = sync;
@@ -120,9 +134,7 @@ async function streamFile(shareID, fileID, file, onProgress, signal) {
   }
 }
 
-// ---- QUEUE MANAGER ----
-
-class HeadlessQueue {
+class UploadClient {
   constructor(shareID, handlers) {
     this.shareID = shareID;
     this.on = handlers;
