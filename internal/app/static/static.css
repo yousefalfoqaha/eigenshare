@@ -7,6 +7,7 @@ body {
   font-family: system-ui, sans-serif;
   max-width: 960px;
   margin: 0 auto;
+  padding: 0 1rem 1rem 1rem;
 }
 
 input {

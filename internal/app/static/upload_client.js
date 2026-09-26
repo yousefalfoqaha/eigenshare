@@ -72,14 +72,14 @@ function putChunk(shareID, fileID, offset, data, onProgress, signal) {
       reject(
         new Error(
           errorMsg
-            ? `Upload rejected: ${errorMsg}`
-            : `Upload rejected (HTTP ${xhr.status})`,
+            ? `upload rejected: ${errorMsg}`
+            : `upload rejected (HTTP ${xhr.status})`,
         ),
       );
     };
 
     xhr.onerror = () => resolve(null);
-    xhr.onabort = () => reject(new Error("Upload aborted"));
+    xhr.onabort = () => reject(new Error("upload aborted"));
 
     if (signal) {
       signal.addEventListener("abort", () => xhr.abort(), { once: true });
@@ -100,7 +100,7 @@ async function streamFile(shareID, fileID, file, onProgress, signal) {
   }
 
   while (offset < file.size) {
-    if (signal?.aborted) throw new Error("Upload aborted");
+    if (signal?.aborted) throw new Error("upload aborted");
 
     const chunk = file.slice(offset, offset + chunkSize);
     const nextOffset = await putChunk(
@@ -121,7 +121,7 @@ async function streamFile(shareID, fileID, file, onProgress, signal) {
 
     retries++;
     if (retries > 3) {
-      throw new Error("Connection lost or file is locked. Please try again.");
+      throw new Error("connection lost or file is locked.");
     }
 
     await new Promise((r) => setTimeout(r, 1000));
@@ -316,7 +316,7 @@ class UploadClient {
             ),
           );
           this.on.onError?.(
-            `Failed to upload ${uploadingTask.name}: ${err.message}`,
+            `failed to upload ${uploadingTask.name}: ${err.message}`,
           );
         }
       }

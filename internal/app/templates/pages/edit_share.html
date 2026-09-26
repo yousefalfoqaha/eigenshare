@@ -120,8 +120,6 @@
       const li = rows.get(task.id);
       if (!li) return;
       
-      li.dataset.state = task.status.toLowerCase();
-      
       const resumeBtn = li.querySelector("[data-resume]");
       const retryBtn = li.querySelector("[data-retry]");
       const deleteBtn = li.querySelector("[data-delete]");
@@ -147,7 +145,7 @@
       nameEl.textContent = nameEl.title = task.name;
       bar.max = task.expectedSize || 1;
       bar.value = task.status === "DONE" ? bar.max : task.loaded;
-      meta.textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${task.status}`;
+      meta.textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${task.status.toLowerCase()}`;
     }
 
     const queue = new UploadClient(shareID, {
