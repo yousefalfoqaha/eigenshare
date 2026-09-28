@@ -1,26 +1,36 @@
 package share
 
 import (
+	"errors"
 	"fmt"
-	"net/http"
-
-	"eigenshare/internal/apperr"
 )
 
 var (
-	ErrHandleExists           = apperr.New(http.StatusConflict, "handle already exists")
-	ErrShareNotFound          = apperr.New(http.StatusNotFound, "share not found")
-	ErrFileNotFound           = apperr.New(http.StatusNotFound, "file not found")
-	ErrFileNotComplete        = apperr.New(http.StatusConflict, "file is not complete")
-	ErrChunkOffsetExceedsSize = apperr.New(http.StatusConflict, "chunk offset exceeds declared file size")
-	ErrInvalidChunkOffset     = apperr.New(http.StatusBadRequest, "invalid chunk offset")
-	ErrInvalidRequest         = apperr.New(http.StatusBadRequest, "invalid request")
-	ErrShareVersionConflict   = apperr.New(http.StatusConflict, "share was modified concurrently")
-	ErrShareTrashed           = apperr.New(http.StatusConflict, "share is trashed")
-	ErrShareNotTrashed        = apperr.New(http.StatusConflict, "share is not trashed")
-	ErrLastOwner              = apperr.New(http.StatusConflict, "cannot remove the last owner of a share")
-	ErrOwnerExists            = apperr.New(http.StatusConflict, "user is already an owner of this share")
-	ErrUploadInProgress       = apperr.New(http.StatusLocked, "an upload is already in progress for this file")
+	// 400 — invalid input
+	ErrInvalidRequest     = errors.New("invalid request")
+	ErrInvalidHandle      = errors.New("invalid share handle")
+	ErrInvalidFileName    = errors.New("invalid file name")
+	ErrInvalidFileSize    = errors.New("invalid file size")
+	ErrInvalidExpiry      = errors.New("invalid expiry")
+	ErrInvalidVisibility  = errors.New("invalid visibility")
+	ErrInvalidChunkOffset = errors.New("invalid chunk offset")
+
+	// 404 — not found
+	ErrShareNotFound = errors.New("share not found")
+	ErrFileNotFound  = errors.New("file not found")
+
+	// 409 — conflict
+	ErrHandleExists           = errors.New("handle already exists")
+	ErrFileNotComplete        = errors.New("file is not complete")
+	ErrChunkOffsetExceedsSize = errors.New("chunk offset exceeds declared file size")
+	ErrShareVersionConflict   = errors.New("share was modified concurrently")
+	ErrShareTrashed           = errors.New("share is trashed")
+	ErrShareNotTrashed        = errors.New("share is not trashed")
+	ErrLastOwner              = errors.New("cannot remove the last owner of a share")
+	ErrOwnerExists            = errors.New("user is already an owner of this share")
+
+	// 423 — locked
+	ErrUploadInProgress = errors.New("an upload is already in progress for this file")
 )
 
 type ChunkOffsetConflictError struct {
@@ -30,10 +40,6 @@ type ChunkOffsetConflictError struct {
 
 func (e *ChunkOffsetConflictError) Error() string {
 	return fmt.Sprintf("invalid chunk offset; current offset is %d", e.CurrentOffset)
-}
-
-func (e *ChunkOffsetConflictError) HTTPStatus() int {
-	return http.StatusConflict
 }
 
 func (e *ChunkOffsetConflictError) Unwrap() error {

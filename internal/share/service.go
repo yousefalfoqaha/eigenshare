@@ -80,7 +80,7 @@ func (s *ShareService) RequestShare(req ShareRequest, u *user.User) (*Share, err
 	}
 	sh, err := NewShare("", req.Handle, req.ExpiryMinutes, req.Visibility, creatorID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		return nil, err
 	}
 
 	return s.repo.Save(sh)
@@ -100,7 +100,7 @@ func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest, u *us
 	for _, req := range fileReqs {
 		file, err := NewFile(req.Name, req.ExpectedSize)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+			return nil, err
 		}
 		file.ID = uuid.New().String()
 		sh.Files = append(sh.Files, *file)
@@ -330,7 +330,7 @@ func (s *ShareService) RemoveOwner(shareID string, u *user.User, ownerID string)
 
 func (s *ShareService) SetVisibility(shareID string, u *user.User, visibility Visibility) error {
 	if !visibility.Valid() {
-		return fmt.Errorf("%w: visibility must be public or private", ErrInvalidRequest)
+		return fmt.Errorf("visibility must be public or private: %w", ErrInvalidVisibility)
 	}
 
 	sh, err := s.manageableShare(shareID, u)

@@ -2,12 +2,11 @@ package share
 
 import (
 	"encoding/json"
-	"net/http"
+	"fmt"
 	"regexp"
 	"slices"
 	"time"
 
-	"eigenshare/internal/apperr"
 	"eigenshare/internal/timestamp"
 	"eigenshare/internal/user"
 )
@@ -42,19 +41,19 @@ type Share struct {
 
 func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creatorID string) (*Share, error) {
 	if handle == "" {
-		return nil, apperr.New(http.StatusBadRequest, "share handle is required")
+		return nil, fmt.Errorf("share handle is required: %w", ErrInvalidHandle)
 	}
 	if !validShareHandle.MatchString(handle) {
-		return nil, apperr.New(http.StatusBadRequest, "share handle may only contain letters, numbers, hyphens and underscores (3-64 chars)")
+		return nil, fmt.Errorf("share handle may only contain letters, numbers, hyphens and underscores (3-64 chars): %w", ErrInvalidHandle)
 	}
 	if expiryMinutes < 0 {
-		return nil, apperr.New(http.StatusBadRequest, "expiry minutes must be non-negative")
+		return nil, fmt.Errorf("expiry minutes must be non-negative: %w", ErrInvalidExpiry)
 	}
 	if visibility == "" {
 		visibility = VisibilityPrivate
 	}
 	if !visibility.Valid() {
-		return nil, apperr.New(http.StatusBadRequest, "visibility must be public or private")
+		return nil, fmt.Errorf("visibility must be public or private: %w", ErrInvalidVisibility)
 	}
 
 	createdAt := timestamp.Now()
@@ -102,13 +101,13 @@ type File struct {
 
 func NewFile(name string, expectedSize int64) (*File, error) {
 	if name == "" {
-		return nil, apperr.New(http.StatusBadRequest, "file name is required")
+		return nil, fmt.Errorf("file name is required: %w", ErrInvalidFileName)
 	}
 	if !validFileName.MatchString(name) {
-		return nil, apperr.New(http.StatusBadRequest, "file name is invalid")
+		return nil, fmt.Errorf("file name is invalid: %w", ErrInvalidFileName)
 	}
 	if expectedSize <= 0 {
-		return nil, apperr.New(http.StatusBadRequest, "file size must be greater than 0")
+		return nil, fmt.Errorf("file size must be greater than 0: %w", ErrInvalidFileSize)
 	}
 	return &File{
 		Name:         name,

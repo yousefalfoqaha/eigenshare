@@ -40,5 +40,5 @@ func initSchema(s *Database) {
 		log.Fatal(err.Error())
 	}
 
-	log.Println("Initialized database schema")
+	log.Println("initialized database schema")
 }

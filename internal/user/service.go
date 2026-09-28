@@ -1,9 +1,7 @@
 package user
 
 import (
-	"net/http"
-
-	"eigenshare/internal/apperr"
+	"fmt"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -27,7 +25,7 @@ func (s *UserService) CreateUser(req CreateRequest) (*User, error) {
 	}
 
 	if len(req.Password) < 8 {
-		return nil, apperr.New(http.StatusBadRequest, "password must be at least 8 characters")
+		return nil, fmt.Errorf("password must be at least 8 characters: %w", ErrInvalidPassword)
 	}
 
 	hash, err := hashPassword(req.Password)
@@ -73,7 +71,7 @@ func (s *UserService) UpdateUser(id, actorID string, req UpdateRequest) (*User, 
 
 	if req.Password != "" {
 		if len(req.Password) < 8 {
-			return nil, apperr.New(http.StatusBadRequest, "password must be at least 8 characters")
+			return nil, fmt.Errorf("password must be at least 8 characters: %w", ErrInvalidPassword)
 		}
 		hash, err := hashPassword(req.Password)
 		if err != nil {
