@@ -22,7 +22,19 @@ func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.S
 	return &Controller{Auth: authSvc, User: userSvc, Share: shareSvc}
 }
 
-func (c *Controller) Wrap(h Handler) http.HandlerFunc {
+func (c *Controller) Routes() http.Handler {
+	mux := http.NewServeMux()
+
+	mux.Handle("POST /shares", c.handle(c.CreateShare))
+	mux.Handle("POST /shares/{id}/files", c.handle(c.AddFilesToShare))
+	mux.Handle("HEAD /shares/{id}/files/{fileID}/stream", c.handle(c.GetUploadOffset))
+	mux.Handle("PUT /shares/{id}/files/{fileID}/stream", c.handle(c.StreamFile))
+	mux.Handle("DELETE /shares/{id}/files/{fileID}", c.handle(c.DeleteShareFile))
+
+	return middleware.WithAuth(writeUnauthorized)(mux)
+}
+
+func (c *Controller) handle(h Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := h(w, r); err != nil {
 			status, msg := middleware.MapError(err)
@@ -33,24 +45,7 @@ func (c *Controller) Wrap(h Handler) http.HandlerFunc {
 	}
 }
 
-func (c *Controller) RequireLogin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(middleware.SessionCookieName)
-		if err != nil || cookie.Value == "" {
-			writeUnauthorized(w)
-			return
-		}
-		u, err := c.Auth.ValidateSession(cookie.Value)
-		if err != nil {
-			middleware.ClearSessionCookie(w)
-			writeUnauthorized(w)
-			return
-		}
-		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), u)))
-	})
-}
-
-func writeUnauthorized(w http.ResponseWriter) {
+func writeUnauthorized(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(map[string]any{
