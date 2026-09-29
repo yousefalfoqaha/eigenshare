@@ -34,13 +34,13 @@ func main() {
 	userSvc := user.NewUserService(userRepo)
 	sessionRepo := session.NewSessionRepository(db)
 	shareRepo := share.NewShareRepository(db)
-	fileStr := share.NewFileStorage(DATA_PATH)
-	shareSvc := share.NewShareService(shareRepo, fileStr, userSvc)
+	fileStore := share.NewFileStorage(DATA_PATH)
+	shareSvc := share.NewShareService(shareRepo, fileStore, userSvc)
 	sessionSvc := session.NewSessionService(userSvc, sessionRepo)
 
 	cleanerCtx, stopCleaner := context.WithCancel(context.Background())
 	defer stopCleaner()
-	cleaner := share.NewCleaner(shareRepo, fileStr)
+	cleaner := share.NewCleaner(shareRepo, fileStore)
 	go cleaner.Run(cleanerCtx, 1*time.Minute)
 
 	if err := userSvc.SeedAdmin(); err != nil {
