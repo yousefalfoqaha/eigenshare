@@ -12,49 +12,51 @@ import (
 	"time"
 
 	"eigenshare/internal/api"
-	"eigenshare/internal/auth"
-	"eigenshare/internal/infra"
+	"eigenshare/internal/database"
 	"eigenshare/internal/middleware"
 	"eigenshare/internal/page"
+	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
 
 const (
-	PORT      int = 8080
-	DATA_PATH     = "data"
+	PORT                 int    = 8080
+	DATA_PATH            string = "data"
+	SECURE_COOKIE        bool   = false
+	SESSION_DURATION_SEC int    = 60 * 24 * 7
 )
 
 func main() {
-	db := infra.NewDatabase("./data.db")
+	db := database.NewDatabase("./data.db")
 
 	userRepo := user.NewUserRepository(db)
 	userSvc := user.NewUserService(userRepo)
-	sessionRepo := auth.NewSessionRepository(db)
+	sessionRepo := session.NewSessionRepository(db)
 	shareRepo := share.NewShareRepository(db)
-	fileStorage := share.NewFileStorage(DATA_PATH)
-	shareService := share.NewShareService(shareRepo, fileStorage, userSvc)
-	authService := auth.NewAuthService(userSvc, sessionRepo)
+	fileStr := share.NewFileStorage(DATA_PATH)
+	shareSvc := share.NewShareService(shareRepo, fileStr, userSvc)
+	sessionSvc := session.NewSessionService(userSvc, sessionRepo)
 
-	maintenanceCtx, stopMaintenance := context.WithCancel(context.Background())
-	defer stopMaintenance()
-	cleaner := share.NewCleaner(shareRepo, fileStorage)
-	go cleaner.Run(maintenanceCtx, 1*time.Minute)
+	cleanerCtx, stopCleaner := context.WithCancel(context.Background())
+	defer stopCleaner()
+	cleaner := share.NewCleaner(shareRepo, fileStr)
+	go cleaner.Run(cleanerCtx, 1*time.Minute)
 
 	if err := userSvc.SeedAdmin(); err != nil {
 		log.Printf("Failed to seed admin: %v\n", err)
 	}
 
-	apiController := api.New(authService, userSvc, shareService)
-	pageController := page.New(authService, userSvc, shareService)
+	apiContr := api.New(sessionSvc, userSvc, shareSvc)
+	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, SECURE_COOKIE, SESSION_DURATION_SEC)
 
 	mux := http.NewServeMux()
-	mux.Handle("/api/", http.StripPrefix("/api", apiController.Routes()))
-	mux.Handle("/", pageController.Routes())
+	mux.Handle("/", pageContr.Routes())
+	mux.Handle("/api/", http.StripPrefix("/api", apiContr.Routes()))
 
 	server := http.Server{
 		Addr:    ":" + strconv.Itoa(PORT),
-		Handler: middleware.Logging(middleware.WithUser(authService)(mux)),
+		Handler: middleware.Logger(middleware.WithSession(sessionSvc, SECURE_COOKIE)(mux)),
 	}
 
 	go func() {

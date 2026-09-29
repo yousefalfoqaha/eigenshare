@@ -4,19 +4,19 @@ import (
 	"database/sql"
 	"errors"
 
-	"eigenshare/internal/infra"
+	"eigenshare/internal/database"
 )
 
 type UserRepository struct {
-	storage *infra.Database
+	db *database.Database
 }
 
-func NewUserRepository(db *infra.Database) *UserRepository {
-	return &UserRepository{storage: db}
+func NewUserRepository(db *database.Database) *UserRepository {
+	return &UserRepository{db: db}
 }
 
 func (r *UserRepository) Save(u User) error {
-	_, err := r.storage.DB.Exec(
+	_, err := r.db.DB.Exec(
 		"INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
 		u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.CreatedAt.String(),
 	)
@@ -24,7 +24,7 @@ func (r *UserRepository) Save(u User) error {
 }
 
 func (r *UserRepository) Update(u User) error {
-	_, err := r.storage.DB.Exec(
+	_, err := r.db.DB.Exec(
 		"UPDATE users SET username = ?, password_hash = ?, is_admin = ? WHERE id = ?",
 		u.Username, u.PasswordHash, u.IsAdmin, u.ID,
 	)
@@ -33,28 +33,28 @@ func (r *UserRepository) Update(u User) error {
 
 func (r *UserRepository) GetByUsername(username string) (*User, error) {
 	var u User
-	err := r.storage.DB.QueryRow(
+	err := r.db.DB.QueryRow(
 		"SELECT id, username, password_hash, is_admin, created_at FROM users WHERE username = ?",
 		username,
 	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, ErrUserNotFound
 		}
 		return nil, err
 	}
 	return &u, nil
 }
 
-func (r *UserRepository) GetByID(id string) (*User, error) {
+func (r *UserRepository) Get(id string) (*User, error) {
 	var u User
-	err := r.storage.DB.QueryRow(
+	err := r.db.DB.QueryRow(
 		"SELECT id, username, password_hash, is_admin, created_at FROM users WHERE id = ?",
 		id,
 	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (r *UserRepository) GetByID(id string) (*User, error) {
 }
 
 func (r *UserRepository) GetAll() ([]*User, error) {
-	rows, err := r.storage.DB.Query(
+	rows, err := r.db.DB.Query(
 		"SELECT id, username, password_hash, is_admin, created_at FROM users ORDER BY created_at",
 	)
 	if err != nil {
@@ -82,18 +82,18 @@ func (r *UserRepository) GetAll() ([]*User, error) {
 }
 
 func (r *UserRepository) Delete(id string) error {
-	_, err := r.storage.DB.Exec("DELETE FROM users WHERE id = ?", id)
+	_, err := r.db.DB.Exec("DELETE FROM users WHERE id = ?", id)
 	return err
 }
 
 func (r *UserRepository) Count() (int, error) {
 	var count int
-	err := r.storage.DB.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	err := r.db.DB.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
 	return count, err
 }
 
 func (r *UserRepository) CountAdmins() (int, error) {
 	var count int
-	err := r.storage.DB.QueryRow("SELECT COUNT(*) FROM users WHERE is_admin = 1").Scan(&count)
+	err := r.db.DB.QueryRow("SELECT COUNT(*) FROM users WHERE is_admin = 1").Scan(&count)
 	return count, err
 }

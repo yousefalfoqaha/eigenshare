@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"eigenshare/internal/auth"
+	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 )
 
@@ -16,7 +16,7 @@ func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
 		return share.ErrInvalidRequest
 	}
 
-	sh, err := c.Share.RequestShare(req, auth.UserFromContext(r.Context()))
+	sh, err := c.Share.RequestShare(req, session.UserFromContext(r.Context()))
 	if err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 		return share.ErrInvalidRequest
 	}
 
-	newFiles, err := c.Share.UploadFiles(r.PathValue("id"), req.Files, auth.UserFromContext(r.Context()))
+	newFiles, err := c.Share.UploadFiles(r.PathValue("id"), req.Files, session.UserFromContext(r.Context()))
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 }
 
 func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) error {
-	actor := auth.UserFromContext(r.Context())
+	actor := session.UserFromContext(r.Context())
 	sh, err := c.Share.GetShare(r.PathValue("id"), actor)
 	if err != nil {
 		return err
@@ -69,7 +69,8 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 		return share.ErrInvalidRequest
 	}
 
-	bytesWritten, err := c.Share.StreamFile(r.PathValue("id"), r.PathValue("fileID"), offset, r.Body, auth.UserFromContext(r.Context()))
+	bytesWritten, err := c.Share.StreamFile(
+		r.PathValue("id"), r.PathValue("fileID"), offset, r.Body, session.UserFromContext(r.Context()))
 	if err != nil {
 		if conflict, ok := errors.AsType[*share.ChunkOffsetConflictError](err); ok {
 			w.Header().Set("Upload-Offset", strconv.FormatInt(conflict.CurrentOffset, 10))
@@ -83,7 +84,7 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) DeleteShareFile(w http.ResponseWriter, r *http.Request) error {
-	if err := c.Share.DeleteFile(r.PathValue("id"), r.PathValue("fileID"), auth.UserFromContext(r.Context())); err != nil {
+	if err := c.Share.DeleteFile(r.PathValue("id"), r.PathValue("fileID"), session.UserFromContext(r.Context())); err != nil {
 		return err
 	}
 

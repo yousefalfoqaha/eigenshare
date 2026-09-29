@@ -1,19 +1,19 @@
-package auth
+package session
 
 import (
 	"database/sql"
 	"errors"
 
-	"eigenshare/internal/infra"
+	"eigenshare/internal/database"
 	"eigenshare/internal/timestamp"
 )
 
 type SessionRepository struct {
-	storage *infra.Database
+	db *database.Database
 }
 
-func NewSessionRepository(db *infra.Database) *SessionRepository {
-	return &SessionRepository{storage: db}
+func NewSessionRepository(db *database.Database) *SessionRepository {
+	return &SessionRepository{db: db}
 }
 
 func (r *SessionRepository) Save(s Session) error {
@@ -22,7 +22,7 @@ func (r *SessionRepository) Save(s Session) error {
 		expiresAt = s.ExpiresAt.String()
 	}
 
-	_, err := r.storage.DB.Exec(
+	_, err := r.db.DB.Exec(
 		"INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
 		s.Token, s.UserID, s.CreatedAt.String(), expiresAt,
 	)
@@ -33,13 +33,13 @@ func (r *SessionRepository) Get(token string) (*Session, error) {
 	var s Session
 	var expiresAt sql.NullString
 
-	err := r.storage.DB.QueryRow(
+	err := r.db.DB.QueryRow(
 		"SELECT token, user_id, created_at, expires_at FROM sessions WHERE token = ?",
 		token,
 	).Scan(&s.Token, &s.UserID, &s.CreatedAt, &expiresAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, ErrSessionNotFound
 		}
 		return nil, err
 	}
@@ -56,6 +56,6 @@ func (r *SessionRepository) Get(token string) (*Session, error) {
 }
 
 func (r *SessionRepository) Delete(token string) error {
-	_, err := r.storage.DB.Exec("DELETE FROM sessions WHERE token = ?", token)
+	_, err := r.db.DB.Exec("DELETE FROM sessions WHERE token = ?", token)
 	return err
 }

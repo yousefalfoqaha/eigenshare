@@ -1,4 +1,4 @@
-package auth
+package session
 
 import (
 	"time"
@@ -10,16 +10,16 @@ import (
 
 const sessionExpiryMinutes = 60 * 24 * 7
 
-type AuthService struct {
+type SessionService struct {
 	userSvc     *user.UserService
 	sessionRepo *SessionRepository
 }
 
-func NewAuthService(userSvc *user.UserService, sessionRepo *SessionRepository) *AuthService {
-	return &AuthService{userSvc: userSvc, sessionRepo: sessionRepo}
+func NewSessionService(userSvc *user.UserService, sessionRepo *SessionRepository) *SessionService {
+	return &SessionService{userSvc: userSvc, sessionRepo: sessionRepo}
 }
 
-func (s *AuthService) Login(c LoginRequest) (*Session, error) {
+func (s *SessionService) Login(c LoginRequest) (*Session, error) {
 	u, err := s.userSvc.GetUserByUsername(c.Username)
 	if err != nil {
 		return nil, err
@@ -45,20 +45,17 @@ func (s *AuthService) Login(c LoginRequest) (*Session, error) {
 	return session, nil
 }
 
-func (s *AuthService) Logout(token string) error {
+func (s *SessionService) Logout(token string) error {
 	if token == "" {
 		return nil
 	}
 	return s.sessionRepo.Delete(token)
 }
 
-func (s *AuthService) ValidateSession(token string) (*user.User, error) {
+func (s *SessionService) Validate(token string) (*user.User, error) {
 	session, err := s.sessionRepo.Get(token)
 	if err != nil {
 		return nil, err
-	}
-	if session == nil {
-		return nil, ErrSessionNotFound
 	}
 
 	if session.ExpiresAt != nil && time.Time(*session.ExpiresAt).Before(time.Now().UTC()) {
@@ -69,9 +66,6 @@ func (s *AuthService) ValidateSession(token string) (*user.User, error) {
 	u, err := s.userSvc.GetUser(session.UserID)
 	if err != nil {
 		return nil, err
-	}
-	if u == nil {
-		return nil, ErrSessionNotFound
 	}
 
 	return u, nil

@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"eigenshare/internal/auth"
+	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
@@ -26,14 +26,14 @@ func MapError(err error) (int, string) {
 		errors.Is(err, share.ErrInvalidChunkOffset),
 		errors.Is(err, user.ErrInvalidPassword),
 		errors.Is(err, user.ErrInvalidUsername),
-		errors.Is(err, auth.ErrInvalidToken),
-		errors.Is(err, auth.ErrInvalidUserID),
-		errors.Is(err, auth.ErrInvalidExpiry):
+		errors.Is(err, session.ErrInvalidToken),
+		errors.Is(err, session.ErrInvalidUserID),
+		errors.Is(err, session.ErrInvalidExpiry):
 		return http.StatusBadRequest, err.Error()
 
 	// 401 unauthorized
-	case errors.Is(err, auth.ErrInvalidCredentials),
-		errors.Is(err, auth.ErrSessionNotFound):
+	case errors.Is(err, session.ErrInvalidCredentials),
+		errors.Is(err, session.ErrSessionNotFound):
 		return http.StatusUnauthorized, err.Error()
 
 	// 404 not found

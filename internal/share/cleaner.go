@@ -10,12 +10,12 @@ import (
 )
 
 type Cleaner struct {
-	repo    *ShareRepository
-	storage *FileStorage
+	repo  *ShareRepository
+	store *FileStorage
 }
 
 func NewCleaner(repo *ShareRepository, storage *FileStorage) *Cleaner {
-	return &Cleaner{repo: repo, storage: storage}
+	return &Cleaner{repo: repo, store: storage}
 }
 
 func (e *Cleaner) Run(ctx context.Context, interval time.Duration) {
@@ -96,7 +96,7 @@ func (e *Cleaner) deleteOrphaned() error {
 		return err
 	}
 
-	storageKeys, err := e.storage.GetKeys()
+	storageKeys, err := e.store.GetKeys()
 	if err != nil {
 		return err
 	}
@@ -108,9 +108,9 @@ func (e *Cleaner) deleteOrphaned() error {
 
 		shareID, fileID, isFile := strings.Cut(key, "/")
 		if isFile {
-			_ = e.storage.RemoveFile(shareID, fileID)
+			_ = e.store.RemoveFile(shareID, fileID)
 		} else {
-			_ = e.storage.RemoveShareFolder(shareID)
+			_ = e.store.RemoveShareFolder(shareID)
 		}
 	}
 

@@ -1,4 +1,4 @@
-package infra
+package database
 
 import (
 	"database/sql"

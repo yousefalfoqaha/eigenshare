@@ -1,6 +1,7 @@
 package user
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -17,7 +18,7 @@ func NewUserService(userRepo *UserRepository) *UserService {
 
 func (s *UserService) CreateUser(req CreateRequest) (*User, error) {
 	existing, err := s.userRepo.GetByUsername(req.Username)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		return nil, err
 	}
 	if existing != nil {
@@ -46,12 +47,9 @@ func (s *UserService) CreateUser(req CreateRequest) (*User, error) {
 }
 
 func (s *UserService) UpdateUser(id, actorID string, req UpdateRequest) (*User, error) {
-	u, err := s.userRepo.GetByID(id)
+	u, err := s.userRepo.Get(id)
 	if err != nil {
 		return nil, err
-	}
-	if u == nil {
-		return nil, ErrUserNotFound
 	}
 
 	if id == actorID && u.IsAdmin && !req.IsAdmin {
@@ -60,7 +58,7 @@ func (s *UserService) UpdateUser(id, actorID string, req UpdateRequest) (*User, 
 
 	if req.Username != u.Username {
 		existing, err := s.userRepo.GetByUsername(req.Username)
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrUserNotFound) {
 			return nil, err
 		}
 		if existing != nil {
@@ -94,12 +92,9 @@ func (s *UserService) DeleteUser(id, actorID string) error {
 		return ErrCannotDeleteSelf
 	}
 
-	target, err := s.userRepo.GetByID(id)
+	target, err := s.userRepo.Get(id)
 	if err != nil {
 		return err
-	}
-	if target == nil {
-		return ErrUserNotFound
 	}
 
 	if target.IsAdmin {
@@ -116,13 +111,11 @@ func (s *UserService) DeleteUser(id, actorID string) error {
 }
 
 func (s *UserService) GetUser(id string) (*User, error) {
-	u, err := s.userRepo.GetByID(id)
+	u, err := s.userRepo.Get(id)
 	if err != nil {
 		return nil, err
 	}
-	if u == nil {
-		return nil, ErrUserNotFound
-	}
+
 	return u, nil
 }
 

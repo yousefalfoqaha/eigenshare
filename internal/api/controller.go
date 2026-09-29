@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"eigenshare/internal/auth"
 	"eigenshare/internal/middleware"
+	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
@@ -13,12 +13,12 @@ import (
 type Handler func(w http.ResponseWriter, r *http.Request) error
 
 type Controller struct {
-	Auth  *auth.AuthService
+	Auth  *session.SessionService
 	User  *user.UserService
 	Share *share.ShareService
 }
 
-func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.ShareService) *Controller {
+func New(authSvc *session.SessionService, userSvc *user.UserService, shareSvc *share.ShareService) *Controller {
 	return &Controller{Auth: authSvc, User: userSvc, Share: shareSvc}
 }
 
@@ -31,7 +31,7 @@ func (c *Controller) Routes() http.Handler {
 	mux.Handle("PUT /shares/{id}/files/{fileID}/stream", c.handle(c.StreamFile))
 	mux.Handle("DELETE /shares/{id}/files/{fileID}", c.handle(c.DeleteShareFile))
 
-	return middleware.WithAuth(writeUnauthorized)(mux)
+	return middleware.RequireSession(writeUnauthorized)(mux)
 }
 
 func (c *Controller) handle(h Handler) http.HandlerFunc {

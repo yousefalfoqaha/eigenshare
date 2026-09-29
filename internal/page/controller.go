@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"eigenshare/internal/auth"
 	"eigenshare/internal/middleware"
+	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
@@ -23,15 +23,23 @@ var staticFS embed.FS
 type Handler func(w http.ResponseWriter, r *http.Request) error
 
 type Controller struct {
-	Auth      *auth.AuthService
-	User      *user.UserService
-	Share     *share.ShareService
-	templates map[string]*template.Template
-	errorTmpl *template.Template
-	static    http.Handler
+	sessionSvc      *session.SessionService
+	userSvc         *user.UserService
+	shareSvc        *share.ShareService
+	templs          map[string]*template.Template
+	errorTmpl       *template.Template
+	static          http.Handler
+	secureCookie    bool
+	sessionDuration int
 }
 
-func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.ShareService) *Controller {
+func NewController(
+	authSvc *session.SessionService,
+	userSvc *user.UserService,
+	shareSvc *share.ShareService,
+	secureCookie bool,
+	sessionDuration int,
+) *Controller {
 	funcs := template.FuncMap{
 		"uploadedFiles":        uploadedFiles,
 		"uploadedSize":         uploadedSize,
@@ -66,25 +74,23 @@ func New(authSvc *auth.AuthService, userSvc *user.UserService, shareSvc *share.S
 	}
 
 	return &Controller{
-		Auth:      authSvc,
-		User:      userSvc,
-		Share:     shareSvc,
-		templates: pages,
-		errorTmpl: errorTmpl,
-		static:    http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
+		sessionSvc:      authSvc,
+		userSvc:         userSvc,
+		shareSvc:        shareSvc,
+		templs:          pages,
+		errorTmpl:       errorTmpl,
+		static:          http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
+		secureCookie:    secureCookie,
+		sessionDuration: sessionDuration,
 	}
-}
-
-func (c *Controller) StaticHandler() http.Handler {
-	return c.static
 }
 
 func (c *Controller) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /static/", c.StaticHandler())
+	mux.Handle("GET /static/", c.static)
 
-	withAuth := middleware.WithAuth(redirectToLogin)
-	withAdmin := middleware.WithAdmin(forbidden)
+	requireSession := middleware.RequireSession(redirectToLogin)
+	requireAdmin := middleware.RequireAdmin(forbidden)
 
 	pub := http.NewServeMux()
 	pub.Handle("GET /login", c.handle(c.LoginPage))
@@ -113,13 +119,13 @@ func (c *Controller) Routes() http.Handler {
 	prot.Handle("GET /trash", c.handle(c.TrashPage))
 	prot.Handle("GET /users", c.handle(c.UsersPage))
 
-	prot.Handle("GET /users/new", withAdmin(c.handle(c.NewUserPage)))
-	prot.Handle("POST /users", withAdmin(c.handle(c.CreateUser)))
-	prot.Handle("GET /users/{id}/edit", withAdmin(c.handle(c.EditUserPage)))
-	prot.Handle("POST /users/{id}", withAdmin(c.handle(c.UpdateUser)))
-	prot.Handle("POST /users/{id}/delete", withAdmin(c.handle(c.DeleteUser)))
+	prot.Handle("GET /users/new", requireAdmin(c.handle(c.NewUserPage)))
+	prot.Handle("POST /users", requireAdmin(c.handle(c.CreateUser)))
+	prot.Handle("GET /users/{id}/edit", requireAdmin(c.handle(c.EditUserPage)))
+	prot.Handle("POST /users/{id}", requireAdmin(c.handle(c.UpdateUser)))
+	prot.Handle("POST /users/{id}/delete", requireAdmin(c.handle(c.DeleteUser)))
 
-	mux.Handle("/", withAuth(prot))
+	mux.Handle("/", requireSession(prot))
 
 	return mux
 }
@@ -144,10 +150,10 @@ type pageData struct {
 	Content     any
 }
 
-func (c *Controller) render(w http.ResponseWriter, r *http.Request, tmpl string, content any, domainErr error) error {
+func (c *Controller) render(w http.ResponseWriter, r *http.Request, tmpl string, content any, err error) error {
 	banner := ""
-	if domainErr != nil {
-		_, banner = middleware.MapError(domainErr)
+	if err != nil {
+		_, banner = middleware.MapError(err)
 	}
 	if banner == "" && r.URL.Query().Has("err") {
 		banner = r.URL.Query().Get("err")
@@ -155,12 +161,12 @@ func (c *Controller) render(w http.ResponseWriter, r *http.Request, tmpl string,
 
 	pg := pageData{
 		Banner:      banner,
-		CurrentUser: auth.UserFromContext(r.Context()),
+		CurrentUser: session.UserFromContext(r.Context()),
 		Content:     content,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return c.templates[tmpl].ExecuteTemplate(w, "layout", &pg)
+	return c.templs[tmpl].ExecuteTemplate(w, "layout", &pg)
 }
 
 func redirectToLogin(w http.ResponseWriter, r *http.Request) {

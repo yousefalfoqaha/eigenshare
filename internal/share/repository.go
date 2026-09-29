@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"strings"
 
-	"eigenshare/internal/infra"
+	"eigenshare/internal/database"
 	"eigenshare/internal/timestamp"
 
 	"github.com/google/uuid"
 )
 
 type ShareRepository struct {
-	db *infra.Database
+	db *database.Database
 }
 
-func NewShareRepository(db *infra.Database) *ShareRepository {
+func NewShareRepository(db *database.Database) *ShareRepository {
 	return &ShareRepository{db: db}
 }
 

@@ -1,4 +1,4 @@
-package auth
+package session
 
 type LoginRequest struct {
 	Username string `form:"username" json:"username"`

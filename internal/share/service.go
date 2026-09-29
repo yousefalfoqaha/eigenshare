@@ -1,8 +1,6 @@
 package share
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -14,37 +12,26 @@ import (
 )
 
 type ShareService struct {
-	repo    *ShareRepository
-	storage *FileStorage
-	users   *user.UserService
+	repo  *ShareRepository
+	store *FileStorage
+	users *user.UserService
 }
 
 func NewShareService(repo *ShareRepository, fs *FileStorage, users *user.UserService) *ShareService {
 	return &ShareService{
-		repo:    repo,
-		storage: fs,
-		users:   users,
+		repo:  repo,
+		store: fs,
+		users: users,
 	}
-}
-
-func (s *ShareService) manageableShare(id string, u *user.User) (*Share, error) {
-	sh, err := s.repo.Get(id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrShareNotFound
-		}
-		return nil, err
-	}
-	if !sh.CanManage(u) {
-		return nil, ErrShareNotFound
-	}
-	return sh, nil
 }
 
 func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, stream io.Reader, u *user.User) (int64, error) {
-	sh, err := s.manageableShare(shareID, u)
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		return 0, err
+	}
+	if !sh.CanManage(u) {
+		return 0, ErrShareNotFound
 	}
 	if sh.Trashed() {
 		return 0, ErrShareTrashed
@@ -65,7 +52,7 @@ func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, s
 		return 0, ErrChunkOffsetExceedsSize
 	}
 
-	bytesWritten, err := s.storage.WriteFileStream(shareID, file.ID, file.ExpectedSize, offset, stream)
+	bytesWritten, err := s.store.WriteFileStream(shareID, file.ID, file.ExpectedSize, offset, stream)
 	if err != nil {
 		return 0, err
 	}
@@ -87,9 +74,12 @@ func (s *ShareService) RequestShare(req ShareRequest, u *user.User) (*Share, err
 }
 
 func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest, u *user.User) ([]File, error) {
-	sh, err := s.manageableShare(shareID, u)
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		return nil, err
+	}
+	if !sh.CanManage(u) {
+		return nil, ErrShareNotFound
 	}
 	if sh.Trashed() {
 		return nil, ErrShareTrashed
@@ -132,8 +122,12 @@ func (s *ShareService) Delete(u *user.User, ids ...string) error {
 	}
 
 	for _, id := range ids {
-		if _, err := s.manageableShare(id, u); err != nil {
+		sh, err := s.repo.Get(id)
+		if err != nil {
 			return err
+		}
+		if !sh.CanManage(u) {
+			return ErrShareNotFound
 		}
 	}
 
@@ -163,17 +157,22 @@ func (s *ShareService) GetTrashedShares(u *user.User) ([]*Share, error) {
 }
 
 func (s *ShareService) GetShare(id string, u *user.User) (*Share, error) {
-	return s.manageableShare(id, u)
+	sh, err := s.repo.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if !sh.CanManage(u) {
+		return nil, ErrShareNotFound
+	}
+	return sh, nil
 }
 
-// GetUploadState returns the share's live upload state. It takes the
-// share the caller already fetched so the aggregate is never re-read.
 func (s *ShareService) GetUploadState(sh *Share, u *user.User) (*UploadState, error) {
 	if !sh.CanView(u) {
 		return nil, ErrShareNotFound
 	}
 
-	return s.storage.UploadState(sh.ID)
+	return s.store.UploadState(sh.ID)
 }
 
 func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
@@ -182,7 +181,7 @@ func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
 		return err
 	}
 
-	return s.storage.CreateShareZipStream(*sh, w)
+	return s.store.CreateShareZipStream(*sh, w)
 }
 
 func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, string, error) {
@@ -202,7 +201,7 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, strin
 		return nil, "", ErrFileNotFound
 	}
 
-	upload, err := s.storage.UploadState(sh.ID)
+	upload, err := s.store.UploadState(sh.ID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -211,7 +210,7 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, strin
 		return nil, "", ErrFileNotComplete
 	}
 
-	path, err := s.storage.ShareFilePath(sh.ID, file.ID)
+	path, err := s.store.ShareFilePath(sh.ID, file.ID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -220,9 +219,12 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, strin
 }
 
 func (s *ShareService) DeleteFile(shareID, fileID string, u *user.User) error {
-	sh, err := s.manageableShare(shareID, u)
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		return err
+	}
+	if !sh.CanManage(u) {
+		return ErrShareNotFound
 	}
 	if sh.Trashed() {
 		return ErrShareTrashed
@@ -246,11 +248,13 @@ func (s *ShareService) DeleteFile(shareID, fileID string, u *user.User) error {
 }
 
 func (s *ShareService) TrashShare(shareID string, u *user.User) error {
-	sh, err := s.manageableShare(shareID, u)
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		return err
 	}
-
+	if !sh.CanManage(u) {
+		return ErrShareNotFound
+	}
 	if sh.Trashed() {
 		return ErrShareTrashed
 	}
@@ -264,11 +268,13 @@ func (s *ShareService) TrashShare(shareID string, u *user.User) error {
 }
 
 func (s *ShareService) RecoverShare(shareID string, u *user.User) error {
-	sh, err := s.manageableShare(shareID, u)
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		return err
 	}
-
+	if !sh.CanManage(u) {
+		return ErrShareNotFound
+	}
 	if !sh.Trashed() {
 		return ErrShareNotTrashed
 	}
@@ -281,9 +287,12 @@ func (s *ShareService) RecoverShare(shareID string, u *user.User) error {
 }
 
 func (s *ShareService) AddOwner(shareID string, u *user.User, newOwnerID string) error {
-	sh, err := s.manageableShare(shareID, u)
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		return err
+	}
+	if !sh.CanManage(u) {
+		return ErrShareNotFound
 	}
 	if sh.Trashed() {
 		return ErrShareTrashed
@@ -305,9 +314,12 @@ func (s *ShareService) AddOwner(shareID string, u *user.User, newOwnerID string)
 }
 
 func (s *ShareService) RemoveOwner(shareID string, u *user.User, ownerID string) error {
-	sh, err := s.manageableShare(shareID, u)
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		return err
+	}
+	if !sh.CanManage(u) {
+		return ErrShareNotFound
 	}
 	if sh.Trashed() {
 		return ErrShareTrashed
@@ -333,9 +345,12 @@ func (s *ShareService) SetVisibility(shareID string, u *user.User, visibility Vi
 		return fmt.Errorf("visibility must be public or private: %w", ErrInvalidVisibility)
 	}
 
-	sh, err := s.manageableShare(shareID, u)
+	sh, err := s.repo.Get(shareID)
 	if err != nil {
 		return err
+	}
+	if !sh.CanManage(u) {
+		return ErrShareNotFound
 	}
 	if sh.Trashed() {
 		return ErrShareTrashed

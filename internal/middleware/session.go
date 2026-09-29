@@ -3,67 +3,64 @@ package middleware
 import (
 	"net/http"
 
-	"eigenshare/internal/auth"
+	"eigenshare/internal/session"
 )
 
-const SessionCookieName = "session_id"
+const cookieName = "session_id"
 
-func SetSessionCookie(w http.ResponseWriter, token string, maxAge int) {
+func GetSessionToken(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(cookieName)
+	if err != nil || cookie.Value == "" {
+		return "", false
+	}
+	return cookie.Value, true
+}
+
+func SetSessionCookie(w http.ResponseWriter, token string, maxAge int, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookieName,
+		Name:     cookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
 	})
 }
 
-func ClearSessionCookie(w http.ResponseWriter) {
+func ClearSessionCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookieName,
+		Name:     cookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
 	})
 }
 
-type AuthErrorHandler func(w http.ResponseWriter, r *http.Request)
+type SessionErrorHandler func(w http.ResponseWriter, r *http.Request)
 
-func WithUser(authSvc *auth.AuthService) func(http.Handler) http.Handler {
+func WithSession(sessionSvc *session.SessionService, secureCookie bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if cookie, err := r.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
-				if u, err := authSvc.ValidateSession(cookie.Value); err == nil {
-					next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), u)))
+			if cookie, err := r.Cookie(cookieName); err == nil && cookie.Value != "" {
+				if u, err := sessionSvc.Validate(cookie.Value); err == nil {
+					next.ServeHTTP(w, r.WithContext(session.WithUser(r.Context(), u)))
 					return
 				}
-				ClearSessionCookie(w)
+				ClearSessionCookie(w, secureCookie)
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func WithAuth(onError AuthErrorHandler) func(http.Handler) http.Handler {
+func RequireSession(onError SessionErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if u := auth.UserFromContext(r.Context()); u == nil {
-				onError(w, r)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func WithAdmin(onError AuthErrorHandler) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			u := auth.UserFromContext(r.Context())
-			if !u.IsAdmin {
+			if u := session.UserFromContext(r.Context()); u == nil {
 				onError(w, r)
 				return
 			}
