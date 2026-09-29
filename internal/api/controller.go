@@ -18,7 +18,7 @@ type Controller struct {
 	Share *share.ShareService
 }
 
-func New(authSvc *session.SessionService, userSvc *user.UserService, shareSvc *share.ShareService) *Controller {
+func NewController(authSvc *session.SessionService, userSvc *user.UserService, shareSvc *share.ShareService) *Controller {
 	return &Controller{Auth: authSvc, User: userSvc, Share: shareSvc}
 }
 

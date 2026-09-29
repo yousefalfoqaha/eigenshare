@@ -47,7 +47,7 @@ func main() {
 		log.Printf("Failed to seed admin: %v\n", err)
 	}
 
-	apiContr := api.New(sessionSvc, userSvc, shareSvc)
+	apiContr := api.NewController(sessionSvc, userSvc, shareSvc)
 	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, SECURE_COOKIE, SESSION_DURATION_SEC)
 
 	mux := http.NewServeMux()
