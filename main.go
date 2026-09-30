@@ -48,7 +48,7 @@ func main() {
 		log.Printf("Failed to seed admin: %v\n", err)
 	}
 
-	unlockSecret, err := security.RandomBytes(32)
+	shareUnlockSecret, err := security.RandomBytes(32)
 	if err != nil {
 		log.Fatalf("failed to generate unlock secret: %v", err)
 	}
@@ -64,7 +64,7 @@ func main() {
 	)
 
 	apiContr := api.NewController(sessionSvc, userSvc, shareSvc)
-	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, sessionCookie, shareUnlockCookie, unlockSecret)
+	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, sessionCookie, shareUnlockCookie, shareUnlockSecret)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", pageContr.Routes())

@@ -23,6 +23,9 @@ func NewSessionService(userSvc *user.UserService, sessionRepo *SessionRepository
 func (s *SessionService) Login(c LoginRequest) (*Session, error) {
 	u, err := s.userSvc.GetUserByUsername(c.Username)
 	if err != nil {
+		if err == user.ErrUserNotFound {
+			return nil, ErrInvalidCredentials
+		}
 		return nil, err
 	}
 	if u == nil {
