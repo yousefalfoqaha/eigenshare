@@ -51,14 +51,15 @@ func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 
-	upload, err := c.shareSvc.GetUploadState(sh, actor)
+	state, err := c.shareSvc.GetFileUploadState(sh, actor, r.PathValue("fileID"))
 	if err != nil {
 		return err
 	}
 
-	offset := upload.Written(r.PathValue("fileID"))
-
-	w.Header().Set("Upload-Offset", strconv.FormatInt(offset, 10))
+	w.Header().Set("Upload-Offset", strconv.FormatInt(state.Written, 10))
+	if state.Locked {
+		w.Header().Set("Upload-Locked", "1")
+	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

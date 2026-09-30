@@ -24,6 +24,35 @@ func (s *FileStorage) lockFor(fileID string) *sync.Mutex {
 	return l.(*sync.Mutex)
 }
 
+// IsUploadLocked reports whether a chunk upload currently holds the lock for
+// fileID. It probes without blocking, so a concurrent upload is never stalled.
+func (s *FileStorage) IsUploadLocked(fileID string) bool {
+	lock := s.lockFor(fileID)
+	if !lock.TryLock() {
+		return true
+	}
+	lock.Unlock()
+	return false
+}
+
+// FileUploadState reports the current state of a single file: bytes written
+// on disk and whether a chunk upload currently holds its lock. A file that
+// does not exist yet has zero state.
+func (s *FileStorage) FileUploadState(shareID, fileID string) (FileUploadState, error) {
+	info, err := os.Stat(filepath.Join(s.dataDir, shareID, fileID))
+	if os.IsNotExist(err) {
+		return FileUploadState{}, nil
+	}
+	if err != nil {
+		return FileUploadState{}, err
+	}
+
+	return FileUploadState{
+		Written: info.Size(),
+		Locked:  s.IsUploadLocked(fileID),
+	}, nil
+}
+
 func (s *FileStorage) CreateShareFolder(sh Share) error {
 	err := os.MkdirAll(filepath.Join(s.dataDir, sh.ID), 0o755)
 	if err != nil {
@@ -163,16 +192,16 @@ func (s *FileStorage) IsShareComplete(sh Share) (bool, error) {
 	return true, nil
 }
 
-func (s *FileStorage) UploadState(shareID string) (*UploadState, error) {
+func (s *FileStorage) UploadState(shareID string) (UploadState, error) {
 	entries, err := os.ReadDir(filepath.Join(s.dataDir, shareID))
 	if os.IsNotExist(err) {
-		return &UploadState{written: map[string]int64{}}, nil
+		return UploadState{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	written := make(map[string]int64, len(entries))
+	state := make(UploadState, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -182,10 +211,13 @@ func (s *FileStorage) UploadState(shareID string) (*UploadState, error) {
 		if err != nil {
 			return nil, err
 		}
-		written[entry.Name()] = info.Size()
+		state[entry.Name()] = FileUploadState{
+			Written: info.Size(),
+			Locked:  s.IsUploadLocked(entry.Name()),
+		}
 	}
 
-	return &UploadState{written: written}, nil
+	return state, nil
 }
 
 func (s *FileStorage) ShareFilePath(shareID string, fileID string) (string, error) {

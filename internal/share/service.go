@@ -174,12 +174,20 @@ func (s *ShareService) GetShare(id string, u *user.User) (*Share, error) {
 	return sh, nil
 }
 
-func (s *ShareService) GetUploadState(sh *Share, u *user.User) (*UploadState, error) {
+func (s *ShareService) GetUploadState(sh *Share, u *user.User) (UploadState, error) {
 	if !sh.CanView(u) {
 		return nil, ErrShareNotFound
 	}
 
 	return s.store.UploadState(sh.ID)
+}
+
+func (s *ShareService) GetFileUploadState(sh *Share, u *user.User, fileID string) (FileUploadState, error) {
+	if !sh.CanView(u) {
+		return FileUploadState{}, ErrShareNotFound
+	}
+
+	return s.store.FileUploadState(sh.ID, fileID)
 }
 
 func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {

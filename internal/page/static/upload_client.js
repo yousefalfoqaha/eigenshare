@@ -22,7 +22,7 @@ async function registerFiles(shareID, files) {
   return (await response.json()) || [];
 }
 
-async function syncOffset(shareID, fileID, signal) {
+async function fileState(shareID, fileID, signal) {
   try {
     const res = await fetch(`/api/shares/${shareID}/files/${fileID}/stream`, {
       method: "HEAD",
@@ -30,7 +30,11 @@ async function syncOffset(shareID, fileID, signal) {
     });
     if (!res.ok) return null;
     const header = res.headers.get("Upload-Offset");
-    return header !== null ? Number(header) : null;
+    if (header === null) return null;
+    return {
+      offset: Number(header),
+      locked: res.headers.get("Upload-Locked") !== null,
+    };
   } catch (e) {
     return null;
   }
@@ -47,20 +51,22 @@ function putChunk(shareID, fileID, offset, data, onProgress, signal) {
       if (e.lengthComputable && onProgress) onProgress(offset + e.loaded);
     };
 
+    const fail = (status, message) => {
+      const err = new Error(message);
+      err.status = status;
+      reject(err);
+    };
+
     xhr.onload = () => {
+      if (xhr.status === 0) return fail(0, "network error");
+
       if (xhr.status === 204 || xhr.status === 409) {
         const header = xhr.getResponseHeader("Upload-Offset");
         if (header !== null) return resolve(Number(header));
-
-        return reject(
-          new Error(
-            `Server returned ${xhr.status} but missing Upload-Offset header`,
-          ),
+        return fail(
+          xhr.status,
+          `Server returned ${xhr.status} but missing Upload-Offset header`,
         );
-      }
-
-      if (xhr.status === 423 || xhr.status >= 500) {
-        return resolve(null);
       }
 
       let errorMsg = "";
@@ -69,17 +75,16 @@ function putChunk(shareID, fileID, offset, data, onProgress, signal) {
         if (payload.message) errorMsg = payload.message;
       } catch (e) {}
 
-      reject(
-        new Error(
-          errorMsg
-            ? `upload rejected: ${errorMsg}`
-            : `upload rejected (HTTP ${xhr.status})`,
-        ),
+      fail(
+        xhr.status,
+        errorMsg
+          ? `upload rejected: ${errorMsg}`
+          : `upload rejected (HTTP ${xhr.status})`,
       );
     };
 
-    xhr.onerror = () => resolve(null);
-    xhr.onabort = () => reject(new Error("upload aborted"));
+    xhr.onerror = () => fail(0, "network error");
+    xhr.onabort = () => fail(0, "upload aborted");
 
     if (signal) {
       signal.addEventListener("abort", () => xhr.abort(), { once: true });
@@ -91,47 +96,58 @@ function putChunk(shareID, fileID, offset, data, onProgress, signal) {
 async function streamFile(shareID, fileID, file, onProgress, signal) {
   const chunkSize = 25 * 1024 * 1024;
   let offset = 0;
-  let retries = 0;
-
-  const initialSync = await syncOffset(shareID, fileID, signal);
-  if (initialSync !== null) {
-    offset = initialSync;
-    if (onProgress) onProgress(offset);
-  }
+  let attempts = 0;
 
   while (offset < file.size) {
     if (signal?.aborted) throw new Error("upload aborted");
 
-    const chunk = file.slice(offset, offset + chunkSize);
-    const nextOffset = await putChunk(
-      shareID,
-      fileID,
-      offset,
-      chunk,
-      onProgress,
-      signal,
-    );
-
-    if (nextOffset !== null) {
-      offset = nextOffset;
-      if (onProgress) onProgress(offset);
-      retries = 0;
+    const state = await fileState(shareID, fileID, signal);
+    if (state === null) {
+      if (++attempts > 3) throw new Error("connection lost. please try again.");
+      await new Promise((r) => setTimeout(r, 1000));
       continue;
     }
 
-    retries++;
-    if (retries > 3) {
-      throw new Error("connection lost or file is locked.");
+    offset = state.offset;
+    if (onProgress) onProgress(offset);
+    if (offset >= file.size) continue;
+
+    if (state.locked) {
+      if (++attempts > 3) return "locked";
+      await new Promise((r) => setTimeout(r, 1000));
+      continue;
     }
 
-    await new Promise((r) => setTimeout(r, 1000));
-
-    const sync = await syncOffset(shareID, fileID, signal);
-    if (sync !== null) {
-      offset = sync;
+    const chunk = file.slice(offset, offset + chunkSize);
+    try {
+      offset = await putChunk(
+        shareID,
+        fileID,
+        offset,
+        chunk,
+        onProgress,
+        signal,
+      );
       if (onProgress) onProgress(offset);
+      attempts = 0;
+      continue;
+    } catch (err) {
+      if (signal?.aborted) throw new Error("upload aborted");
+      if (
+        err.status >= 400 &&
+        err.status < 500 &&
+        err.status !== 423 &&
+        err.status !== 409
+      ) {
+        throw err;
+      }
     }
+
+    if (++attempts > 3) throw new Error("connection lost. please try again.");
+    await new Promise((r) => setTimeout(r, 1000));
   }
+
+  return "complete";
 }
 
 class UploadClient {
@@ -151,10 +167,11 @@ class UploadClient {
     };
   }
 
-  INCOMPLETE(id, name, expectedSize, loaded) {
+  INCOMPLETE(id, name, expectedSize, loaded, locked = false) {
     return {
       ...this.#base(id, name, expectedSize, loaded),
       status: "INCOMPLETE",
+      locked,
       resume: (file) => {
         if (file.name !== name || file.size !== expectedSize) {
           this.on.onError?.(`Expected ${name} (${formatBytes(expectedSize)})`);
@@ -191,6 +208,18 @@ class UploadClient {
     };
   }
 
+  LOCKED(id, file, loaded) {
+    return {
+      ...this.#base(id, file.name, file.size, loaded),
+      status: "LOCKED",
+      file,
+      retry: () => {
+        this.#transition(id, this.PENDING(id, file, loaded));
+        this.#drain();
+      },
+    };
+  }
+
   ERROR(id, file, loaded, message) {
     return {
       ...this.#base(id, file.name, file.size, loaded),
@@ -204,12 +233,19 @@ class UploadClient {
     };
   }
 
-  seed(entries, progressMap = {}) {
+  seed(entries, state = {}) {
     for (const e of entries || []) {
-      const loaded = progressMap[e.id] || 0;
+      const st = state[e.id] || {};
+      const loaded = st.written || 0;
       if (loaded >= e.expectedSize) continue;
 
-      const task = this.INCOMPLETE(e.id, e.name, e.expectedSize, loaded);
+      const task = this.INCOMPLETE(
+        e.id,
+        e.name,
+        e.expectedSize,
+        loaded,
+        !!st.locked,
+      );
       this.tasks.set(e.id, task);
       this.on.onAdd?.(task);
     }
@@ -289,7 +325,7 @@ class UploadClient {
       this.#transition(pendingTask.id, uploadingTask);
 
       try {
-        await streamFile(
+        const outcome = await streamFile(
           this.shareID,
           uploadingTask.id,
           uploadingTask.file,
@@ -299,11 +335,26 @@ class UploadClient {
           },
           controller.signal,
         );
-        this.#transition(
-          uploadingTask.id,
-          this.DONE(uploadingTask.id, uploadingTask.file, uploadingTask.loaded),
-        );
-        completed++;
+        if (outcome === "locked") {
+          this.#transition(
+            uploadingTask.id,
+            this.LOCKED(
+              uploadingTask.id,
+              uploadingTask.file,
+              uploadingTask.loaded,
+            ),
+          );
+        } else {
+          this.#transition(
+            uploadingTask.id,
+            this.DONE(
+              uploadingTask.id,
+              uploadingTask.file,
+              uploadingTask.loaded,
+            ),
+          );
+          completed++;
+        }
       } catch (err) {
         if (!controller.signal.aborted) {
           this.#transition(

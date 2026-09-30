@@ -1,7 +1,6 @@
 package share
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -137,21 +136,14 @@ func NewFile(name string, expectedSize int64) (*File, error) {
 	}, nil
 }
 
-type UploadState struct {
-	written map[string]int64
+type FileUploadState struct {
+	Written int64 `json:"written"`
+	Locked  bool  `json:"locked"`
 }
 
-func (u *UploadState) Uploaded(f File) bool {
-	return u != nil && u.written[f.ID] >= f.ExpectedSize
-}
+// UploadState is the per-file upload state of a share's files, keyed by file ID.
+type UploadState map[string]FileUploadState
 
-func (u *UploadState) MarshalJSON() ([]byte, error) {
-	return json.Marshal(u.written)
-}
-
-func (u *UploadState) Written(fileID string) int64 {
-	if u == nil {
-		return 0
-	}
-	return u.written[fileID]
+func (u UploadState) Uploaded(f File) bool {
+	return u[f.ID].Written >= f.ExpectedSize
 }

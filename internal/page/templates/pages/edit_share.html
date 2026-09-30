@@ -146,7 +146,8 @@
       nameEl.textContent = nameEl.title = task.name;
       bar.max = task.expectedSize || 1;
       bar.value = task.status === "DONE" ? bar.max : task.loaded;
-      meta.textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${task.status.toLowerCase()}`;
+      const state = task.locked ? "locked" : task.status.toLowerCase();
+      meta.textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${state}`;
     }
 
     const queue = new UploadClient(shareID, {
