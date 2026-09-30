@@ -27,10 +27,10 @@ func formatCommaSeparated(items []string) string {
 }
 
 // uploadedFiles returns the files of the share that are fully uploaded.
-func uploadedFiles(u share.UploadState, files []share.File) []share.File {
+func uploadedFiles(states map[string]share.FileUploadState, files []share.File) []share.File {
 	uploaded := make([]share.File, 0, len(files))
 	for _, f := range files {
-		if u.Uploaded(f) {
+		if states[f.ID].Written >= f.ExpectedSize {
 			uploaded = append(uploaded, f)
 		}
 	}

@@ -59,15 +59,15 @@ func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
 		return c.render(w, r, "share_unlock.html", &struct{ Handle string }{sh.Handle}, nil)
 	}
 
-	upload, err := c.shareSvc.GetUploadState(sh, actor)
+	states, err := c.shareSvc.GetShareUploadState(sh, actor)
 	if err != nil {
 		return err
 	}
 
 	return c.render(w, r, "share.html", &struct {
 		Share  *share.Share
-		Upload share.UploadState
-	}{sh, upload}, nil)
+		Upload map[string]share.FileUploadState
+	}{sh, states}, nil)
 }
 
 func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
@@ -96,8 +96,6 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 	http.Redirect(w, r, "/s/"+handle, http.StatusFound)
 	return nil
 }
-
-// --- users ---
 
 func (c *Controller) UsersPage(w http.ResponseWriter, r *http.Request) error {
 	users, err := c.userSvc.GetAllUsers()
@@ -165,11 +163,9 @@ func (c *Controller) DeleteUser(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// --- shares ---
-
 type sharesData struct {
 	Shares     []*share.Share
-	Uploads    map[string]share.UploadState
+	Uploads    map[string]map[string]share.FileUploadState
 	OwnerNames map[string][]string
 }
 
@@ -179,13 +175,13 @@ func (c *Controller) buildSharesData(actor *user.User) (*sharesData, error) {
 		return nil, err
 	}
 
-	uploads := make(map[string]share.UploadState, len(shares))
+	uploads := make(map[string]map[string]share.FileUploadState, len(shares))
 	for _, s := range shares {
-		u, err := c.shareSvc.GetUploadState(s, actor)
+		states, err := c.shareSvc.GetShareUploadState(s, actor)
 		if err != nil {
 			return nil, err
 		}
-		uploads[s.ID] = u
+		uploads[s.ID] = states
 	}
 
 	users, _ := c.userSvc.GetAllUsers()
@@ -222,7 +218,7 @@ func (c *Controller) NewSharePage(w http.ResponseWriter, r *http.Request) error 
 
 type trashData struct {
 	Shares  []*share.Share
-	Uploads map[string]share.UploadState
+	Uploads map[string]map[string]share.FileUploadState
 }
 
 func (c *Controller) buildTrashData(actor *user.User) (*trashData, error) {
@@ -231,13 +227,13 @@ func (c *Controller) buildTrashData(actor *user.User) (*trashData, error) {
 		return nil, err
 	}
 
-	uploads := make(map[string]share.UploadState, len(shares))
+	uploads := make(map[string]map[string]share.FileUploadState, len(shares))
 	for _, s := range shares {
-		u, err := c.shareSvc.GetUploadState(s, actor)
+		states, err := c.shareSvc.GetShareUploadState(s, actor)
 		if err != nil {
 			return nil, err
 		}
-		uploads[s.ID] = u
+		uploads[s.ID] = states
 	}
 
 	return &trashData{shares, uploads}, nil
@@ -253,7 +249,7 @@ func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
 
 type editShareData struct {
 	Share      *share.Share
-	Upload     share.UploadState
+	Upload     map[string]share.FileUploadState
 	Users      []*user.User
 	Tab        string
 	OwnerNames []string
@@ -265,7 +261,7 @@ func (c *Controller) buildEditShareData(actor *user.User, id, tab string) (*edit
 		return nil, err
 	}
 
-	upload, err := c.shareSvc.GetUploadState(sh, actor)
+	states, err := c.shareSvc.GetShareUploadState(sh, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +281,7 @@ func (c *Controller) buildEditShareData(actor *user.User, id, tab string) (*edit
 		}
 	}
 
-	return &editShareData{sh, upload, users, tab, ownerNames}, nil
+	return &editShareData{sh, states, users, tab, ownerNames}, nil
 }
 
 func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error {

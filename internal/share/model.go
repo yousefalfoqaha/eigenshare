@@ -93,23 +93,14 @@ func (s *Share) CanView(u *user.User) bool {
 	return s.Visibility == VisibilityPublic || s.CanManage(u)
 }
 
-// HasPassword reports whether this share is protected by a password.
 func (s *Share) HasPassword() bool {
 	return s.PasswordHash != ""
 }
 
-// RequiresPassword reports whether u must enter the share password to view
-// it. Owners and admins never need to; visibility cancels out because
-// non-owners of a private share are rejected by CanView before this is
-// consulted.
 func (s *Share) RequiresPassword(u *user.User) bool {
 	return s.HasPassword() && !s.CanManage(u)
 }
 
-// UnlockMessage is the string signed for this share's unlock cookie: the
-// share id joined with its current password hash. Signing the hash means
-// changing or clearing the password immediately invalidates any unlock
-// cookie already issued for this share.
 func (s *Share) UnlockMessage() string {
 	return s.ID + "\x00" + s.PasswordHash
 }
@@ -139,11 +130,4 @@ func NewFile(name string, expectedSize int64) (*File, error) {
 type FileUploadState struct {
 	Written int64 `json:"written"`
 	Locked  bool  `json:"locked"`
-}
-
-// UploadState is the per-file upload state of a share's files, keyed by file ID.
-type UploadState map[string]FileUploadState
-
-func (u UploadState) Uploaded(f File) bool {
-	return u[f.ID].Written >= f.ExpectedSize
 }

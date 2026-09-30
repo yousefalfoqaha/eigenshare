@@ -174,20 +174,29 @@ func (s *ShareService) GetShare(id string, u *user.User) (*Share, error) {
 	return sh, nil
 }
 
-func (s *ShareService) GetUploadState(sh *Share, u *user.User) (UploadState, error) {
-	if !sh.CanView(u) {
-		return nil, ErrShareNotFound
-	}
-
-	return s.store.UploadState(sh.ID)
-}
-
 func (s *ShareService) GetFileUploadState(sh *Share, u *user.User, fileID string) (FileUploadState, error) {
 	if !sh.CanView(u) {
 		return FileUploadState{}, ErrShareNotFound
 	}
 
 	return s.store.FileUploadState(sh.ID, fileID)
+}
+
+func (s *ShareService) GetShareUploadState(sh *Share, u *user.User) (map[string]FileUploadState, error) {
+	if !sh.CanView(u) {
+		return nil, ErrShareNotFound
+	}
+
+	states := make(map[string]FileUploadState, len(sh.Files))
+	for _, f := range sh.Files {
+		st, err := s.store.FileUploadState(sh.ID, f.ID)
+		if err != nil {
+			return nil, err
+		}
+		states[f.ID] = st
+	}
+
+	return states, nil
 }
 
 func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
@@ -216,12 +225,12 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, strin
 		return nil, "", ErrFileNotFound
 	}
 
-	upload, err := s.store.UploadState(sh.ID)
+	state, err := s.store.FileUploadState(sh.ID, file.ID)
 	if err != nil {
 		return nil, "", err
 	}
 
-	if !upload.Uploaded(*file) {
+	if state.Written < file.ExpectedSize {
 		return nil, "", ErrFileNotComplete
 	}
 
@@ -382,8 +391,6 @@ func (s *ShareService) SetVisibility(shareID string, u *user.User, visibility Vi
 	return err
 }
 
-// SetPassword sets, changes, keeps, or removes the share password. An empty
-// or whitespace-only raw value keeps the current password; remove clears it.
 func (s *ShareService) SetPassword(shareID string, u *user.User, raw string, remove bool) error {
 	sh, err := s.repo.Get(shareID)
 	if err != nil {

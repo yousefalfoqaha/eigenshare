@@ -24,20 +24,6 @@ func (s *FileStorage) lockFor(fileID string) *sync.Mutex {
 	return l.(*sync.Mutex)
 }
 
-// IsUploadLocked reports whether a chunk upload currently holds the lock for
-// fileID. It probes without blocking, so a concurrent upload is never stalled.
-func (s *FileStorage) IsUploadLocked(fileID string) bool {
-	lock := s.lockFor(fileID)
-	if !lock.TryLock() {
-		return true
-	}
-	lock.Unlock()
-	return false
-}
-
-// FileUploadState reports the current state of a single file: bytes written
-// on disk and whether a chunk upload currently holds its lock. A file that
-// does not exist yet has zero state.
 func (s *FileStorage) FileUploadState(shareID, fileID string) (FileUploadState, error) {
 	info, err := os.Stat(filepath.Join(s.dataDir, shareID, fileID))
 	if os.IsNotExist(err) {
@@ -47,9 +33,15 @@ func (s *FileStorage) FileUploadState(shareID, fileID string) (FileUploadState, 
 		return FileUploadState{}, err
 	}
 
+	lock := s.lockFor(fileID)
+	locked := !lock.TryLock()
+	if !locked {
+		lock.Unlock()
+	}
+
 	return FileUploadState{
 		Written: info.Size(),
-		Locked:  s.IsUploadLocked(fileID),
+		Locked:  locked,
 	}, nil
 }
 
@@ -190,34 +182,6 @@ func (s *FileStorage) IsShareComplete(sh Share) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func (s *FileStorage) UploadState(shareID string) (UploadState, error) {
-	entries, err := os.ReadDir(filepath.Join(s.dataDir, shareID))
-	if os.IsNotExist(err) {
-		return UploadState{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	state := make(UploadState, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			return nil, err
-		}
-		state[entry.Name()] = FileUploadState{
-			Written: info.Size(),
-			Locked:  s.IsUploadLocked(entry.Name()),
-		}
-	}
-
-	return state, nil
 }
 
 func (s *FileStorage) ShareFilePath(shareID string, fileID string) (string, error) {
