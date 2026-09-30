@@ -10,39 +10,34 @@ import (
 	"eigenshare/internal/user"
 )
 
-type Handler func(w http.ResponseWriter, r *http.Request) error
-
 type Controller struct {
-	Auth  *session.SessionService
-	User  *user.UserService
-	Share *share.ShareService
+	authSvc  *session.SessionService
+	userSvc  *user.UserService
+	shareSvc *share.ShareService
 }
 
 func NewController(authSvc *session.SessionService, userSvc *user.UserService, shareSvc *share.ShareService) *Controller {
-	return &Controller{Auth: authSvc, User: userSvc, Share: shareSvc}
+	return &Controller{authSvc: authSvc, userSvc: userSvc, shareSvc: shareSvc}
 }
 
 func (c *Controller) Routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("POST /shares", c.handle(c.CreateShare))
-	mux.Handle("POST /shares/{id}/files", c.handle(c.AddFilesToShare))
-	mux.Handle("HEAD /shares/{id}/files/{fileID}/stream", c.handle(c.GetUploadOffset))
-	mux.Handle("PUT /shares/{id}/files/{fileID}/stream", c.handle(c.StreamFile))
-	mux.Handle("DELETE /shares/{id}/files/{fileID}", c.handle(c.DeleteShareFile))
+	handleErr := middleware.WithErrorHandler(writeError)
+
+	mux.Handle("POST /shares", handleErr(c.CreateShare))
+	mux.Handle("POST /shares/{id}/files", handleErr(c.AddFilesToShare))
+	mux.Handle("HEAD /shares/{id}/files/{fileID}/stream", handleErr(c.GetUploadOffset))
+	mux.Handle("PUT /shares/{id}/files/{fileID}/stream", handleErr(c.StreamFile))
+	mux.Handle("DELETE /shares/{id}/files/{fileID}", handleErr(c.DeleteShareFile))
 
 	return middleware.RequireSession(writeUnauthorized)(mux)
 }
 
-func (c *Controller) handle(h Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := h(w, r); err != nil {
-			status, msg := middleware.MapError(err)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(status)
-			_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "message": msg})
-		}
-	}
+func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "message": msg})
 }
 
 func writeUnauthorized(w http.ResponseWriter, r *http.Request) {

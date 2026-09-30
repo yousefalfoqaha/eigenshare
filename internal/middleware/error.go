@@ -10,13 +10,25 @@ import (
 	"eigenshare/internal/user"
 )
 
-func MapError(err error) (int, string) {
+type ErrorHandler func(w http.ResponseWriter, r *http.Request, status int, msg string)
+
+func WithErrorHandler(onError ErrorHandler) func(func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+	return func(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if err := h(w, r); err != nil {
+				status, msg := mapError(err)
+				onError(w, r, status, msg)
+			}
+		}
+	}
+}
+
+func mapError(err error) (int, string) {
 	if _, ok := errors.AsType[*share.ChunkOffsetConflictError](err); ok {
 		return http.StatusConflict, err.Error()
 	}
 
 	switch {
-	// 400 bad request
 	case errors.Is(err, share.ErrInvalidRequest),
 		errors.Is(err, share.ErrInvalidHandle),
 		errors.Is(err, share.ErrInvalidFileName),
@@ -31,18 +43,15 @@ func MapError(err error) (int, string) {
 		errors.Is(err, session.ErrInvalidExpiry):
 		return http.StatusBadRequest, err.Error()
 
-	// 401 unauthorized
 	case errors.Is(err, session.ErrInvalidCredentials),
 		errors.Is(err, session.ErrSessionNotFound):
 		return http.StatusUnauthorized, err.Error()
 
-	// 404 not found
 	case errors.Is(err, share.ErrShareNotFound),
 		errors.Is(err, share.ErrFileNotFound),
 		errors.Is(err, user.ErrUserNotFound):
 		return http.StatusNotFound, err.Error()
 
-	// 409 conflict
 	case errors.Is(err, share.ErrHandleExists),
 		errors.Is(err, share.ErrFileNotComplete),
 		errors.Is(err, share.ErrChunkOffsetExceedsSize),
@@ -57,7 +66,6 @@ func MapError(err error) (int, string) {
 		errors.Is(err, user.ErrCannotDemoteSelf):
 		return http.StatusConflict, err.Error()
 
-	// 423 locked
 	case errors.Is(err, share.ErrUploadInProgress):
 		return http.StatusLocked, err.Error()
 

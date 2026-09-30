@@ -16,7 +16,7 @@ func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
 		return share.ErrInvalidRequest
 	}
 
-	sh, err := c.Share.RequestShare(req, session.UserFromContext(r.Context()))
+	sh, err := c.shareSvc.RequestShare(req, session.UserFromContext(r.Context()))
 	if err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 		return share.ErrInvalidRequest
 	}
 
-	newFiles, err := c.Share.UploadFiles(r.PathValue("id"), req.Files, session.UserFromContext(r.Context()))
+	newFiles, err := c.shareSvc.UploadFiles(r.PathValue("id"), req.Files, session.UserFromContext(r.Context()))
 	if err != nil {
 		return err
 	}
@@ -46,12 +46,12 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 
 func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) error {
 	actor := session.UserFromContext(r.Context())
-	sh, err := c.Share.GetShare(r.PathValue("id"), actor)
+	sh, err := c.shareSvc.GetShare(r.PathValue("id"), actor)
 	if err != nil {
 		return err
 	}
 
-	upload, err := c.Share.GetUploadState(sh, actor)
+	upload, err := c.shareSvc.GetUploadState(sh, actor)
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 		return share.ErrInvalidRequest
 	}
 
-	bytesWritten, err := c.Share.StreamFile(
+	bytesWritten, err := c.shareSvc.StreamFile(
 		r.PathValue("id"), r.PathValue("fileID"), offset, r.Body, session.UserFromContext(r.Context()))
 	if err != nil {
 		if conflict, ok := errors.AsType[*share.ChunkOffsetConflictError](err); ok {
@@ -84,7 +84,7 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) DeleteShareFile(w http.ResponseWriter, r *http.Request) error {
-	if err := c.Share.DeleteFile(r.PathValue("id"), r.PathValue("fileID"), session.UserFromContext(r.Context())); err != nil {
+	if err := c.shareSvc.DeleteFile(r.PathValue("id"), r.PathValue("fileID"), session.UserFromContext(r.Context())); err != nil {
 		return err
 	}
 

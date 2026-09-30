@@ -29,7 +29,6 @@ const (
 
 func main() {
 	db := database.NewDatabase("./data.db")
-
 	userRepo := user.NewUserRepository(db)
 	userSvc := user.NewUserService(userRepo)
 	sessionRepo := session.NewSessionRepository(db)
