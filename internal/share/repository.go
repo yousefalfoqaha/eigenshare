@@ -35,13 +35,13 @@ func (r *ShareRepository) Exists(id string) (bool, error) {
 }
 
 func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (*Share, error) {
-	query := "SELECT id, handle, visibility, created_at, expires_at, trashed_at, version FROM share " + whereClause
+	query := "SELECT id, handle, visibility, password, created_at, expires_at, trashed_at, version FROM share " + whereClause
 
 	var sh Share
 	var expiresAt, trashedAt sql.NullString
 
 	err := r.db.DB.QueryRow(query, args...).Scan(
-		&sh.ID, &sh.Handle, &sh.Visibility, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version,
+		&sh.ID, &sh.Handle, &sh.Visibility, &sh.PasswordHash, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -79,7 +79,7 @@ func (r *ShareRepository) GetAllTrashed() ([]*Share, error) {
 }
 
 func (r *ShareRepository) fetchAllShares(whereClause string, args ...any) ([]*Share, error) {
-	query := "SELECT id, handle, visibility, created_at, expires_at, trashed_at, version FROM share " + whereClause
+	query := "SELECT id, handle, visibility, password, created_at, expires_at, trashed_at, version FROM share " + whereClause
 
 	rows, err := r.db.DB.Query(query, args...)
 	if err != nil {
@@ -92,7 +92,7 @@ func (r *ShareRepository) fetchAllShares(whereClause string, args ...any) ([]*Sh
 		var sh Share
 		var expiresAt, trashedAt sql.NullString
 
-		if err := rows.Scan(&sh.ID, &sh.Handle, &sh.Visibility, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version); err != nil {
+		if err := rows.Scan(&sh.ID, &sh.Handle, &sh.Visibility, &sh.PasswordHash, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version); err != nil {
 			return nil, err
 		}
 		if sh.ExpiresAt, err = parseTimestamp(expiresAt); err != nil {
@@ -317,8 +317,8 @@ func insertShareAggregate(tx *sql.Tx, share *Share) error {
 	}
 
 	if _, err := tx.Exec(
-		"INSERT INTO share (id, handle, visibility, created_at, expires_at, trashed_at, version) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		share.ID, share.Handle, string(share.Visibility), share.CreatedAt.String(), expiresAt, trashedAt, share.Version,
+		"INSERT INTO share (id, handle, visibility, password, created_at, expires_at, trashed_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		share.ID, share.Handle, string(share.Visibility), share.PasswordHash, share.CreatedAt.String(), expiresAt, trashedAt, share.Version,
 	); err != nil {
 		return err
 	}

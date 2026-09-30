@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS share (
     created_at TEXT NOT NULL,
     expires_at TEXT,
     trashed_at TEXT,
+    password TEXT NOT NULL DEFAULT '',
     version INTEGER NOT NULL
 );
 

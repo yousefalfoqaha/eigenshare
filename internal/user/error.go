@@ -3,7 +3,6 @@ package user
 import "errors"
 
 var (
-	ErrInvalidPassword = errors.New("invalid password")
 	ErrInvalidUsername = errors.New("invalid username")
 
 	ErrUsernameTaken = errors.New("username already taken")

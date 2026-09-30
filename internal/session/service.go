@@ -3,6 +3,7 @@ package session
 import (
 	"time"
 
+	"eigenshare/internal/security"
 	"eigenshare/internal/user"
 
 	"github.com/google/uuid"
@@ -28,8 +29,7 @@ func (s *SessionService) Login(c LoginRequest) (*Session, error) {
 		return nil, ErrInvalidCredentials
 	}
 
-	ok, err := u.VerifyPassword(c.Password)
-	if err != nil || !ok {
+	if !security.VerifyPassword(u.PasswordHash, c.Password) {
 		return nil, ErrInvalidCredentials
 	}
 

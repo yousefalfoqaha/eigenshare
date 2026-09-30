@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
+	"eigenshare/internal/security"
 	"eigenshare/internal/timestamp"
 	"eigenshare/internal/user"
 
@@ -66,6 +68,11 @@ func (s *ShareService) RequestShare(req ShareRequest, u *user.User) (*Share, err
 		creatorID = u.ID
 	}
 	sh, err := NewShare("", req.Handle, req.ExpiryMinutes, req.Visibility, creatorID)
+	if err != nil {
+		return nil, err
+	}
+
+	sh.PasswordHash, err = hashSharePassword(req.Password)
 	if err != nil {
 		return nil, err
 	}
@@ -365,4 +372,52 @@ func (s *ShareService) SetVisibility(shareID string, u *user.User, visibility Vi
 	_, err = s.repo.Save(sh)
 
 	return err
+}
+
+// SetPassword sets, changes, keeps, or removes the share password. An empty
+// or whitespace-only raw value keeps the current password; remove clears it.
+func (s *ShareService) SetPassword(shareID string, u *user.User, raw string, remove bool) error {
+	sh, err := s.repo.Get(shareID)
+	if err != nil {
+		return err
+	}
+	if !sh.CanManage(u) {
+		return ErrShareNotFound
+	}
+	if sh.Trashed() {
+		return ErrShareTrashed
+	}
+
+	switch {
+	case remove:
+		sh.PasswordHash = ""
+	case strings.TrimSpace(raw) != "":
+		hash, err := hashSharePassword(raw)
+		if err != nil {
+			return err
+		}
+		sh.PasswordHash = hash
+	}
+
+	_, err = s.repo.Save(sh)
+
+	return err
+}
+
+// hashSharePassword normalizes a raw password and returns a bcrypt hash, or
+// "" when no password should be set. Rules:
+//   - "" or whitespace-only => no password
+//   - otherwise the value is used exactly as typed (no trimming)
+//   - non-empty passwords must be 3-72 bytes
+func hashSharePassword(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	if len(raw) < 3 {
+		return "", fmt.Errorf("password must be at least 3 characters: %w", security.ErrInvalidPassword)
+	}
+	if len(raw) > 72 {
+		return "", fmt.Errorf("password must be at most 72 characters: %w", security.ErrInvalidPassword)
+	}
+	return security.HashPassword(raw)
 }

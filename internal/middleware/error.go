@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"eigenshare/internal/security"
 	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
@@ -36,7 +37,8 @@ func mapError(err error) (int, string) {
 		errors.Is(err, share.ErrInvalidExpiry),
 		errors.Is(err, share.ErrInvalidVisibility),
 		errors.Is(err, share.ErrInvalidChunkOffset),
-		errors.Is(err, user.ErrInvalidPassword),
+		errors.Is(err, security.ErrInvalidPassword),
+		errors.Is(err, security.ErrPasswordTooLong),
 		errors.Is(err, user.ErrInvalidUsername),
 		errors.Is(err, session.ErrInvalidToken),
 		errors.Is(err, session.ErrInvalidUserID),
@@ -44,6 +46,7 @@ func mapError(err error) (int, string) {
 		return http.StatusBadRequest, err.Error()
 
 	case errors.Is(err, session.ErrInvalidCredentials),
+		errors.Is(err, security.ErrWrongPassword),
 		errors.Is(err, session.ErrSessionNotFound):
 		return http.StatusUnauthorized, err.Error()
 

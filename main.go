@@ -15,16 +15,18 @@ import (
 	"eigenshare/internal/database"
 	"eigenshare/internal/middleware"
 	"eigenshare/internal/page"
+	"eigenshare/internal/security"
 	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
 
 const (
-	PORT                 int    = 8080
-	DATA_PATH            string = "data"
-	SECURE_COOKIE        bool   = false
-	SESSION_DURATION_SEC int    = 60 * 24 * 7
+	PORT                      int    = 8080
+	DATA_PATH                 string = "data"
+	SECURE_COOKIE             bool   = false
+	SESSION_DURATION_SEC      int    = 60 * 24 * 7
+	SHARE_UNLOCK_DURATION_SEC int    = 60 * 24 * 7
 )
 
 func main() {
@@ -46,8 +48,23 @@ func main() {
 		log.Printf("Failed to seed admin: %v\n", err)
 	}
 
+	unlockSecret, err := security.RandomBytes(32)
+	if err != nil {
+		log.Fatalf("failed to generate unlock secret: %v", err)
+	}
+
+	sessionCookie := security.NewCookieManager("session_id",
+		security.WithMaxAge(SESSION_DURATION_SEC),
+		security.WithSecure(SECURE_COOKIE),
+	)
+	shareUnlockCookie := security.NewCookieManager("share_unlock",
+		security.WithPath("/s/"),
+		security.WithMaxAge(SHARE_UNLOCK_DURATION_SEC),
+		security.WithSecure(SECURE_COOKIE),
+	)
+
 	apiContr := api.NewController(sessionSvc, userSvc, shareSvc)
-	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, SECURE_COOKIE, SESSION_DURATION_SEC)
+	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, sessionCookie, shareUnlockCookie, unlockSecret)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", pageContr.Routes())
@@ -55,7 +72,7 @@ func main() {
 
 	server := http.Server{
 		Addr:    ":" + strconv.Itoa(PORT),
-		Handler: middleware.Logger(middleware.WithSession(sessionSvc, SECURE_COOKIE)(mux)),
+		Handler: middleware.Logger(middleware.WithSession(sessionSvc, sessionCookie)(mux)),
 	}
 
 	go func() {

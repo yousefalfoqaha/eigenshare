@@ -4,7 +4,7 @@ import (
 	"mime"
 	"net/http"
 
-	"eigenshare/internal/middleware"
+	"eigenshare/internal/security"
 	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
@@ -31,17 +31,17 @@ func (c *Controller) LoginSubmit(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return c.render(w, r, "login.html", nil, err)
 	}
-	middleware.SetSessionCookie(w, session.Token, c.sessionDuration, c.secureCookie)
+	c.sessionCookie.Set(w, session.Token)
 	http.Redirect(w, r, "/shares", http.StatusFound)
 	return nil
 }
 
 func (c *Controller) Logout(w http.ResponseWriter, r *http.Request) error {
-	if token, ok := middleware.GetSessionToken(r); ok {
+	if token, ok := c.sessionCookie.Get(r); ok {
 		_ = c.sessionSvc.Logout(token)
 	}
 
-	middleware.ClearSessionCookie(w, c.secureCookie)
+	c.sessionCookie.Clear(w)
 	http.Redirect(w, r, "/login", http.StatusFound)
 
 	return nil
@@ -54,6 +54,11 @@ func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+
+	if sh.RequiresPassword(actor) && !c.shareUnlockCookie.WithID(sh.ID).CheckTag(r, c.shareUnlockSecret, sh.UnlockMessage()) {
+		return c.render(w, r, "share_unlock.html", &struct{ Handle string }{sh.Handle}, nil)
+	}
+
 	upload, err := c.shareSvc.GetUploadState(sh, actor)
 	if err != nil {
 		return err
@@ -63,6 +68,33 @@ func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
 		Share  *share.Share
 		Upload *share.UploadState
 	}{sh, upload}, nil)
+}
+
+func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
+	handle := r.PathValue("handle")
+	actor := session.UserFromContext(r.Context())
+
+	sh, err := c.shareSvc.GetShareByHandle(handle, actor)
+	if err != nil {
+		return err
+	}
+
+	if !sh.RequiresPassword(actor) {
+		http.Redirect(w, r, "/s/"+handle, http.StatusFound)
+		return nil
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return c.render(w, r, "share_unlock.html", &struct{ Handle string }{sh.Handle}, err)
+	}
+
+	if !security.VerifyPassword(sh.PasswordHash, r.PostForm.Get("password")) {
+		return c.render(w, r, "share_unlock.html", &struct{ Handle string }{sh.Handle}, security.ErrWrongPassword)
+	}
+
+	c.shareUnlockCookie.WithID(sh.ID).SetTag(w, c.shareUnlockSecret, sh.UnlockMessage())
+	http.Redirect(w, r, "/s/"+handle, http.StatusFound)
+	return nil
 }
 
 // --- users ---
@@ -240,7 +272,9 @@ func (c *Controller) buildEditShareData(actor *user.User, id, tab string) (*edit
 
 	users, _ := c.userSvc.GetAllUsers()
 
-	if tab != "owners" {
+	switch tab {
+	case "files", "owners", "settings":
+	default:
 		tab = "files"
 	}
 
@@ -367,6 +401,27 @@ func (c *Controller) renderEditOwners(w http.ResponseWriter, r *http.Request, ac
 	return c.render(w, r, "edit_share.html", data, domainErr)
 }
 
+func (c *Controller) UpdateShareSettings(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	actor := session.UserFromContext(r.Context())
+	if err := r.ParseForm(); err != nil {
+		return c.renderEditSettings(w, r, actor, id, err)
+	}
+	if err := c.shareSvc.SetPassword(id, actor, r.PostForm.Get("password"), r.PostForm.Get("removePassword") == "on"); err != nil {
+		return c.renderEditSettings(w, r, actor, id, err)
+	}
+	http.Redirect(w, r, "/shares/"+id+"/edit?tab=settings", http.StatusFound)
+	return nil
+}
+
+func (c *Controller) renderEditSettings(w http.ResponseWriter, r *http.Request, actor *user.User, id string, domainErr error) error {
+	data, err := c.buildEditShareData(actor, id, "settings")
+	if err != nil {
+		return err
+	}
+	return c.render(w, r, "edit_share.html", data, domainErr)
+}
+
 func (c *Controller) SetVisibility(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 	actor := session.UserFromContext(r.Context())
@@ -393,9 +448,15 @@ func contentDisposition(filename string) string {
 }
 
 func (c *Controller) DownloadAll(w http.ResponseWriter, r *http.Request) error {
-	sh, err := c.shareSvc.GetShareByHandle(r.PathValue("handle"), session.UserFromContext(r.Context()))
+	actor := session.UserFromContext(r.Context())
+	sh, err := c.shareSvc.GetShareByHandle(r.PathValue("handle"), actor)
 	if err != nil {
 		return err
+	}
+
+	if sh.RequiresPassword(actor) && !c.shareUnlockCookie.WithID(sh.ID).CheckTag(r, c.shareUnlockSecret, sh.UnlockMessage()) {
+		http.Redirect(w, r, "/s/"+sh.Handle, http.StatusFound)
+		return nil
 	}
 
 	w.Header().Set("Content-Type", "application/zip")
@@ -404,9 +465,15 @@ func (c *Controller) DownloadAll(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) DownloadFile(w http.ResponseWriter, r *http.Request) error {
-	sh, err := c.shareSvc.GetShareByHandle(r.PathValue("handle"), session.UserFromContext(r.Context()))
+	actor := session.UserFromContext(r.Context())
+	sh, err := c.shareSvc.GetShareByHandle(r.PathValue("handle"), actor)
 	if err != nil {
 		return err
+	}
+
+	if sh.RequiresPassword(actor) && !c.shareUnlockCookie.WithID(sh.ID).CheckTag(r, c.shareUnlockSecret, sh.UnlockMessage()) {
+		http.Redirect(w, r, "/s/"+sh.Handle, http.StatusFound)
+		return nil
 	}
 
 	file, filePath, err := c.shareSvc.DownloadFile(sh.ID, r.PathValue("fileID"))

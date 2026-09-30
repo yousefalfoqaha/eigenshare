@@ -4,8 +4,9 @@ import (
 	"errors"
 	"fmt"
 
+	"eigenshare/internal/security"
+
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type UserService struct {
@@ -26,10 +27,13 @@ func (s *UserService) CreateUser(req CreateRequest) (*User, error) {
 	}
 
 	if len(req.Password) < 8 {
-		return nil, fmt.Errorf("password must be at least 8 characters: %w", ErrInvalidPassword)
+		return nil, fmt.Errorf("password must be at least 8 characters: %w", security.ErrInvalidPassword)
+	}
+	if len(req.Password) > 72 {
+		return nil, fmt.Errorf("password must be at most 72 characters: %w", security.ErrInvalidPassword)
 	}
 
-	hash, err := hashPassword(req.Password)
+	hash, err := security.HashPassword(req.Password)
 	if err != nil {
 		return nil, err
 	}
@@ -69,9 +73,12 @@ func (s *UserService) UpdateUser(id, actorID string, req UpdateRequest) (*User, 
 
 	if req.Password != "" {
 		if len(req.Password) < 8 {
-			return nil, fmt.Errorf("password must be at least 8 characters: %w", ErrInvalidPassword)
+			return nil, fmt.Errorf("password must be at least 8 characters: %w", security.ErrInvalidPassword)
 		}
-		hash, err := hashPassword(req.Password)
+		if len(req.Password) > 72 {
+			return nil, fmt.Errorf("password must be at most 72 characters: %w", security.ErrInvalidPassword)
+		}
+		hash, err := security.HashPassword(req.Password)
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +147,7 @@ func (s *UserService) SeedAdmin() error {
 		return nil
 	}
 
-	hash, err := hashPassword("admin")
+	hash, err := security.HashPassword("admin")
 	if err != nil {
 		return err
 	}
@@ -151,12 +158,4 @@ func (s *UserService) SeedAdmin() error {
 	}
 
 	return s.userRepo.Save(*u)
-}
-
-func hashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), hashCost)
-	if err != nil {
-		return "", err
-	}
-	return string(hash), nil
 }

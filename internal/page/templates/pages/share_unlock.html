@@ -1,0 +1,10 @@
+{{define "title"}}{{.Content.Handle}}{{end}} {{define "content"}}
+<p class="info">this share is protected by a password</p>
+<h1>{{.Content.Handle}}</h1>
+<form method="post" action="/s/{{.Content.Handle}}/unlock">
+  <label
+    >password <input type="password" name="password" autofocus required
+  /></label>
+  <button type="submit" class="submit">unlock</button>
+</form>
+{{end}}

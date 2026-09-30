@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"eigenshare/internal/middleware"
+	"eigenshare/internal/security"
 	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
@@ -21,22 +22,24 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 type Controller struct {
-	sessionSvc      *session.SessionService
-	userSvc         *user.UserService
-	shareSvc        *share.ShareService
-	templs          map[string]*template.Template
-	errorTmpl       *template.Template
-	static          http.Handler
-	secureCookie    bool
-	sessionDuration int
+	sessionSvc        *session.SessionService
+	userSvc           *user.UserService
+	shareSvc          *share.ShareService
+	templs            map[string]*template.Template
+	errorTmpl         *template.Template
+	static            http.Handler
+	sessionCookie     *security.CookieManager
+	shareUnlockCookie *security.CookieManager
+	shareUnlockSecret []byte
 }
 
 func NewController(
 	authSvc *session.SessionService,
 	userSvc *user.UserService,
 	shareSvc *share.ShareService,
-	secureCookie bool,
-	sessionDuration int,
+	sessionCookie *security.CookieManager,
+	shareUnlockCookie *security.CookieManager,
+	shareUnlockSecret []byte,
 ) *Controller {
 	funcs := template.FuncMap{
 		"uploadedFiles":        uploadedFiles,
@@ -72,14 +75,15 @@ func NewController(
 	}
 
 	return &Controller{
-		sessionSvc:      authSvc,
-		userSvc:         userSvc,
-		shareSvc:        shareSvc,
-		templs:          pages,
-		errorTmpl:       errorTmpl,
-		static:          http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
-		secureCookie:    secureCookie,
-		sessionDuration: sessionDuration,
+		sessionSvc:        authSvc,
+		userSvc:           userSvc,
+		shareSvc:          shareSvc,
+		templs:            pages,
+		errorTmpl:         errorTmpl,
+		static:            http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
+		sessionCookie:     sessionCookie,
+		shareUnlockCookie: shareUnlockCookie,
+		shareUnlockSecret: shareUnlockSecret,
 	}
 }
 
@@ -96,6 +100,7 @@ func (c *Controller) Routes() http.Handler {
 	pub.Handle("POST /login", handleErr(c.LoginSubmit))
 	pub.Handle("POST /logout", handleErr(c.Logout))
 	pub.Handle("GET /s/{handle}", handleErr(c.SharePage))
+	pub.Handle("POST /s/{handle}/unlock", handleErr(c.UnlockShare))
 	pub.Handle("GET /s/{handle}/download", handleErr(c.DownloadAll))
 	pub.Handle("GET /s/{handle}/files/{fileID}/download", handleErr(c.DownloadFile))
 
@@ -112,6 +117,7 @@ func (c *Controller) Routes() http.Handler {
 	prot.Handle("POST /shares/{id}/trash", handleErr(c.TrashShare))
 	prot.Handle("POST /shares/{id}/restore", handleErr(c.RestoreShare))
 	prot.Handle("POST /shares/{id}/visibility", handleErr(c.SetVisibility))
+	prot.Handle("POST /shares/{id}/settings", handleErr(c.UpdateShareSettings))
 	prot.Handle("POST /shares/{id}/owners", handleErr(c.AddOwner))
 	prot.Handle("POST /shares/{id}/owners/{ownerID}/delete", handleErr(c.RemoveOwner))
 	prot.Handle("POST /shares/{id}/files/{fileID}/delete", handleErr(c.DeleteFile))

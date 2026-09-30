@@ -27,12 +27,13 @@
     </select>
   </label>
 
+  <label
+    >password (optional)
+    <input type="password" name="password" minlength="3" maxlength="72" />
+  </label>
+
   <button type="submit" class="submit" id="create-btn">create</button>
-  <div
-    id="create-error"
-    class="error"
-    style="display: none; margin-top: 1rem"
-  ></div>
+  <div id="create-error" class="error" style="display: none"></div>
 </form>
 
 <p><a href="/shares">back to shares</a></p>
@@ -64,6 +65,7 @@
         handle: fd.get("handle"),
         expiryMinutes: parseInt(fd.get("expiryMinutes") || "0", 10),
         visibility: fd.get("visibility") || "private",
+        password: fd.get("password") || "",
       };
 
       try {
@@ -79,7 +81,6 @@
         }
 
         const share = await resp.json();
-        // Instantly redirect to the Edit page so they can upload files
         window.location.href = `/shares/${share.id}/edit`;
       } catch (err) {
         errEl.textContent = err.message;

@@ -9,4 +9,5 @@ type ShareRequest struct {
 	Handle        string     `json:"handle"`
 	ExpiryMinutes int        `json:"expiryMinutes"`
 	Visibility    Visibility `json:"visibility"`
+	Password      string     `json:"password"`
 }

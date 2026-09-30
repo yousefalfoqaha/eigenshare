@@ -3,59 +3,28 @@ package middleware
 import (
 	"net/http"
 
+	"eigenshare/internal/security"
 	"eigenshare/internal/session"
 )
 
-const cookieName = "session_id"
-
-func GetSessionToken(r *http.Request) (string, bool) {
-	cookie, err := r.Cookie(cookieName)
-	if err != nil || cookie.Value == "" {
-		return "", false
-	}
-	return cookie.Value, true
-}
-
-func SetSessionCookie(w http.ResponseWriter, token string, maxAge int, secure bool) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     cookieName,
-		Value:    token,
-		Path:     "/",
-		MaxAge:   maxAge,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   secure,
-	})
-}
-
-func ClearSessionCookie(w http.ResponseWriter, secure bool) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     cookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   secure,
-	})
-}
-
-type SessionErrorHandler func(w http.ResponseWriter, r *http.Request)
-
-func WithSession(sessionSvc *session.SessionService, secureCookie bool) func(http.Handler) http.Handler {
+// WithSession validates the session cookie managed by cookies and puts the
+// user in the request context.
+func WithSession(sessionSvc *session.SessionService, cookies *security.CookieManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if cookie, err := r.Cookie(cookieName); err == nil && cookie.Value != "" {
-				if u, err := sessionSvc.Validate(cookie.Value); err == nil {
+			if token, ok := cookies.Get(r); ok {
+				if u, err := sessionSvc.Validate(token); err == nil {
 					next.ServeHTTP(w, r.WithContext(session.WithUser(r.Context(), u)))
 					return
 				}
-				ClearSessionCookie(w, secureCookie)
+				cookies.Clear(w)
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
 }
+
+type SessionErrorHandler func(w http.ResponseWriter, r *http.Request)
 
 func RequireSession(onError SessionErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
