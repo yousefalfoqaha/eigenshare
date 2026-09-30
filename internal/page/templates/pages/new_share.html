@@ -33,7 +33,7 @@
   </label>
 
   <button type="submit" class="submit" id="create-btn">create</button>
-  <div id="create-error" class="error" style="display: none"></div>
+  <div id="create-error" class="banner" data-error role="status"></div>
 </form>
 
 <p><a href="/shares">back to shares</a></p>
@@ -58,7 +58,7 @@
       const btn = document.getElementById("create-btn");
       const errEl = document.getElementById("create-error");
       btn.disabled = true;
-      errEl.style.display = "none";
+      errEl.textContent = "";
 
       const fd = new FormData(e.target);
       const req = {
@@ -84,7 +84,6 @@
         window.location.href = `/shares/${share.id}/edit`;
       } catch (err) {
         errEl.textContent = err.message;
-        errEl.style.display = "block";
         btn.disabled = false;
       }
     });

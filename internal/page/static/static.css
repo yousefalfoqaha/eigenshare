@@ -17,6 +17,14 @@ input[type="file"] {
   font-size: 0.8rem;
 }
 
+a {
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
 header {
   display: flex;
   justify-content: space-between;
@@ -46,21 +54,6 @@ main {
   margin: 1rem 0;
 }
 
-.row-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.empty-table {
-  text-align: center;
-}
-
-.submit {
-  margin-left: auto;
-  font-size: 1rem;
-}
-
 h1 {
   margin: 1.5rem 0;
 }
@@ -71,16 +64,58 @@ h1 {
   justify-content: space-between;
 }
 
-.info {
-  border: 1px solid #f90;
-  background: #fdc;
-  padding: 0.5rem;
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 
-.error {
-  border: 1px solid #c00;
-  background: #fee;
+.banner {
+  border: 1px solid;
   padding: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.banner[data-error] {
+  border-color: #c00;
+  background: #fee;
+}
+
+.banner[data-info] {
+  border-color: #f90;
+  background: #fdc;
+}
+
+.banner:empty {
+  display: none;
+}
+
+.empty-table {
+  text-align: center;
+}
+
+.done {
+  color: #060;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.truncate {
+  display: block;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 form {
@@ -96,8 +131,7 @@ label {
   gap: 0.25rem;
 }
 
-label.inline,
-.file-pick {
+label.inline {
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;
@@ -107,128 +141,68 @@ fieldset {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 button {
   width: fit-content;
 }
 
-.file-picker-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.file-picker-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.25rem 0;
-}
-
-.file-picker-row button {
+.submit {
   margin-left: auto;
+  font-size: 1rem;
 }
 
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-th,
-td {
-  text-align: left;
-  padding: 0.5rem 0.5rem;
-  border-bottom: 1px solid #eee;
-}
-
-.done {
-  color: #060;
-}
-
-a {
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
-  color: light-blue;
-}
-
-[data-uploader] {
+[data-upload-client] {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-[data-uploader] [data-status] {
-  color: #c00;
-}
-
-[data-uploader] [data-status]:empty {
-  display: none;
-}
-
-[data-uploader] [data-upload-btn] {
-  display: block;
-}
-
-[data-uploader] [data-lines] {
+[data-upload-client] [data-lines] {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-[data-uploader] [data-lines]:empty {
+[data-upload-client] [data-lines]:empty {
   display: none;
 }
 
-[data-uploader] [data-lines] li {
+[data-upload-client] [data-lines] li {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.25rem 0;
 }
 
-[data-uploader] .line-head {
+[data-upload-client] .line-head {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
 }
 
-[data-uploader] .line-head .truncate {
+[data-upload-client] .line-head .truncate {
   flex: 1;
   max-width: none;
 }
 
-[data-uploader] .line-head button,
-[data-uploader] .line-meter .meta {
+[data-upload-client] .line-head button,
+[data-upload-client] .line-meter .meta {
   flex-shrink: 0;
 }
 
-[data-uploader] .line-meter {
+[data-upload-client] .line-meter {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-[data-uploader] .line-meter progress {
+[data-upload-client] .line-meter progress {
   flex: 1;
   min-width: 0;
 }
 
-[data-uploader] li[data-state="uploading"] {
-  font-weight: 600;
-}
-
-.truncate {
-  display: block;
-  max-width: 24rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-[data-uploader] .truncate {
+[data-upload-client] .truncate {
   min-width: 0;
 }

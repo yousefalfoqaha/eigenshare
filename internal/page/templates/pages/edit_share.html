@@ -2,7 +2,7 @@
 {{define "content"}}
 
 {{if .Content.Share.TrashedAt}}
-<p class="info">this share has been trashed {{timeAgo .Content.Share.TrashedAt}}, it is hidden from public links until restored</p>
+<p class="banner" data-info>this share has been trashed {{timeAgo .Content.Share.TrashedAt}}, it is hidden from public links until restored</p>
 {{end}}
 
 {{if .Content.Share}}
@@ -66,15 +66,15 @@
   </tbody>
 </table>
 
-<form id="upload-form" data-uploader>
+<form id="upload-form" data-upload-client>
   <fieldset data-file-picker>
     <legend>upload files</legend>
     <input type="file" data-file-input multiple hidden />
     <button type="button" data-file-select>Browse...</button>
-    <ul class="file-picker-list" data-lines></ul>
+    <ul data-lines></ul>
   </fieldset>
 
-  <div data-status role="status"></div>
+  <div data-status role="status" class="banner" data-error></div>
 </form>
 
 <script src="/static/upload_client.js"></script>
@@ -226,9 +226,9 @@
 
 {{if eq .Content.Tab "settings"}}
 {{if .Content.Share.HasPassword}}
-<p class="info">this share has a password</p>
+<p class="banner" data-info>this share has a password</p>
 {{else}}
-<p class="info">this share has no password</p>
+<p class="banner" data-info>this share has no password</p>
 {{end}}
 
 <form method="post" action="/shares/{{.Content.Share.ID}}/settings">
