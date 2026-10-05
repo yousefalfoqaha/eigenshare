@@ -11,6 +11,8 @@
       type="text"
       name="username"
       required
+      minlength="3"
+      maxlength="64"
       value="{{if .Content}}{{.Content.Username}}{{end}}"
       autofocus
   /></label>

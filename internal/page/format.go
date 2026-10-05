@@ -7,6 +7,7 @@ import (
 
 	"eigenshare/internal/share"
 	"eigenshare/internal/timestamp"
+	"eigenshare/internal/user"
 )
 
 func formatSize(bytes int64) string {
@@ -22,8 +23,18 @@ func formatSize(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-func formatCommaSeparated(items []string) string {
-	return strings.Join(items, ", ")
+func formatOwners(ownerIDs []string, users []*user.User) string {
+	byID := make(map[string]string, len(users))
+	for _, u := range users {
+		byID[u.ID] = u.Username
+	}
+	names := make([]string, 0, len(ownerIDs))
+	for _, id := range ownerIDs {
+		if name, ok := byID[id]; ok {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 func uploadedFiles(states map[string]share.FileUploadState, files []share.File) []share.File {

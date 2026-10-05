@@ -18,7 +18,7 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Content}}
+    {{range $.Users}}
     <tr>
       <td>{{.Username}}</td>
       <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>

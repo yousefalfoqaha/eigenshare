@@ -10,22 +10,6 @@ import (
 	"eigenshare/internal/share"
 )
 
-func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
-	var req share.ShareRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return share.ErrInvalidRequest
-	}
-
-	sh, err := c.shareSvc.RequestShare(req, session.UserFromContext(r.Context()))
-	if err != nil {
-		return err
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	return json.NewEncoder(w).Encode(sh)
-}
-
 func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Files []share.FileRequest `json:"files"`

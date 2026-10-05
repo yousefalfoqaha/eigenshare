@@ -3,6 +3,7 @@ package page
 import (
 	"mime"
 	"net/http"
+	"strconv"
 
 	"eigenshare/internal/security"
 	"eigenshare/internal/session"
@@ -101,11 +102,7 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) UsersPage(w http.ResponseWriter, r *http.Request) error {
-	users, err := c.userSvc.GetAllUsers()
-	if err != nil {
-		return err
-	}
-	return c.renderPage(w, r, http.StatusOK, "users.html", users)
+	return c.renderPage(w, r, http.StatusOK, "users.html", nil)
 }
 
 func (c *Controller) NewUserPage(w http.ResponseWriter, r *http.Request) error {
@@ -164,34 +161,103 @@ func (c *Controller) DeleteUser(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) SharesPage(w http.ResponseWriter, r *http.Request) error {
-	summaries, err := c.shareSvc.ListSummaries(session.UserFromContext(r.Context()))
+	actor := session.UserFromContext(r.Context())
+
+	shares, err := c.shareSvc.GetShares(actor)
 	if err != nil {
 		return err
 	}
-	return c.renderPage(w, r, http.StatusOK, "shares.html", summaries)
+
+	rows := make([]struct {
+		Share  *share.Share
+		Upload map[string]share.FileUploadState
+	}, len(shares))
+	for i, sh := range shares {
+		states, err := c.shareSvc.GetShareUploadState(sh, actor)
+		if err != nil {
+			return err
+		}
+		rows[i].Share = sh
+		rows[i].Upload = states
+	}
+
+	return c.renderPage(w, r, http.StatusOK, "shares.html", &struct {
+		Shares []struct {
+			Share  *share.Share
+			Upload map[string]share.FileUploadState
+		}
+	}{rows})
 }
 
 func (c *Controller) NewSharePage(w http.ResponseWriter, r *http.Request) error {
 	return c.renderPage(w, r, http.StatusOK, "new_share.html", nil)
 }
 
-func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
-	summaries, err := c.shareSvc.ListTrashedSummaries(session.UserFromContext(r.Context()))
+func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
+	if err := r.ParseForm(); err != nil {
+		return share.ErrInvalidRequest
+	}
+
+	expiryMinutes, _ := strconv.Atoi(r.PostForm.Get("expiryMinutes"))
+
+	req := share.ShareRequest{
+		Handle:        r.PostForm.Get("handle"),
+		ExpiryMinutes: expiryMinutes,
+		Visibility:    share.Visibility(r.PostForm.Get("visibility")),
+		Password:      r.PostForm.Get("password"),
+	}
+
+	sh, err := c.shareSvc.RequestShare(req, session.UserFromContext(r.Context()))
 	if err != nil {
 		return err
 	}
-	return c.renderPage(w, r, http.StatusOK, "trash.html", summaries)
+
+	c.flash.Success(w, "share created")
+	http.Redirect(w, r, "/shares/"+sh.ID+"/edit", http.StatusSeeOther)
+	return nil
+}
+
+func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
+	actor := session.UserFromContext(r.Context())
+
+	shares, err := c.shareSvc.GetTrashedShares(actor)
+	if err != nil {
+		return err
+	}
+
+	rows := make([]struct {
+		Share  *share.Share
+		Upload map[string]share.FileUploadState
+	}, len(shares))
+	for i, sh := range shares {
+		states, err := c.shareSvc.GetShareUploadState(sh, actor)
+		if err != nil {
+			return err
+		}
+		rows[i].Share = sh
+		rows[i].Upload = states
+	}
+
+	return c.renderPage(w, r, http.StatusOK, "trash.html", &struct {
+		Shares []struct {
+			Share  *share.Share
+			Upload map[string]share.FileUploadState
+		}
+	}{rows})
 }
 
 func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error {
 	actor := session.UserFromContext(r.Context())
 
-	summary, err := c.shareSvc.GetSummary(r.PathValue("id"), actor)
+	sh, err := c.shareSvc.GetShare(r.PathValue("id"), actor)
 	if err != nil {
 		return err
 	}
 
-	users, _ := c.userSvc.GetAllUsers()
+	states, err := c.shareSvc.GetShareUploadState(sh, actor)
+	if err != nil {
+		return err
+	}
 
 	tab := r.URL.Query().Get("tab")
 	switch tab {
@@ -201,12 +267,10 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 	}
 
 	return c.renderPage(w, r, http.StatusOK, "edit_share.html", &struct {
-		Share      *share.Share
-		Upload     map[string]share.FileUploadState
-		Users      []*user.User
-		Tab        string
-		OwnerNames []string
-	}{summary.Share, summary.Upload, users, tab, summary.OwnerNames})
+		Share  *share.Share
+		Upload map[string]share.FileUploadState
+		Tab    string
+	}{sh, states, tab})
 }
 
 func (c *Controller) TrashShare(w http.ResponseWriter, r *http.Request) error {
@@ -243,7 +307,7 @@ func (c *Controller) DeleteShares(w http.ResponseWriter, r *http.Request) error 
 	if err := c.shareSvc.Delete(session.UserFromContext(r.Context()), r.PostForm["shareID"]...); err != nil {
 		return err
 	}
-	c.flash.Success(w, "shares deleted")
+	c.flash.Success(w, "share deleted")
 	http.Redirect(w, r, "/trash", http.StatusSeeOther)
 	return nil
 }

@@ -17,12 +17,12 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Content}}
+    {{range .Content.Shares}}
     {{$u := .Upload}}{{$done := uploadedFiles $u .Share.Files}}
     <tr>
       <td><a href="/s/{{.Share.Handle}}">{{.Share.Handle}}</a></td>
       <td>{{.Share.Visibility}}</td>
-      <td>{{formatCommaSeparated .OwnerNames}}</td>
+      <td>{{formatOwners .Share.Owners $.Users}}</td>
       <td>
         {{len $done}}{{if lt (len $done) (len .Share.Files)}} (uploading){{end}}
       </td>

@@ -1,9 +1,9 @@
 {{define "title"}}trash{{end}} {{define "content"}}
 <section class="title">
   <h1>trash</h1>
-  {{if .Content}}
+  {{if .Content.Shares}}
   <form method="post" action="/shares/delete" class="inline">
-    {{range .Content}}
+    {{range .Content.Shares}}
     <input type="hidden" name="shareID" value="{{.Share.ID}}" />
     {{end}}
     <button class="submit" type="submit">delete all</button>
@@ -22,7 +22,7 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Content}}
+    {{range .Content.Shares}}
     {{$u := .Upload}}{{$done := uploadedFiles $u .Share.Files}}
     <tr>
       <td>{{.Share.Handle}}</td>

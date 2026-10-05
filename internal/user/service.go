@@ -61,6 +61,9 @@ func (s *UserService) UpdateUser(id, actorID string, req UpdateRequest) (*User, 
 	}
 
 	if req.Username != u.Username {
+		if err := validateUsername(req.Username); err != nil {
+			return nil, err
+		}
 		existing, err := s.userRepo.GetByUsername(req.Username)
 		if err != nil && !errors.Is(err, ErrUserNotFound) {
 			return nil, err

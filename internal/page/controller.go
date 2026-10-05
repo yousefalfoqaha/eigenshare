@@ -1,6 +1,7 @@
 package page
 
 import (
+	"bytes"
 	"embed"
 	"html/template"
 	"io/fs"
@@ -50,7 +51,7 @@ func NewController(
 		"uploadedFiles":        uploadedFiles,
 		"uploadedSize":         uploadedSize,
 		"formatSize":           formatSize,
-		"formatCommaSeparated": formatCommaSeparated,
+		"formatOwners":         formatOwners,
 		"expiresIn":            expiresIn,
 		"timeAgo":              timeAgo,
 		"dict":                 dict,
@@ -117,6 +118,7 @@ func (c *Controller) Routes() http.Handler {
 	prot.Handle("GET /", c.handle(c.Index))
 	prot.Handle("GET /shares", c.handle(c.SharesPage))
 	prot.Handle("GET /shares/new", c.handle(c.NewSharePage))
+	prot.Handle("POST /shares", c.handle(c.CreateShare))
 	prot.Handle("GET /shares/{id}/edit", c.handle(c.EditSharePage))
 	prot.Handle("POST /shares/delete", c.handle(c.DeleteShares))
 	prot.Handle("POST /shares/{id}/trash", c.handle(c.TrashShare))
@@ -159,23 +161,39 @@ func (c *Controller) handle(h func(w http.ResponseWriter, r *http.Request) error
 			return
 		}
 
-		_ = c.renderPage(w, r, status, "error.html", struct {
+		if err := c.renderPage(w, r, status, "error.html", struct {
 			Status  int
 			Message string
-		}{status, msg})
+		}{status, msg}); err != nil {
+			http.Error(w, msg, status)
+		}
 	}
 }
 
 func (c *Controller) renderPage(w http.ResponseWriter, r *http.Request, status int, tmpl string, content any) error {
 	pg := pageData{
-		Banner:      c.flash.Pop(w, r),
-		CurrentUser: session.UserFromContext(r.Context()),
-		Content:     content,
+		Banner:  c.flash.Pop(w, r),
+		Content: content,
+	}
+
+	if u := session.UserFromContext(r.Context()); u != nil {
+		pg.CurrentUserID = u.ID
+		users, err := c.userSvc.GetAllUsers()
+		if err != nil {
+			return err
+		}
+		pg.Users = users
+	}
+
+	var buf bytes.Buffer
+	if err := c.templs[tmpl].ExecuteTemplate(&buf, "layout", &pg); err != nil {
+		return err
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	return c.templs[tmpl].ExecuteTemplate(w, "layout", &pg)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 func backURL(r *http.Request, fallback string) string {
@@ -195,9 +213,23 @@ func backURL(r *http.Request, fallback string) string {
 }
 
 type pageData struct {
-	Banner      *banner
-	CurrentUser *user.User
-	Content     any
+	Banner        *banner
+	CurrentUserID string
+	Users         []*user.User
+	Content       any
+}
+
+// CurrentUser resolves the session user from the user list.
+func (p *pageData) CurrentUser() *user.User {
+	if p.CurrentUserID == "" {
+		return nil
+	}
+	for _, u := range p.Users {
+		if u.ID == p.CurrentUserID {
+			return u
+		}
+	}
+	return nil
 }
 
 func redirectToLogin(w http.ResponseWriter, r *http.Request) {

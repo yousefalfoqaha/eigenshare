@@ -1,6 +1,6 @@
 {{define "title"}}new share{{end}} {{define "content"}}
 <h1>new share</h1>
-<form id="new-share-form">
+<form method="post" action="/shares">
   <label
     >handle
     <input
@@ -10,6 +10,7 @@
       required
       pattern="[a-zA-Z0-9_-]{3,64}"
       minlength="3"
+      maxlength="64"
       autofocus
     />
   </label>
@@ -32,8 +33,7 @@
     <input type="password" name="password" minlength="3" maxlength="72" />
   </label>
 
-  <button type="submit" class="submit" id="create-btn">create</button>
-  <div id="create-error" class="banner" data-error role="status"></div>
+  <button type="submit" class="submit">create</button>
 </form>
 
 <p><a href="/shares">back to shares</a></p>
@@ -49,43 +49,5 @@
   }
 
   document.getElementById("handle-input").value = randomHandle();
-
-  document
-    .getElementById("new-share-form")
-    .addEventListener("submit", async (e) => {
-      e.preventDefault();
-
-      const btn = document.getElementById("create-btn");
-      const errEl = document.getElementById("create-error");
-      btn.disabled = true;
-      errEl.textContent = "";
-
-      const fd = new FormData(e.target);
-      const req = {
-        handle: fd.get("handle"),
-        expiryMinutes: parseInt(fd.get("expiryMinutes") || "0", 10),
-        visibility: fd.get("visibility") || "private",
-        password: fd.get("password") || "",
-      };
-
-      try {
-        const resp = await fetch("/api/shares", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(req),
-        });
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.message || `create failed: ${resp.status}`);
-        }
-
-        const share = await resp.json();
-        window.location.href = `/shares/${share.id}/edit`;
-      } catch (err) {
-        errEl.textContent = err.message;
-        btn.disabled = false;
-      }
-    });
 </script>
 {{end}}

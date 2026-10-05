@@ -24,7 +24,6 @@ func NewController(authSvc *session.SessionService, userSvc *user.UserService, s
 func (c *Controller) Routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("POST /shares", handle(c.CreateShare))
 	mux.Handle("POST /shares/{id}/files", handle(c.AddFilesToShare))
 	mux.Handle("HEAD /shares/{id}/files/{fileID}/stream", handle(c.GetUploadOffset))
 	mux.Handle("PUT /shares/{id}/files/{fileID}/stream", handle(c.StreamFile))

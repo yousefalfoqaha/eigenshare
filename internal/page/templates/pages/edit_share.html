@@ -33,7 +33,7 @@
 <p>
   {{len $done}} file(s){{if lt (len $done) (len .Content.Share.Files)}} (uploading){{end}} ·
   {{formatSize (uploadedSize $done)}} ·
-  {{formatCommaSeparated .Content.OwnerNames}} ·
+  {{formatOwners .Content.Share.Owners $.Users}} ·
   {{.Content.Share.Visibility}} ·
   expires {{expiresIn .Content.Share.ExpiresAt}}
 </p>
@@ -196,7 +196,7 @@
     <tr><th>username</th><th>admin</th><th></th></tr>
   </thead>
   <tbody>
-    {{range .Content.Users}}{{if $.Content.Share.IsOwner .}}
+    {{range $.Users}}{{if $.Content.Share.IsOwner .}}
     <tr>
       <td>{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</td>
       <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
@@ -216,7 +216,7 @@
   <label>add owner
     <select name="userID" required>
       <option value="">select a user</option>
-      {{range .Content.Users}}{{if not ($.Content.Share.IsOwner .)}}
+      {{range $.Users}}{{if not ($.Content.Share.IsOwner .)}}
       <option value="{{.ID}}">{{.Username}}</option>
       {{end}}{{end}}
     </select>

@@ -8,7 +8,7 @@ import (
 	"eigenshare/internal/timestamp"
 )
 
-var validUsername = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+var validUsername = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,64}$`)
 
 type User struct {
 	ID           string              `json:"id"`
@@ -18,12 +18,19 @@ type User struct {
 	CreatedAt    timestamp.Timestamp `json:"createdAt"`
 }
 
-func NewUser(id, username, passwordHash string, isAdmin bool) (*User, error) {
+func validateUsername(username string) error {
 	if username == "" {
-		return nil, fmt.Errorf("username is required: %w", ErrInvalidUsername)
+		return fmt.Errorf("username is required: %w", ErrInvalidUsername)
 	}
 	if !validUsername.MatchString(username) {
-		return nil, fmt.Errorf("username may only contain letters, numbers, hyphens and underscores (max 64 chars): %w", ErrInvalidUsername)
+		return fmt.Errorf("username may only contain letters, numbers, hyphens and underscores (3-64 chars): %w", ErrInvalidUsername)
+	}
+	return nil
+}
+
+func NewUser(id, username, passwordHash string, isAdmin bool) (*User, error) {
+	if err := validateUsername(username); err != nil {
+		return nil, err
 	}
 	if passwordHash == "" {
 		return nil, fmt.Errorf("password hash is required: %w", security.ErrInvalidPassword)
