@@ -12,10 +12,6 @@ import (
 
 // MapHTTPError maps a domain error to an HTTP status and a client-safe message.
 func MapHTTPError(err error) (int, string) {
-	if _, ok := errors.AsType[*share.ChunkOffsetConflictError](err); ok {
-		return http.StatusConflict, err.Error()
-	}
-
 	switch {
 	case errors.Is(err, share.ErrInvalidRequest),
 		errors.Is(err, share.ErrInvalidHandle),
@@ -23,7 +19,6 @@ func MapHTTPError(err error) (int, string) {
 		errors.Is(err, share.ErrInvalidFileSize),
 		errors.Is(err, share.ErrInvalidExpiry),
 		errors.Is(err, share.ErrInvalidVisibility),
-		errors.Is(err, share.ErrInvalidChunkOffset),
 		errors.Is(err, security.ErrInvalidPassword),
 		errors.Is(err, security.ErrPasswordTooLong),
 		errors.Is(err, user.ErrInvalidUsername),
@@ -44,6 +39,7 @@ func MapHTTPError(err error) (int, string) {
 
 	case errors.Is(err, share.ErrHandleExists),
 		errors.Is(err, share.ErrFileNotComplete),
+		errors.Is(err, share.ErrInvalidChunkOffset),
 		errors.Is(err, share.ErrChunkOffsetExceedsSize),
 		errors.Is(err, share.ErrShareVersionConflict),
 		errors.Is(err, share.ErrShareTrashed),

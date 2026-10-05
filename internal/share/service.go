@@ -56,7 +56,7 @@ func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, s
 
 	bytesWritten, err := s.store.WriteFileStream(shareID, file.ID, file.ExpectedSize, offset, stream)
 	if err != nil {
-		return 0, err
+		return bytesWritten, err
 	}
 
 	return bytesWritten, nil

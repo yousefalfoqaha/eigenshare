@@ -143,8 +143,9 @@ async function uploadFile(shareID, fileID, file, onProgress, signal) {
 
     if (result.status === "success") {
       offset = result.offset;
-      onProgress(offset);
       attempts = 0;
+
+      onProgress(offset);
       continue;
     }
 

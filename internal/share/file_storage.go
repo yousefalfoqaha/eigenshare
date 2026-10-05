@@ -142,10 +142,7 @@ func (s *FileStorage) WriteFileStream(shareID string, fileID string, expectedSiz
 	}
 
 	if offset != stat.Size() {
-		return 0, &ChunkOffsetConflictError{
-			CurrentOffset: stat.Size(),
-			ExpectedSize:  expectedSize,
-		}
+		return stat.Size(), ErrInvalidChunkOffset
 	}
 
 	if _, err = f.Seek(offset, io.SeekStart); err != nil {

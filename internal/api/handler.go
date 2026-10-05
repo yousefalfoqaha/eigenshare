@@ -57,8 +57,8 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 	bytesWritten, err := c.shareSvc.StreamFile(
 		r.PathValue("id"), r.PathValue("fileID"), offset, r.Body, session.UserFromContext(r.Context()))
 	if err != nil {
-		if conflict, ok := errors.AsType[*share.ChunkOffsetConflictError](err); ok {
-			w.Header().Set("Upload-Offset", strconv.FormatInt(conflict.CurrentOffset, 10))
+		if errors.Is(err, share.ErrInvalidChunkOffset) {
+			w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
 		}
 		return err
 	}

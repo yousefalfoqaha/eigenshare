@@ -2,7 +2,6 @@ package share
 
 import (
 	"errors"
-	"fmt"
 )
 
 var (
@@ -32,16 +31,3 @@ var (
 	// 423 — locked
 	ErrUploadInProgress = errors.New("an upload is already in progress for this file")
 )
-
-type ChunkOffsetConflictError struct {
-	CurrentOffset int64
-	ExpectedSize  int64
-}
-
-func (e *ChunkOffsetConflictError) Error() string {
-	return fmt.Sprintf("invalid chunk offset; current offset is %d", e.CurrentOffset)
-}
-
-func (e *ChunkOffsetConflictError) Unwrap() error {
-	return ErrInvalidChunkOffset
-}
