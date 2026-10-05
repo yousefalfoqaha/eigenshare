@@ -22,51 +22,74 @@ async function registerFiles(shareID, files) {
   return (await response.json()) || [];
 }
 
-async function fileState(shareID, fileID, signal) {
+async function getUploadState(shareID, fileID, signal) {
   try {
     const res = await fetch(`/api/shares/${shareID}/files/${fileID}/stream`, {
       method: "HEAD",
       signal,
     });
-    if (!res.ok) return null;
+
+    if (!res.ok) {
+      return {
+        status: "error",
+        code: res.status,
+        message: `HTTP ${res.status}`,
+      };
+    }
+
     const header = res.headers.get("Upload-Offset");
-    if (header === null) return null;
-    return {
-      offset: Number(header),
-      locked: res.headers.get("Upload-Locked") !== null,
-    };
+    if (header === null) {
+      return { status: "error", message: "Missing Upload-Offset header" };
+    }
+
+    const offset = Number(header);
+    if (res.headers.get("Upload-Locked") !== null) {
+      return { status: "locked", offset };
+    }
+
+    return { status: "success", offset };
   } catch (e) {
-    return null;
+    if (e.name === "AbortError") return { status: "aborted" };
   }
 }
 
-function putChunk(shareID, fileID, offset, data, onProgress, signal) {
-  return new Promise((resolve, reject) => {
+function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
+  if (offset >= file.size) {
+    return Promise.resolve({ status: "complete" });
+  }
+
+  return new Promise((resolve) => {
+    const chunkSize = 25 * 1024 * 1024;
+    const data = file.slice(offset, offset + chunkSize);
+
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", `/api/shares/${shareID}/files/${fileID}/stream`);
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.setRequestHeader("Upload-Offset", String(offset));
 
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) onProgress(offset + e.loaded);
-    };
-
-    const fail = (status, message) => {
-      const err = new Error(message);
-      err.status = status;
-      reject(err);
+      if (e.lengthComputable) onProgress(offset + e.loaded);
     };
 
     xhr.onload = () => {
-      if (xhr.status === 0) return fail(0, "network error");
+      if (xhr.status === 0) {
+        return resolve({ status: "error", code: 0, message: "network error" });
+      }
+
+      if (xhr.status === 423) {
+        return resolve({ status: "locked", offset });
+      }
 
       if (xhr.status === 204 || xhr.status === 409) {
         const header = xhr.getResponseHeader("Upload-Offset");
-        if (header !== null) return resolve(Number(header));
-        return fail(
-          xhr.status,
-          `Server returned ${xhr.status} but missing Upload-Offset header`,
-        );
+        if (header !== null) {
+          return resolve({ status: "success", offset: Number(header) });
+        }
+        return resolve({
+          status: "error",
+          code: xhr.status,
+          message: `Server returned ${xhr.status} but missing Upload-Offset header`,
+        });
       }
 
       let errorMsg = "";
@@ -75,16 +98,18 @@ function putChunk(shareID, fileID, offset, data, onProgress, signal) {
         if (payload.message) errorMsg = payload.message;
       } catch (e) {}
 
-      fail(
-        xhr.status,
-        errorMsg
+      resolve({
+        status: "error",
+        code: xhr.status,
+        message: errorMsg
           ? `upload rejected: ${errorMsg}`
           : `upload rejected (HTTP ${xhr.status})`,
-      );
+      });
     };
 
-    xhr.onerror = () => fail(0, "network error");
-    xhr.onabort = () => fail(0, "upload aborted");
+    xhr.onerror = () =>
+      resolve({ status: "error", code: 0, message: "network error" });
+    xhr.onabort = () => resolve({ status: "aborted" });
 
     if (signal) {
       signal.addEventListener("abort", () => xhr.abort(), { once: true });
@@ -93,61 +118,50 @@ function putChunk(shareID, fileID, offset, data, onProgress, signal) {
   });
 }
 
-async function streamFile(shareID, fileID, file, onProgress, signal) {
-  const chunkSize = 25 * 1024 * 1024;
-  let offset = 0;
+async function uploadFile(shareID, fileID, file, onProgress, signal) {
+  const state = await getUploadState(shareID, fileID, signal);
+  if (state.status !== "success") return state;
+
+  let offset = state.offset;
   let attempts = 0;
 
-  while (offset < file.size) {
-    if (signal?.aborted) throw new Error("upload aborted");
+  onProgress(offset);
 
-    const state = await fileState(shareID, fileID, signal);
-    if (state === null) {
-      if (++attempts > 3) throw new Error("connection lost. please try again.");
-      await new Promise((r) => setTimeout(r, 1000));
-      continue;
+  while (true) {
+    const result = await uploadChunk(
+      shareID,
+      fileID,
+      file,
+      offset,
+      onProgress,
+      signal,
+    );
+
+    if (result.status === "complete" || result.status === "aborted") {
+      return result;
     }
 
-    offset = state.offset;
-    if (onProgress) onProgress(offset);
-    if (offset >= file.size) continue;
-
-    if (state.locked) {
-      if (++attempts > 3) return "locked";
-      await new Promise((r) => setTimeout(r, 1000));
-      continue;
-    }
-
-    const chunk = file.slice(offset, offset + chunkSize);
-    try {
-      offset = await putChunk(
-        shareID,
-        fileID,
-        offset,
-        chunk,
-        onProgress,
-        signal,
-      );
-      if (onProgress) onProgress(offset);
+    if (result.status === "success") {
+      offset = result.offset;
+      onProgress(offset);
       attempts = 0;
       continue;
-    } catch (err) {
-      if (signal?.aborted) throw new Error("upload aborted");
+    }
+
+    if (result.status === "error") {
       if (
-        err.status >= 400 &&
-        err.status < 500 &&
-        err.status !== 423 &&
-        err.status !== 409
+        result.code >= 400 &&
+        result.code < 500 &&
+        result.code !== 423 &&
+        result.code !== 409
       ) {
-        throw err;
+        return result;
       }
     }
 
-    if (++attempts > 3) throw new Error("connection lost. please try again.");
+    if (++attempts > 3) return result;
     await new Promise((r) => setTimeout(r, 1000));
   }
-
-  return "complete";
 }
 
 class UploadClient {
@@ -269,12 +283,17 @@ class UploadClient {
     }
 
     if (fresh.length) {
-      const entries = await registerFiles(this.shareID, fresh);
-      entries.forEach((e, i) => {
-        const task = this.PENDING(e.id, fresh[i], 0);
-        this.tasks.set(e.id, task);
-        this.on.onAdd?.(task);
-      });
+      try {
+        const entries = await registerFiles(this.shareID, fresh);
+        entries.forEach((e, i) => {
+          const task = this.PENDING(e.id, fresh[i], 0);
+          this.tasks.set(e.id, task);
+          this.on.onAdd?.(task);
+        });
+      } catch (err) {
+        this.on.onError?.(`failed to register files: ${err.message}`);
+        return;
+      }
     }
     this.#drain();
   }
@@ -325,7 +344,7 @@ class UploadClient {
       this.#transition(pendingTask.id, uploadingTask);
 
       try {
-        const outcome = await streamFile(
+        const outcome = await uploadFile(
           this.shareID,
           uploadingTask.id,
           uploadingTask.file,
@@ -335,27 +354,51 @@ class UploadClient {
           },
           controller.signal,
         );
-        if (outcome === "locked") {
-          this.#transition(
-            uploadingTask.id,
-            this.LOCKED(
+
+        switch (outcome.status) {
+          case "complete":
+            this.#transition(
               uploadingTask.id,
-              uploadingTask.file,
-              uploadingTask.loaded,
-            ),
-          );
-        } else {
-          this.#transition(
-            uploadingTask.id,
-            this.DONE(
+              this.DONE(
+                uploadingTask.id,
+                uploadingTask.file,
+                uploadingTask.loaded,
+              ),
+            );
+            completed++;
+            break;
+
+          case "locked":
+            this.#transition(
               uploadingTask.id,
-              uploadingTask.file,
-              uploadingTask.loaded,
-            ),
-          );
-          completed++;
+              this.LOCKED(
+                uploadingTask.id,
+                uploadingTask.file,
+                uploadingTask.loaded,
+              ),
+            );
+            break;
+
+          case "aborted":
+            break;
+
+          case "lost":
+          case "error":
+            this.#transition(
+              uploadingTask.id,
+              this.ERROR(
+                uploadingTask.id,
+                uploadingTask.file,
+                uploadingTask.loaded,
+                outcome.message,
+              ),
+            );
+            this.on.onError?.(
+              `failed to upload ${uploadingTask.name}: ${outcome.message}`,
+            );
+            break;
         }
-      } catch (err) {
+      } catch (ex) {
         if (!controller.signal.aborted) {
           this.#transition(
             uploadingTask.id,
@@ -363,11 +406,11 @@ class UploadClient {
               uploadingTask.id,
               uploadingTask.file,
               uploadingTask.loaded,
-              err.message,
+              "Unexpected internal error",
             ),
           );
           this.on.onError?.(
-            `failed to upload ${uploadingTask.name}: ${err.message}`,
+            `Unexpected error uploading ${uploadingTask.name}: ${ex.message}`,
           );
         }
       }
