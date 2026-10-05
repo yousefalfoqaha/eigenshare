@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"errors"
-	"log"
 	"net/http"
 
 	"eigenshare/internal/security"
@@ -11,20 +10,8 @@ import (
 	"eigenshare/internal/user"
 )
 
-type ErrorHandler func(w http.ResponseWriter, r *http.Request, status int, msg string)
-
-func WithErrorHandler(onError ErrorHandler) func(func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
-	return func(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if err := h(w, r); err != nil {
-				status, msg := mapError(err)
-				onError(w, r, status, msg)
-			}
-		}
-	}
-}
-
-func mapError(err error) (int, string) {
+// MapHTTPError maps a domain error to an HTTP status and a client-safe message.
+func MapHTTPError(err error) (int, string) {
 	if _, ok := errors.AsType[*share.ChunkOffsetConflictError](err); ok {
 		return http.StatusConflict, err.Error()
 	}
@@ -73,7 +60,6 @@ func mapError(err error) (int, string) {
 		return http.StatusLocked, err.Error()
 
 	default:
-		log.Printf("INTERNAL ERROR: %v", err)
 		return http.StatusInternalServerError, "an unexpected error occurred"
 	}
 }

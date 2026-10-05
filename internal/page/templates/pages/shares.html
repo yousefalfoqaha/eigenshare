@@ -17,23 +17,23 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Content.Shares}}
-    {{$u := index $.Content.Uploads .ID}}{{$done := uploadedFiles $u .Files}}
+    {{range .Content}}
+    {{$u := .Upload}}{{$done := uploadedFiles $u .Share.Files}}
     <tr>
-      <td><a href="/s/{{.Handle}}">{{.Handle}}</a></td>
-      <td>{{.Visibility}}</td>
-      <td>{{formatCommaSeparated (index $.Content.OwnerNames .ID)}}</td>
+      <td><a href="/s/{{.Share.Handle}}">{{.Share.Handle}}</a></td>
+      <td>{{.Share.Visibility}}</td>
+      <td>{{formatCommaSeparated .OwnerNames}}</td>
       <td>
-        {{len $done}}{{if lt (len $done) (len .Files)}} (uploading){{end}}
+        {{len $done}}{{if lt (len $done) (len .Share.Files)}} (uploading){{end}}
       </td>
       <td>{{formatSize (uploadedSize $done)}}</td>
-      <td>{{expiresIn .ExpiresAt}}</td>
+      <td>{{expiresIn .Share.ExpiresAt}}</td>
       <td>
-        {{if .CanManage $.CurrentUser}}
+        {{if .Share.CanManage $.CurrentUser}}
         <div class="row-actions">
-          <a href="/shares/{{.ID}}/edit">edit</a>
+          <a href="/shares/{{.Share.ID}}/edit">edit</a>
 
-          <form method="post" action="/shares/{{.ID}}/trash" class="inline">
+          <form method="post" action="/shares/{{.Share.ID}}/trash" class="inline">
             <button type="submit">trash</button>
           </form>
         </div>

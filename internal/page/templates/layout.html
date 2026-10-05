@@ -25,8 +25,8 @@
       </nav>
     </header>
     <main>
-      {{if .Banner}}
-      <div class="banner" data-error>{{.Banner}}</div>
+      {{with .Banner}}
+      <div class="banner banner-{{.Kind}}" role="{{if eq .Kind "error"}}alert{{else}}status{{end}}">{{.Message}}</div>
       {{end}} {{template "content" .}}
     </main>
   </body>

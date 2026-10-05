@@ -11,7 +11,7 @@ import (
 const passwordHashCost = 12
 
 func HashPassword(plain string) (string, error) {
-	if len(plain) > 72 { // bcrypt hard limit
+	if len(plain) > 72 {
 		return "", ErrPasswordTooLong
 	}
 	b, err := bcrypt.GenerateFromPassword([]byte(plain), passwordHashCost)

@@ -25,8 +25,8 @@ const (
 	PORT                      int    = 8080
 	DATA_PATH                 string = "data"
 	SECURE_COOKIE             bool   = false
-	SESSION_DURATION_SEC      int    = 60 * 24 * 7
-	SHARE_UNLOCK_DURATION_SEC int    = 60 * 24 * 7
+	SESSION_DURATION_SEC      int    = 60 * 60 * 24 * 7
+	SHARE_UNLOCK_DURATION_SEC int    = 60 * 60 * 24 * 7
 )
 
 func main() {
@@ -62,17 +62,23 @@ func main() {
 		security.WithMaxAge(SHARE_UNLOCK_DURATION_SEC),
 		security.WithSecure(SECURE_COOKIE),
 	)
+	flashCookie := security.NewCookieManager("flash",
+		security.WithMaxAge(60),
+		security.WithSecure(SECURE_COOKIE),
+	)
 
 	apiContr := api.NewController(sessionSvc, userSvc, shareSvc)
-	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, sessionCookie, shareUnlockCookie, shareUnlockSecret)
+	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, sessionCookie, shareUnlockCookie, shareUnlockSecret, flashCookie)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", pageContr.Routes())
 	mux.Handle("/api/", http.StripPrefix("/api", apiContr.Routes()))
 
 	server := http.Server{
-		Addr:    ":" + strconv.Itoa(PORT),
-		Handler: middleware.Logger(middleware.WithSession(sessionSvc, sessionCookie)(mux)),
+		Addr: ":" + strconv.Itoa(PORT),
+		Handler: middleware.Logger(
+			middleware.WithSession(sessionSvc, sessionCookie)(mux),
+		),
 	}
 
 	go func() {

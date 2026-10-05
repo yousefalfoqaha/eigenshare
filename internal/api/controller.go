@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"eigenshare/internal/middleware"
@@ -23,18 +24,31 @@ func NewController(authSvc *session.SessionService, userSvc *user.UserService, s
 func (c *Controller) Routes() http.Handler {
 	mux := http.NewServeMux()
 
-	handleErr := middleware.WithErrorHandler(writeError)
-
-	mux.Handle("POST /shares", handleErr(c.CreateShare))
-	mux.Handle("POST /shares/{id}/files", handleErr(c.AddFilesToShare))
-	mux.Handle("HEAD /shares/{id}/files/{fileID}/stream", handleErr(c.GetUploadOffset))
-	mux.Handle("PUT /shares/{id}/files/{fileID}/stream", handleErr(c.StreamFile))
-	mux.Handle("DELETE /shares/{id}/files/{fileID}", handleErr(c.DeleteShareFile))
+	mux.Handle("POST /shares", handle(c.CreateShare))
+	mux.Handle("POST /shares/{id}/files", handle(c.AddFilesToShare))
+	mux.Handle("HEAD /shares/{id}/files/{fileID}/stream", handle(c.GetUploadOffset))
+	mux.Handle("PUT /shares/{id}/files/{fileID}/stream", handle(c.StreamFile))
+	mux.Handle("DELETE /shares/{id}/files/{fileID}", handle(c.DeleteShareFile))
 
 	return middleware.RequireSession(writeUnauthorized)(mux)
 }
 
-func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+// handle runs the handler and writes a JSON error response on failure.
+func handle(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := h(w, r); err != nil {
+			writeError(w, r, err)
+		}
+	}
+}
+
+// writeError maps the error, logs 5xx failures and writes the JSON error response.
+func writeError(w http.ResponseWriter, r *http.Request, err error) {
+	status, msg := middleware.MapHTTPError(err)
+	if status >= http.StatusInternalServerError {
+		log.Printf("INTERNAL ERROR: %v", err)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "message": msg})

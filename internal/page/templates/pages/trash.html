@@ -1,10 +1,10 @@
 {{define "title"}}trash{{end}} {{define "content"}}
 <section class="title">
   <h1>trash</h1>
-  {{if .Content.Shares}}
+  {{if .Content}}
   <form method="post" action="/shares/delete" class="inline">
-    {{range .Content.Shares}}
-    <input type="hidden" name="shareID" value="{{.ID}}" />
+    {{range .Content}}
+    <input type="hidden" name="shareID" value="{{.Share.ID}}" />
     {{end}}
     <button class="submit" type="submit">delete all</button>
   </form>
@@ -22,23 +22,23 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Content.Shares}}
-    {{$u := index $.Content.Uploads .ID}}{{$done := uploadedFiles $u .Files}}
+    {{range .Content}}
+    {{$u := .Upload}}{{$done := uploadedFiles $u .Share.Files}}
     <tr>
-      <td>{{.Handle}}</td>
+      <td>{{.Share.Handle}}</td>
       <td>
-        {{len $done}}{{if lt (len $done) (len .Files)}} (in progress){{end}}
+        {{len $done}}{{if lt (len $done) (len .Share.Files)}} (in progress){{end}}
       </td>
       <td>{{formatSize (uploadedSize $done)}}</td>
-      <td>{{timeAgo .TrashedAt}}</td>
+      <td>{{timeAgo .Share.TrashedAt}}</td>
       <td>
         <div class="row-actions">
-          <a href="/shares/{{.ID}}/edit">edit</a>
-          <form method="post" action="/shares/{{.ID}}/restore" class="inline">
+          <a href="/shares/{{.Share.ID}}/edit">edit</a>
+          <form method="post" action="/shares/{{.Share.ID}}/restore" class="inline">
             <button type="submit">restore</button>
           </form>
           <form method="post" action="/shares/delete" class="inline">
-            <input type="hidden" name="shareID" value="{{.ID}}" />
+            <input type="hidden" name="shareID" value="{{.Share.ID}}" />
             <button type="submit">delete</button>
           </form>
         </div>

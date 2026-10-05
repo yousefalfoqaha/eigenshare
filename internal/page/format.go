@@ -26,7 +26,6 @@ func formatCommaSeparated(items []string) string {
 	return strings.Join(items, ", ")
 }
 
-// uploadedFiles returns the files of the share that are fully uploaded.
 func uploadedFiles(states map[string]share.FileUploadState, files []share.File) []share.File {
 	uploaded := make([]share.File, 0, len(files))
 	for _, f := range files {
@@ -37,7 +36,6 @@ func uploadedFiles(states map[string]share.FileUploadState, files []share.File) 
 	return uploaded
 }
 
-// uploadedSize sums the sizes of the uploaded files handed to it.
 func uploadedSize(files []share.File) int64 {
 	var total int64
 	for _, f := range files {
@@ -91,8 +89,6 @@ func timeAgo(t *timestamp.Timestamp) string {
 	return fmt.Sprintf("%d days ago", int(d.Hours()/24))
 }
 
-// dict builds a map from key/value pairs so a template component can be
-// invoked with several named arguments: {{template "x" (dict "a" 1 "b" 2)}}
 func dict(kv ...any) map[string]any {
 	if len(kv)%2 != 0 {
 		panic("dict: odd number of arguments")

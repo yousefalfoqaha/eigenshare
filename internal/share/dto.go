@@ -11,3 +11,10 @@ type ShareRequest struct {
 	Visibility    Visibility `json:"visibility"`
 	Password      string     `json:"password"`
 }
+
+// ShareSummary is the read shape for a share in listing and edit views.
+type ShareSummary struct {
+	Share      *Share
+	Upload     map[string]FileUploadState
+	OwnerNames []string
+}

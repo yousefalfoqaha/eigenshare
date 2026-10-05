@@ -86,6 +86,21 @@ h1 {
   background: #fdc;
 }
 
+.banner-error {
+  border-color: #c00;
+  background: #fee;
+}
+
+.banner-info {
+  border-color: #f90;
+  background: #fdc;
+}
+
+.banner-success {
+  border-color: #070;
+  background: #dfd;
+}
+
 .banner:empty {
   display: none;
 }
