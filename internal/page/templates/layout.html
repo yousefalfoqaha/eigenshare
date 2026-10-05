@@ -15,10 +15,13 @@
         <a href="/shares">shares</a>
         <a href="/trash">trash</a>
         <a href="/users">users</a>
-        <span>logged in as {{.CurrentUser.Username}}</span>
-        <form method="post" action="/logout">
-          <button type="submit">logout</button>
-        </form>
+
+        <div class="actions">
+          <span class="whoami">logged in as {{.CurrentUser.Username}}</span>
+          <form method="post" action="/logout">
+            <button type="submit">logout</button>
+          </form>
+        </div>
         {{else}}
         <a href="/login">login</a>
         {{end}}

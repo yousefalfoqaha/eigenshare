@@ -1,50 +1,54 @@
 {{define "title"}}shares{{end}} {{define "content"}}
 <section class="title">
   <h1>shares</h1>
-  <p><a href="/shares/new">+ new share</a></p>
+  <div class="actions">
+    <a href="/shares/new">+ new share</a>
+  </div>
 </section>
 
-<table>
-  <thead>
-    <tr>
-      <th>handle</th>
-      <th>visibility</th>
-      <th>owners</th>
-      <th>files</th>
-      <th>size</th>
-      <th>expires</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {{range .Content.Shares}}
-    {{$u := .Upload}}{{$done := uploadedFiles $u .Share.Files}}
-    <tr>
-      <td><a href="/s/{{.Share.Handle}}">{{.Share.Handle}}</a></td>
-      <td>{{.Share.Visibility}}</td>
-      <td>{{formatOwners .Share.Owners $.Users}}</td>
-      <td>
-        {{len $done}}{{if lt (len $done) (len .Share.Files)}} (uploading){{end}}
-      </td>
-      <td>{{formatSize (uploadedSize $done)}}</td>
-      <td>{{expiresIn .Share.ExpiresAt}}</td>
-      <td>
-        {{if .Share.CanManage $.CurrentUser}}
-        <div class="row-actions">
-          <a href="/shares/{{.Share.ID}}/edit">edit</a>
+<div class="scrollable">
+  <table>
+    <thead>
+      <tr>
+        <th>handle</th>
+        <th>visibility</th>
+        <th>owners</th>
+        <th>files</th>
+        <th>size</th>
+        <th>expires</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Content.Shares}}
+      {{$u := .Upload}}{{$done := uploadedFiles $u .Share.Files}}
+      <tr>
+        <td><a href="/s/{{.Share.Handle}}">{{.Share.Handle}}</a></td>
+        <td>{{.Share.Visibility}}</td>
+        <td>{{formatOwners .Share.Owners $.Users}}</td>
+        <td>
+          {{len $done}}{{if lt (len $done) (len .Share.Files)}} (uploading){{end}}
+        </td>
+        <td>{{formatSize (uploadedSize $done)}}</td>
+        <td>{{expiresIn .Share.ExpiresAt}}</td>
+        <td>
+          {{if .Share.CanManage $.CurrentUser}}
+          <div class="actions">
+            <a href="/shares/{{.Share.ID}}/edit">edit</a>
 
-          <form method="post" action="/shares/{{.Share.ID}}/trash" class="inline">
-            <button type="submit">trash</button>
-          </form>
-        </div>
-        {{end}}
-      </td>
-    </tr>
-    {{else}}
-    <tr>
-      <td colspan="7" class="empty-table">no shares yet</td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
+            <form method="post" action="/shares/{{.Share.ID}}/trash" class="inline">
+              <button type="submit">trash</button>
+            </form>
+          </div>
+          {{end}}
+        </td>
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="7" class="empty-table">no shares yet</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
 {{end}}

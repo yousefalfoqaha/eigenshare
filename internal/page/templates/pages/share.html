@@ -3,9 +3,11 @@
 <div class="title">
   <h1>{{.Content.Share.Handle}}</h1>
   {{if gt (len $done) 0}}
-  <a href="/s/{{.Content.Share.Handle}}/download" download>
-    download all (zip)
-  </a>
+  <div class="actions">
+    <a href="/s/{{.Content.Share.Handle}}/download" download>
+      download all (zip)
+    </a>
+  </div>
   {{end}}
 </div>
 
@@ -14,31 +16,33 @@
   {{expiresIn .Content.Share.ExpiresAt}}
 </p>
 
-<table>
-  <thead>
-    <tr>
-      <th>name</th>
-      <th>size</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {{range $done}}
-    <tr>
-      <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
-      <td>{{formatSize .ExpectedSize}}</td>
-      <td>
-        <a href="/s/{{$.Content.Share.Handle}}/files/{{.ID}}/download" download
-          >download</a
-        >
-      </td>
-    </tr>
+<div class="scrollable">
+  <table>
+    <thead>
+      <tr>
+        <th>name</th>
+        <th>size</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range $done}}
+      <tr>
+        <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
+        <td>{{formatSize .ExpectedSize}}</td>
+        <td>
+          <a href="/s/{{$.Content.Share.Handle}}/files/{{.ID}}/download" download
+            >download</a
+          >
+        </td>
+      </tr>
 
-    {{else}}
-    <tr>
-      <td colspan="3" class="empty-table">no files</td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
+      {{else}}
+      <tr>
+        <td colspan="3" class="empty-table">no files</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
 {{end}}

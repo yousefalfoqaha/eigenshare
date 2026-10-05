@@ -2,44 +2,48 @@
 <section class="title">
   <h1>users</h1>
   {{if .CurrentUser.IsAdmin}}
-  <p><a href="/users/new">+ new user</a></p>
+  <div class="actions">
+    <a href="/users/new">+ new user</a>
+  </div>
   {{end}}
 </section>
 
-<table>
-  <thead>
-    <tr>
-      <th>username</th>
-      <th>admin</th>
-      <th>created</th>
-      {{if .CurrentUser.IsAdmin}}
-      <th></th>
-      {{end}}
-    </tr>
-  </thead>
-  <tbody>
-    {{range $.Users}}
-    <tr>
-      <td>{{.Username}}</td>
-      <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
-      <td>{{.CreatedAt.Time.Format "Jan 02, 2006"}}</td>
-      {{if $.CurrentUser.IsAdmin}}
-      <td class="row-actions">
-        <a href="/users/{{.ID}}/edit">edit</a>
-
-        {{if ne .ID $.CurrentUser.ID}}
-        <form method="post" action="/users/{{.ID}}/delete" class="inline">
-          <button type="submit">delete</button>
-        </form>
+<div class="scrollable">
+  <table>
+    <thead>
+      <tr>
+        <th>username</th>
+        <th>admin</th>
+        <th>created</th>
+        {{if .CurrentUser.IsAdmin}}
+        <th></th>
         {{end}}
-      </td>
+      </tr>
+    </thead>
+    <tbody>
+      {{range $.Users}}
+      <tr>
+        <td>{{.Username}}</td>
+        <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
+        <td>{{.CreatedAt.Time.Format "Jan 02, 2006"}}</td>
+        {{if $.CurrentUser.IsAdmin}}
+        <td class="actions">
+          <a href="/users/{{.ID}}/edit">edit</a>
+
+          {{if ne .ID $.CurrentUser.ID}}
+          <form method="post" action="/users/{{.ID}}/delete" class="inline">
+            <button type="submit">delete</button>
+          </form>
+          {{end}}
+        </td>
+        {{end}}
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="4">no users</td>
+      </tr>
       {{end}}
-    </tr>
-    {{else}}
-    <tr>
-      <td colspan="4">no users</td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
+    </tbody>
+  </table>
+</div>
 {{end}}

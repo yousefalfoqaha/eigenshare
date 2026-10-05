@@ -10,13 +10,6 @@ body {
   padding: 0 1rem 1rem 1rem;
 }
 
-input {
-  font-size: 1rem;
-}
-input[type="file"] {
-  font-size: 0.8rem;
-}
-
 a {
   text-decoration: none;
 }
@@ -29,18 +22,33 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
   border-bottom: 1px solid #ccc;
   padding: 1rem 0;
 }
 
 header .brand {
   font-weight: bold;
+  flex-shrink: 0;
 }
 
 nav {
   display: flex;
   gap: 1rem;
   align-items: center;
+  flex: 1;
+}
+
+nav .whoami {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+nav .actions {
+  margin-left: auto;
 }
 
 nav form {
@@ -64,7 +72,7 @@ h1 {
   justify-content: space-between;
 }
 
-.row-actions {
+.actions {
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -103,6 +111,10 @@ h1 {
 
 .banner:empty {
   display: none;
+}
+
+.scrollable {
+  overflow-x: auto;
 }
 
 .empty-table {
@@ -165,7 +177,6 @@ button {
 
 .submit {
   margin-left: auto;
-  font-size: 1rem;
 }
 
 [data-upload-client] {
@@ -220,4 +231,37 @@ button {
 
 [data-upload-client] .truncate {
   min-width: 0;
+}
+
+@media (max-width: 640px) {
+  nav .whoami {
+    display: none;
+  }
+
+  .title {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .title .actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .title .actions button,
+  .title .actions a {
+    width: 100%;
+  }
+
+  .title .actions form {
+    width: 100%;
+    max-width: none;
+  }
+
+  th,
+  td {
+    white-space: nowrap;
+  }
 }

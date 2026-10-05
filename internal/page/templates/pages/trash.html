@@ -2,53 +2,62 @@
 <section class="title">
   <h1>trash</h1>
   {{if .Content.Shares}}
-  <form method="post" action="/shares/delete" class="inline">
-    {{range .Content.Shares}}
-    <input type="hidden" name="shareID" value="{{.Share.ID}}" />
-    {{end}}
-    <button class="submit" type="submit">delete all</button>
-  </form>
+  <div class="actions">
+    <form method="post" action="/shares/delete" class="inline">
+      {{range .Content.Shares}}
+      <input type="hidden" name="shareID" value="{{.Share.ID}}" />
+      {{end}}
+      <button type="submit">delete all</button>
+    </form>
+  </div>
   {{end}}
 </section>
 
-<table>
-  <thead>
-    <tr>
-      <th>handle</th>
-      <th>files</th>
-      <th>size</th>
-      <th>trashed</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {{range .Content.Shares}}
-    {{$u := .Upload}}{{$done := uploadedFiles $u .Share.Files}}
-    <tr>
-      <td>{{.Share.Handle}}</td>
-      <td>
-        {{len $done}}{{if lt (len $done) (len .Share.Files)}} (in progress){{end}}
-      </td>
-      <td>{{formatSize (uploadedSize $done)}}</td>
-      <td>{{timeAgo .Share.TrashedAt}}</td>
-      <td>
-        <div class="row-actions">
-          <a href="/shares/{{.Share.ID}}/edit">edit</a>
-          <form method="post" action="/shares/{{.Share.ID}}/restore" class="inline">
-            <button type="submit">restore</button>
-          </form>
-          <form method="post" action="/shares/delete" class="inline">
-            <input type="hidden" name="shareID" value="{{.Share.ID}}" />
-            <button type="submit">delete</button>
-          </form>
-        </div>
-      </td>
-    </tr>
-    {{else}}
-    <tr>
-      <td colspan="5" class="empty-table">trash is empty</td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
+<div class="scrollable">
+  <table>
+    <thead>
+      <tr>
+        <th>handle</th>
+        <th>files</th>
+        <th>size</th>
+        <th>trashed</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Content.Shares}} {{$u := .Upload}}{{$done := uploadedFiles $u
+      .Share.Files}}
+      <tr>
+        <td>{{.Share.Handle}}</td>
+        <td>
+          {{len $done}}{{if lt (len $done) (len .Share.Files)}} (in
+          progress){{end}}
+        </td>
+        <td>{{formatSize (uploadedSize $done)}}</td>
+        <td>{{timeAgo .Share.TrashedAt}}</td>
+        <td>
+          <div class="actions">
+            <a href="/shares/{{.Share.ID}}/edit">edit</a>
+            <form
+              method="post"
+              action="/shares/{{.Share.ID}}/restore"
+              class="inline"
+            >
+              <button type="submit">restore</button>
+            </form>
+            <form method="post" action="/shares/delete" class="inline">
+              <input type="hidden" name="shareID" value="{{.Share.ID}}" />
+              <button type="submit">delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {{else}}
+      <tr>
+        <td colspan="5" class="empty-table">trash is empty</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
 {{end}}

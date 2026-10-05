@@ -8,7 +8,7 @@
 {{if .Content.Share}}
 <section class="title">
   <h1>{{.Content.Share.Handle}} <small><a href="/s/{{.Content.Share.Handle}}">(view)</a></small></h1>
-  <div class="row-actions">
+  <div class="actions">
     <button type="button" id="copy-link-btn">copy link</button>
 
     <form method="post" action="/shares/{{.Content.Share.ID}}/visibility" class="inline">
@@ -45,26 +45,28 @@
 </nav>
 
 {{if eq .Content.Tab "files"}}
-<table>
-  <thead>
-    <tr><th>name</th><th>size</th><th></th></tr>
-  </thead>
-  <tbody>
-    {{range $done}}
-    <tr>
-      <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
-      <td>{{formatSize .ExpectedSize}}</td>
-      <td>
-        <form method="post" action="/shares/{{$.Content.Share.ID}}/files/{{.ID}}/delete" class="inline">
-          <button type="submit">delete</button>
-        </form>
-      </td>
-    </tr>
-    {{else}}
-    <tr><td colspan="3" class="empty-table">no files</td></tr>
-    {{end}}
-  </tbody>
-</table>
+<div class="scrollable">
+  <table>
+    <thead>
+      <tr><th>name</th><th>size</th><th></th></tr>
+    </thead>
+    <tbody>
+      {{range $done}}
+      <tr>
+        <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
+        <td>{{formatSize .ExpectedSize}}</td>
+        <td>
+          <form method="post" action="/shares/{{$.Content.Share.ID}}/files/{{.ID}}/delete" class="inline">
+            <button type="submit">delete</button>
+          </form>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="3" class="empty-table">no files</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
 
 <form id="upload-form" data-upload-client>
   <fieldset data-file-picker>
@@ -191,26 +193,28 @@
 {{end}}
 
 {{if eq .Content.Tab "owners"}}
-<table>
-  <thead>
-    <tr><th>username</th><th>admin</th><th></th></tr>
-  </thead>
-  <tbody>
-    {{range $.Users}}{{if $.Content.Share.IsOwner .}}
-    <tr>
-      <td>{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</td>
-      <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
-      <td>
-        {{if gt (len $.Content.Share.Owners) 1}}
-        <form method="post" action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete" class="inline">
-          <button type="submit">remove</button>
-        </form>
-        {{end}}
-      </td>
-    </tr>
-    {{end}}{{end}}
-  </tbody>
-</table>
+<div class="scrollable">
+  <table>
+    <thead>
+      <tr><th>username</th><th>admin</th><th></th></tr>
+    </thead>
+    <tbody>
+      {{range $.Users}}{{if $.Content.Share.IsOwner .}}
+      <tr>
+        <td>{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</td>
+        <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
+        <td>
+          {{if gt (len $.Content.Share.Owners) 1}}
+          <form method="post" action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete" class="inline">
+            <button type="submit">remove</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}{{end}}
+    </tbody>
+  </table>
+</div>
 
 <form method="post" action="/shares/{{.Content.Share.ID}}/owners">
   <label>add owner
