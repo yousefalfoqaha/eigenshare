@@ -11,15 +11,33 @@ function formatBytes(bytes) {
 }
 
 async function registerFiles(shareID, files) {
-  const response = await fetch(`/api/shares/${shareID}/files`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      files: files.map((f) => ({ name: f.name, expectedSize: f.size })),
-    }),
-  });
-  if (!response.ok) throw new Error(`failed to register: ${response.status}`);
-  return (await response.json()) || [];
+  try {
+    const res = await fetch(`/api/shares/${shareID}/files`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        files: files.map((f) => ({ name: f.name, expectedSize: f.size })),
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    return { status: "success", entries: (await res.json()) || [] };
+  } catch (ex) {
+    return { status: "error", message: ex.message };
+  }
+}
+
+async function deleteFile(shareID, fileID) {
+  try {
+    const res = await fetch(`/api/shares/${shareID}/files/${fileID}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    return { status: "success" };
+  } catch (ex) {
+    return { status: "error", message: ex.message };
+  }
 }
 
 async function getUploadState(shareID, fileID, signal) {
@@ -28,19 +46,10 @@ async function getUploadState(shareID, fileID, signal) {
       method: "HEAD",
       signal,
     });
-
-    if (!res.ok) {
-      return {
-        status: "error",
-        code: res.status,
-        message: `HTTP ${res.status}`,
-      };
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const header = res.headers.get("Upload-Offset");
-    if (header === null) {
-      return { status: "error", message: "Missing Upload-Offset header" };
-    }
+    if (header === null) throw new Error("Missing Upload-Offset header");
 
     const offset = Number(header);
     if (res.headers.get("Upload-Locked") !== null) {
@@ -48,15 +57,15 @@ async function getUploadState(shareID, fileID, signal) {
     }
 
     return { status: "success", offset };
-  } catch (e) {
-    if (e.name === "AbortError") return { status: "aborted" };
+  } catch (ex) {
+    if (ex.name === "AbortError") return { status: "aborted" };
+    return { status: "error", message: ex.message };
   }
 }
 
 function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
-  if (offset >= file.size) {
-    return Promise.resolve({ status: "complete" });
-  }
+  if (signal.aborted) return Promise.resolve({ status: "aborted" });
+  if (offset >= file.size) return Promise.resolve({ status: "complete" });
 
   return new Promise((resolve) => {
     const chunkSize = 25 * 1024 * 1024;
@@ -72,10 +81,6 @@ function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
     };
 
     xhr.onload = () => {
-      if (xhr.status === 0) {
-        return resolve({ status: "error", code: 0, message: "network error" });
-      }
-
       if (xhr.status === 423) {
         return resolve({ status: "locked", offset });
       }
@@ -96,7 +101,7 @@ function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
       try {
         const payload = JSON.parse(xhr.responseText);
         if (payload.message) errorMsg = payload.message;
-      } catch (e) {}
+      } catch {}
 
       resolve({
         status: "error",
@@ -111,9 +116,7 @@ function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
       resolve({ status: "error", code: 0, message: "network error" });
     xhr.onabort = () => resolve({ status: "aborted" });
 
-    if (signal) {
-      signal.addEventListener("abort", () => xhr.abort(), { once: true });
-    }
+    signal.addEventListener("abort", () => xhr.abort(), { once: true });
     xhr.send(data);
   });
 }
@@ -284,17 +287,17 @@ class UploadClient {
     }
 
     if (fresh.length) {
-      try {
-        const entries = await registerFiles(this.shareID, fresh);
-        entries.forEach((e, i) => {
-          const task = this.PENDING(e.id, fresh[i], 0);
-          this.tasks.set(e.id, task);
-          this.on.onAdd?.(task);
-        });
-      } catch (err) {
-        this.on.onError?.(`failed to register files: ${err.message}`);
+      const result = await registerFiles(this.shareID, fresh);
+      if (result.status === "error") {
+        this.on.onError?.(`failed to register files: ${result.message}`);
         return;
       }
+
+      result.entries.forEach((e, i) => {
+        const task = this.PENDING(e.id, fresh[i], 0);
+        this.tasks.set(e.id, task);
+        this.on.onAdd?.(task);
+      });
     }
     this.#drain();
   }
@@ -311,16 +314,14 @@ class UploadClient {
 
     if (task.status === "UPLOADING") task.abort();
 
-    try {
-      const res = await fetch(`/api/shares/${this.shareID}/files/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(`delete failed: ${res.status}`);
-      this.tasks.delete(id);
-      this.on.onRemove?.(id);
-    } catch (err) {
-      this.on.onError?.(err.message);
+    const result = await deleteFile(this.shareID, id);
+    if (result.status === "error") {
+      this.on.onError?.(`failed to delete ${task.name}: ${result.message}`);
+      return;
     }
+
+    this.tasks.delete(id);
+    this.on.onRemove?.(id);
   }
 
   async #drain() {
@@ -383,7 +384,6 @@ class UploadClient {
           case "aborted":
             break;
 
-          case "lost":
           case "error":
             this.#transition(
               uploadingTask.id,

@@ -261,7 +261,7 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 
 	tab := r.URL.Query().Get("tab")
 	switch tab {
-	case "files", "owners", "settings":
+	case "files", "owners", "security":
 	default:
 		tab = "files"
 	}
@@ -345,7 +345,7 @@ func (c *Controller) RemoveOwner(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) UpdateShareSettings(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) UpdateShareSecurity(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
 		return share.ErrInvalidRequest
@@ -353,8 +353,8 @@ func (c *Controller) UpdateShareSettings(w http.ResponseWriter, r *http.Request)
 	if err := c.shareSvc.SetPassword(id, session.UserFromContext(r.Context()), r.PostForm.Get("password"), r.PostForm.Get("removePassword") == "on"); err != nil {
 		return err
 	}
-	c.flash.Success(w, "settings saved")
-	http.Redirect(w, r, "/shares/"+id+"/edit?tab=settings", http.StatusSeeOther)
+	c.flash.Success(w, "security saved")
+	http.Redirect(w, r, "/shares/"+id+"/edit?tab=security", http.StatusSeeOther)
 	return nil
 }
 

@@ -41,7 +41,7 @@
 <nav>
   {{if eq .Content.Tab "files"}}files{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=files">files</a>{{end}}
   {{if eq .Content.Tab "owners"}}owners{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=owners">owners</a>{{end}}
-  {{if eq .Content.Tab "settings"}}settings{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=settings">settings</a>{{end}}
+  {{if eq .Content.Tab "security"}}security{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=security">security</a>{{end}}
 </nav>
 
 {{if eq .Content.Tab "files"}}
@@ -229,14 +229,14 @@
 </form>
 {{end}}
 
-{{if eq .Content.Tab "settings"}}
+{{if eq .Content.Tab "security"}}
 {{if .Content.Share.HasPassword}}
 <p class="banner" data-info>this share is protected by a password</p>
 {{else}}
 <p class="banner" data-info>this share has no password</p>
 {{end}}
 
-<form method="post" action="/shares/{{.Content.Share.ID}}/settings">
+<form method="post" action="/shares/{{.Content.Share.ID}}/security">
   <label
     >password (leave blank to keep current)
     <input type="password" name="password" minlength="3" maxlength="72" />

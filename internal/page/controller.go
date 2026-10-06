@@ -48,13 +48,13 @@ func NewController(
 	flashCookie *security.CookieManager,
 ) *Controller {
 	funcs := template.FuncMap{
-		"uploadedFiles":        uploadedFiles,
-		"uploadedSize":         uploadedSize,
-		"formatSize":           formatSize,
-		"formatOwners":         formatOwners,
-		"expiresIn":            expiresIn,
-		"timeAgo":              timeAgo,
-		"dict":                 dict,
+		"uploadedFiles": uploadedFiles,
+		"uploadedSize":  uploadedSize,
+		"formatSize":    formatSize,
+		"formatOwners":  formatOwners,
+		"expiresIn":     expiresIn,
+		"timeAgo":       timeAgo,
+		"dict":          dict,
 	}
 
 	base := template.Must(template.New("layout").Funcs(funcs).
@@ -124,7 +124,7 @@ func (c *Controller) Routes() http.Handler {
 	prot.Handle("POST /shares/{id}/trash", c.handle(c.TrashShare))
 	prot.Handle("POST /shares/{id}/restore", c.handle(c.RestoreShare))
 	prot.Handle("POST /shares/{id}/visibility", c.handle(c.SetVisibility))
-	prot.Handle("POST /shares/{id}/settings", c.handle(c.UpdateShareSettings))
+	prot.Handle("POST /shares/{id}/security", c.handle(c.UpdateShareSecurity))
 	prot.Handle("POST /shares/{id}/owners", c.handle(c.AddOwner))
 	prot.Handle("POST /shares/{id}/owners/{ownerID}/delete", c.handle(c.RemoveOwner))
 	prot.Handle("POST /shares/{id}/files/{fileID}/delete", c.handle(c.DeleteFile))
