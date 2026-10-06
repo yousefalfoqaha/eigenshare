@@ -28,13 +28,15 @@
       {{range .Content.Shares}} {{$u := .Upload}}{{$done := uploadedFiles $u
       .Share.Files}}
       <tr>
-        <td>{{.Share.Handle}}</td>
+        <td>
+          <p class="truncate nowrap">{{.Share.Handle}}</p>
+        </td>
         <td>
           {{len $done}}{{if lt (len $done) (len .Share.Files)}} (in
           progress){{end}}
         </td>
-        <td>{{formatSize (uploadedSize $done)}}</td>
-        <td>{{timeAgo .Share.TrashedAt}}</td>
+        <td class="nowrap">{{formatSize (uploadedSize $done)}}</td>
+        <td class="nowrap">{{timeAgo .Share.TrashedAt}}</td>
         <td>
           <div class="actions">
             <a href="/shares/{{.Share.ID}}/edit">edit</a>

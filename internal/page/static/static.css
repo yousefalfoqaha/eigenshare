@@ -142,6 +142,9 @@ td {
   max-width: 24rem;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.nowrap {
   white-space: nowrap;
 }
 
@@ -173,6 +176,7 @@ fieldset {
 
 button {
   width: fit-content;
+  white-space: nowrap;
 }
 
 .submit {
@@ -258,10 +262,5 @@ button {
   .title .actions form {
     width: 100%;
     max-width: none;
-  }
-
-  th,
-  td {
-    white-space: nowrap;
   }
 }

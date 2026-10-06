@@ -20,23 +20,32 @@
       </tr>
     </thead>
     <tbody>
-      {{range .Content.Shares}}
-      {{$u := .Upload}}{{$done := uploadedFiles $u .Share.Files}}
+      {{range .Content.Shares}} {{$u := .Upload}}{{$done := uploadedFiles $u
+      .Share.Files}}
       <tr>
-        <td><a href="/s/{{.Share.Handle}}">{{.Share.Handle}}</a></td>
+        <td>
+          <a class="truncate nowrap" href="/s/{{.Share.Handle}}"
+            >{{.Share.Handle}}</a
+          >
+        </td>
         <td>{{.Share.Visibility}}</td>
         <td>{{formatOwners .Share.Owners $.Users}}</td>
         <td>
-          {{len $done}}{{if lt (len $done) (len .Share.Files)}} (uploading){{end}}
+          {{len $done}}{{if lt (len $done) (len .Share.Files)}}
+          (uploading){{end}}
         </td>
-        <td>{{formatSize (uploadedSize $done)}}</td>
-        <td>{{expiresIn .Share.ExpiresAt}}</td>
+        <td class="nowrap">{{formatSize (uploadedSize $done)}}</td>
+        <td class="nowrap">{{expiresIn .Share.ExpiresAt}}</td>
         <td>
           {{if .Share.CanManage $.CurrentUser}}
           <div class="actions">
             <a href="/shares/{{.Share.ID}}/edit">edit</a>
 
-            <form method="post" action="/shares/{{.Share.ID}}/trash" class="inline">
+            <form
+              method="post"
+              action="/shares/{{.Share.ID}}/trash"
+              class="inline"
+            >
               <button type="submit">trash</button>
             </form>
           </div>

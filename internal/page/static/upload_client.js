@@ -19,7 +19,15 @@ async function registerFiles(shareID, files) {
         files: files.map((f) => ({ name: f.name, expectedSize: f.size })),
       }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const payload = await res.json();
+        if (payload.message) msg = payload.message;
+      } catch {}
+      throw new Error(msg);
+    }
 
     return { status: "success", entries: (await res.json()) || [] };
   } catch (ex) {
@@ -32,7 +40,15 @@ async function deleteFile(shareID, fileID) {
     const res = await fetch(`/api/shares/${shareID}/files/${fileID}`, {
       method: "DELETE",
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const payload = await res.json();
+        if (payload.message) msg = payload.message;
+      } catch {}
+      throw new Error(msg);
+    }
 
     return { status: "success" };
   } catch (ex) {
@@ -46,7 +62,15 @@ async function getUploadState(shareID, fileID, signal) {
       method: "HEAD",
       signal,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const payload = await res.json();
+        if (payload.message) msg = payload.message;
+      } catch {}
+      throw new Error(msg);
+    }
 
     const header = res.headers.get("Upload-Offset");
     if (header === null) throw new Error("Missing Upload-Offset header");
@@ -68,7 +92,7 @@ function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
   if (offset >= file.size) return Promise.resolve({ status: "complete" });
 
   return new Promise((resolve) => {
-    const chunkSize = 25 * 1024 * 1024;
+    const chunkSize = 50 * 1024 * 1024;
     const data = file.slice(offset, offset + chunkSize);
 
     const xhr = new XMLHttpRequest();
