@@ -35,7 +35,6 @@ type Controller struct {
 	shareUnlockCookie *security.CookieManager
 	shareUnlockSecret []byte
 	flash             *flash
-	bannedIps         map[string]time.Time
 }
 
 func NewController(
@@ -77,8 +76,6 @@ func NewController(
 		log.Fatalf("failed to mount embedded static files: %v", err)
 	}
 
-	bannedIps := make(map[string]time.Time)
-
 	return &Controller{
 		sessionSvc:        authSvc,
 		userSvc:           userSvc,
@@ -89,7 +86,6 @@ func NewController(
 		shareUnlockCookie: shareUnlockCookie,
 		shareUnlockSecret: shareUnlockSecret,
 		flash:             newFlash(flashCookie),
-		bannedIps:         bannedIps,
 	}
 }
 
@@ -98,7 +94,7 @@ func (c *Controller) Routes() http.Handler {
 	mux.Handle("GET /static/", c.static)
 
 	requireSession := middleware.RequireSession(redirectToLogin)
-	rateLimit := middleware.WithRateLimiting(c.bannedIps)
+	rateLimit := middleware.WithRateLimiting()
 	requireAdmin := middleware.RequireAdmin(forbidden)
 
 	pub := http.NewServeMux()
