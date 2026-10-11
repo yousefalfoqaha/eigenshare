@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"eigenshare/internal/config"
 	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
@@ -49,16 +48,21 @@ func (p *page) CurrentUser() *user.User {
 }
 
 type Controller struct {
-	sessionSvc   *session.SessionService
-	userSvc      *user.UserService
-	shareSvc     *share.ShareService
-	templs       map[string]*template.Template
-	static       http.Handler
-	unlockSecret []byte
-	cookies      *cookies
+	sessionSvc *session.SessionService
+	userSvc    *user.UserService
+	shareSvc   *share.ShareService
+	templs     map[string]*template.Template
+	static     http.Handler
+	cookies    *cookies
 }
 
-func NewController(authSvc *session.SessionService, userSvc *user.UserService, shareSvc *share.ShareService, unlockSecret []byte, cfg config.Config) *Controller {
+func NewController(
+	authSvc *session.SessionService,
+	userSvc *user.UserService,
+	shareSvc *share.ShareService,
+	unlockSecret []byte,
+	secureCookies bool,
+) *Controller {
 	funcs := template.FuncMap{
 		"uploadedFiles": uploadedFiles,
 		"uploadedSize":  uploadedSize,
@@ -90,13 +94,12 @@ func NewController(authSvc *session.SessionService, userSvc *user.UserService, s
 	}
 
 	return &Controller{
-		sessionSvc:   authSvc,
-		userSvc:      userSvc,
-		shareSvc:     shareSvc,
-		templs:       pages,
-		static:       http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
-		unlockSecret: unlockSecret,
-		cookies:      newCookies(cfg.SecureCookies),
+		sessionSvc: authSvc,
+		userSvc:    userSvc,
+		shareSvc:   shareSvc,
+		templs:     pages,
+		static:     http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
+		cookies:    newCookies(secureCookies, unlockSecret),
 	}
 }
 
@@ -188,7 +191,7 @@ func (c *Controller) handleHTML(h func(w http.ResponseWriter, r *http.Request) e
 
 		if r.Method == http.MethodPost && status < http.StatusInternalServerError &&
 			status != http.StatusNotFound && status != http.StatusForbidden {
-			c.cookies.set(w, flashCookieName, flashValue("error", msg), 0)
+			c.cookies.set(w, "flash", "error:"+msg)
 			http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 			return
 		}
@@ -207,8 +210,8 @@ func (c *Controller) renderPage(w http.ResponseWriter, r *http.Request, status i
 		Content: content,
 	}
 
-	if value, ok := c.cookies.get(r, flashCookieName); ok {
-		c.cookies.clear(w, flashCookieName)
+	if value, ok := c.cookies.get(r, "flash"); ok {
+		c.cookies.clear(w, "flash")
 
 		kind, raw, found := strings.Cut(value, ":")
 		msg := raw

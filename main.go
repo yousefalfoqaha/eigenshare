@@ -45,7 +45,7 @@ func main() {
 		log.Fatalf("failed to generate unlock secret: %v", err)
 	}
 
-	contr := web.NewController(sessionSvc, userSvc, shareSvc, shareUnlockSecret, cfg)
+	contr := web.NewController(sessionSvc, userSvc, shareSvc, shareUnlockSecret, cfg.SecureCookies)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", contr.HTMLRoutes())

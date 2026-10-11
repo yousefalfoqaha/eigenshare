@@ -11,12 +11,12 @@ import (
 // authenticated user into the request context.
 func (c *Controller) WithSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if token, ok := c.cookies.get(r, sessionCookieName); ok {
+		if token, ok := c.cookies.get(r, "session"); ok {
 			if u, err := c.sessionSvc.Validate(token); err == nil {
 				next.ServeHTTP(w, r.WithContext(session.WithUser(r.Context(), u)))
 				return
 			}
-			c.cookies.clear(w, sessionCookieName)
+			c.cookies.clear(w, "session")
 		}
 		next.ServeHTTP(w, r)
 	})
