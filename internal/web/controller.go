@@ -225,7 +225,7 @@ func (c *Controller) renderPage(w http.ResponseWriter, r *http.Request, status i
 		pg.Banner = &banner{Kind: kind, Message: msg}
 	}
 
-	if u := session.UserFromContext(r.Context()); u != nil {
+	if u := actor(r); u != nil {
 		pg.CurrentUserID = u.ID
 		users, err := c.userSvc.GetAllUsers()
 		if err != nil {

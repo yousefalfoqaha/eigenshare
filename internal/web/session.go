@@ -1,11 +1,27 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
-	"eigenshare/internal/session"
+	"eigenshare/internal/user"
 )
+
+// userKey is the context key under which WithSession stores the
+// authenticated user.
+type userKey struct{}
+
+func withUser(ctx context.Context, u *user.User) context.Context {
+	return context.WithValue(ctx, userKey{}, u)
+}
+
+// actor returns the authenticated user attached by WithSession, or nil for
+// anonymous visitors. Handlers treat nil as "nobody is acting".
+func actor(r *http.Request) *user.User {
+	u, _ := r.Context().Value(userKey{}).(*user.User)
+	return u
+}
 
 // WithSession validates the session cookie (if present) and injects the
 // authenticated user into the request context.
@@ -13,7 +29,7 @@ func (c *Controller) WithSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if token, ok := c.cookies.get(r, "session"); ok {
 			if u, err := c.sessionSvc.Validate(token); err == nil {
-				next.ServeHTTP(w, r.WithContext(session.WithUser(r.Context(), u)))
+				next.ServeHTTP(w, r.WithContext(withUser(r.Context(), u)))
 				return
 			}
 			c.cookies.clear(w, "session")
@@ -27,7 +43,7 @@ type sessionErrorHandler func(w http.ResponseWriter, r *http.Request)
 func requireSession(onError sessionErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if u := session.UserFromContext(r.Context()); u == nil {
+			if actor(r) == nil {
 				onError(w, r)
 				return
 			}
@@ -39,8 +55,8 @@ func requireSession(onError sessionErrorHandler) func(http.Handler) http.Handler
 func requireAdmin(onError sessionErrorHandler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			u := session.UserFromContext(r.Context())
-			if !u.IsAdmin {
+			u := actor(r)
+			if u == nil || !u.IsAdmin {
 				onError(w, r)
 				return
 			}
