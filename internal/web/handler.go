@@ -1,9 +1,10 @@
-package page
+package web
 
 import (
 	"mime"
 	"net/http"
 	"strconv"
+	"time"
 
 	"eigenshare/internal/security"
 	"eigenshare/internal/session"
@@ -32,19 +33,19 @@ func (c *Controller) LoginSubmit(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	c.sessionCookie.Set(w, sess.Token)
-	c.flash.Success(w, "logged in")
+	setCookie(w, c.cfg.SecureCookies, sessionCookieName, sess.Token, int(session.TTL/time.Second))
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "logged in"), 0)
 	http.Redirect(w, r, "/shares", http.StatusSeeOther)
 	return nil
 }
 
 func (c *Controller) Logout(w http.ResponseWriter, r *http.Request) error {
-	if token, ok := c.sessionCookie.Get(r); ok {
+	if token, ok := getCookie(r, sessionCookieName); ok {
 		_ = c.sessionSvc.Logout(token)
 	}
 
-	c.sessionCookie.Clear(w)
-	c.flash.Success(w, "logged out")
+	clearCookie(w, sessionCookieName)
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "logged out"), 0)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 
 	return nil
@@ -58,7 +59,7 @@ func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	if sh.RequiresPassword(actor) && !c.shareUnlockCookie.WithID(sh.ID).CheckTag(r, c.shareUnlockSecret, sh.UnlockMessage()) {
+	if sh.RequiresPassword(actor) && !checkSignedCookie(r, unlockCookieName, c.unlockSecret, sh.UnlockMessage()) {
 		return c.renderPage(w, r, http.StatusOK, "share_unlock.html", &struct{ Handle string }{sh.Handle})
 	}
 
@@ -95,8 +96,8 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 		return security.ErrWrongPassword
 	}
 
-	c.shareUnlockCookie.WithID(sh.ID).SetTag(w, c.shareUnlockSecret, sh.UnlockMessage())
-	c.flash.Success(w, "share unlocked")
+	setSignedCookie(w, r, c.cfg.SecureCookies, unlockCookieName, c.unlockSecret, sh.UnlockMessage(), int(share.UnlockTTL/time.Second))
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "share unlocked"), 0)
 	http.Redirect(w, r, "/s/"+handle, http.StatusSeeOther)
 	return nil
 }
@@ -121,7 +122,7 @@ func (c *Controller) CreateUser(w http.ResponseWriter, r *http.Request) error {
 	if _, err := c.userSvc.CreateUser(req); err != nil {
 		return err
 	}
-	c.flash.Success(w, "user created")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "user created"), 0)
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 	return nil
 }
@@ -146,7 +147,7 @@ func (c *Controller) UpdateUser(w http.ResponseWriter, r *http.Request) error {
 	if _, err := c.userSvc.UpdateUser(r.PathValue("id"), session.UserFromContext(r.Context()).ID, req); err != nil {
 		return err
 	}
-	c.flash.Success(w, "user updated")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "user updated"), 0)
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 	return nil
 }
@@ -155,7 +156,7 @@ func (c *Controller) DeleteUser(w http.ResponseWriter, r *http.Request) error {
 	if err := c.userSvc.DeleteUser(r.PathValue("id"), session.UserFromContext(r.Context()).ID); err != nil {
 		return err
 	}
-	c.flash.Success(w, "user deleted")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "user deleted"), 0)
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 	return nil
 }
@@ -212,7 +213,7 @@ func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	c.flash.Success(w, "share created")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "share created"), 0)
 	http.Redirect(w, r, "/shares/"+sh.ID+"/edit", http.StatusSeeOther)
 	return nil
 }
@@ -277,7 +278,7 @@ func (c *Controller) TrashShare(w http.ResponseWriter, r *http.Request) error {
 	if err := c.shareSvc.TrashShare(r.PathValue("id"), session.UserFromContext(r.Context())); err != nil {
 		return err
 	}
-	c.flash.Success(w, "share trashed")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "share trashed"), 0)
 	http.Redirect(w, r, "/shares", http.StatusSeeOther)
 	return nil
 }
@@ -291,7 +292,7 @@ func (c *Controller) RestoreShare(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 
-	c.flash.Success(w, "share restored")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "share restored"), 0)
 	if toEdit {
 		http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusSeeOther)
 	} else {
@@ -307,7 +308,7 @@ func (c *Controller) DeleteShares(w http.ResponseWriter, r *http.Request) error 
 	if err := c.shareSvc.Delete(session.UserFromContext(r.Context()), r.PostForm["shareID"]...); err != nil {
 		return err
 	}
-	c.flash.Success(w, "share deleted")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "share deleted"), 0)
 	http.Redirect(w, r, "/trash", http.StatusSeeOther)
 	return nil
 }
@@ -317,7 +318,7 @@ func (c *Controller) DeleteFile(w http.ResponseWriter, r *http.Request) error {
 	if err := c.shareSvc.DeleteFile(id, r.PathValue("fileID"), session.UserFromContext(r.Context())); err != nil {
 		return err
 	}
-	c.flash.Success(w, "file deleted")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "file deleted"), 0)
 	http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusSeeOther)
 	return nil
 }
@@ -330,7 +331,7 @@ func (c *Controller) AddOwner(w http.ResponseWriter, r *http.Request) error {
 	if err := c.shareSvc.AddOwner(id, session.UserFromContext(r.Context()), r.PostForm.Get("userID")); err != nil {
 		return err
 	}
-	c.flash.Success(w, "owner added")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "owner added"), 0)
 	http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners", http.StatusSeeOther)
 	return nil
 }
@@ -340,7 +341,7 @@ func (c *Controller) RemoveOwner(w http.ResponseWriter, r *http.Request) error {
 	if err := c.shareSvc.RemoveOwner(id, session.UserFromContext(r.Context()), r.PathValue("ownerID")); err != nil {
 		return err
 	}
-	c.flash.Success(w, "owner removed")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "owner removed"), 0)
 	http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners", http.StatusSeeOther)
 	return nil
 }
@@ -353,7 +354,7 @@ func (c *Controller) UpdateShareSecurity(w http.ResponseWriter, r *http.Request)
 	if err := c.shareSvc.SetPassword(id, session.UserFromContext(r.Context()), r.PostForm.Get("password"), r.PostForm.Get("removePassword") == "on"); err != nil {
 		return err
 	}
-	c.flash.Success(w, "security saved")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "security saved"), 0)
 	http.Redirect(w, r, "/shares/"+id+"/edit?tab=security", http.StatusSeeOther)
 	return nil
 }
@@ -366,7 +367,7 @@ func (c *Controller) SetVisibility(w http.ResponseWriter, r *http.Request) error
 	if err := c.shareSvc.SetVisibility(id, session.UserFromContext(r.Context()), share.Visibility(r.PostForm.Get("visibility"))); err != nil {
 		return err
 	}
-	c.flash.Success(w, "visibility updated")
+	setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("success", "visibility updated"), 0)
 	http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusSeeOther)
 	return nil
 }
@@ -382,7 +383,7 @@ func (c *Controller) DownloadAll(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	if sh.RequiresPassword(actor) && !c.shareUnlockCookie.WithID(sh.ID).CheckTag(r, c.shareUnlockSecret, sh.UnlockMessage()) {
+	if sh.RequiresPassword(actor) && !checkSignedCookie(r, unlockCookieName, c.unlockSecret, sh.UnlockMessage()) {
 		http.Redirect(w, r, "/s/"+sh.Handle, http.StatusFound)
 		return nil
 	}
@@ -399,7 +400,7 @@ func (c *Controller) DownloadFile(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 
-	if sh.RequiresPassword(actor) && !c.shareUnlockCookie.WithID(sh.ID).CheckTag(r, c.shareUnlockSecret, sh.UnlockMessage()) {
+	if sh.RequiresPassword(actor) && !checkSignedCookie(r, unlockCookieName, c.unlockSecret, sh.UnlockMessage()) {
 		http.Redirect(w, r, "/s/"+sh.Handle, http.StatusFound)
 		return nil
 	}

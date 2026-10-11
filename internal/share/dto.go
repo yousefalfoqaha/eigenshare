@@ -11,5 +11,3 @@ type ShareRequest struct {
 	Visibility    Visibility `json:"visibility"`
 	Password      string     `json:"password"`
 }
-
-

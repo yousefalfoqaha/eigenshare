@@ -1,4 +1,4 @@
-package middleware
+package web
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func WithRateLimiting(ctx context.Context, tokenRate rate.Limit, burstRate int, clientIPs map[string]*rate.Limiter) func(http.Handler) http.Handler {
+func withRateLimiting(ctx context.Context, tokenRate rate.Limit, burstRate int, clientIPs map[string]*rate.Limiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			addr := strings.Split(r.RemoteAddr, ":")

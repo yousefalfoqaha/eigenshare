@@ -1,9 +1,7 @@
 package security
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -34,14 +32,4 @@ func RandomBytes(n int) ([]byte, error) {
 		return nil, err
 	}
 	return b, nil
-}
-
-func Sign(secret []byte, msg string) []byte {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(msg))
-	return mac.Sum(nil)
-}
-
-func VerifyTag(secret []byte, msg string, tag []byte) bool {
-	return hmac.Equal(tag, Sign(secret, msg))
 }

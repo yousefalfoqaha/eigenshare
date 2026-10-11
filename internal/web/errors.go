@@ -1,4 +1,4 @@
-package middleware
+package web
 
 import (
 	"errors"
@@ -10,8 +10,7 @@ import (
 	"eigenshare/internal/user"
 )
 
-// MapHTTPError maps a domain error to an HTTP status and a client-safe message.
-func MapHTTPError(err error) (int, string) {
+func mapError(err error) (int, string) {
 	switch {
 	case errors.Is(err, share.ErrInvalidRequest),
 		errors.Is(err, share.ErrInvalidHandle),

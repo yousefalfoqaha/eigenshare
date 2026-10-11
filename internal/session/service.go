@@ -9,7 +9,12 @@ import (
 	"github.com/google/uuid"
 )
 
-const sessionExpiryMinutes = 60 * 24 * 7
+const (
+	// TTL is how long a session lives, for both the persisted session and
+	// the cookie that carries its token.
+	TTL                  = 7 * 24 * time.Hour
+	sessionExpiryMinutes = int(TTL / time.Minute)
+)
 
 type SessionService struct {
 	userSvc     *user.UserService

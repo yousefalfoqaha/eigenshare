@@ -105,6 +105,10 @@ func (s *Share) UnlockMessage() string {
 	return s.ID + "\x00" + s.PasswordHash
 }
 
+// UnlockTTL is how long a password-unlocked share stays unlocked on a
+// client (i.e. the lifetime of the unlock cookie).
+const UnlockTTL = 7 * 24 * time.Hour
+
 type File struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`

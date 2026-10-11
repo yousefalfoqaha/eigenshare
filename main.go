@@ -7,35 +7,27 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
-	"eigenshare/internal/api"
+	"eigenshare/internal/config"
 	"eigenshare/internal/database"
-	"eigenshare/internal/middleware"
-	"eigenshare/internal/page"
 	"eigenshare/internal/security"
 	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
-)
-
-const (
-	PORT                      int    = 8080
-	DATA_PATH                 string = "data"
-	SECURE_COOKIE             bool   = false
-	SESSION_DURATION_SEC      int    = 60 * 60 * 24 * 7
-	SHARE_UNLOCK_DURATION_SEC int    = 60 * 60 * 24 * 7
+	"eigenshare/internal/web"
 )
 
 func main() {
+	cfg := config.Load()
+
 	db := database.NewDatabase("./data.db")
 	userRepo := user.NewUserRepository(db)
 	userSvc := user.NewUserService(userRepo)
 	sessionRepo := session.NewSessionRepository(db)
 	shareRepo := share.NewShareRepository(db)
-	fileStore := share.NewFileStorage(DATA_PATH)
+	fileStore := share.NewFileStorage(cfg.DataPath)
 	shareSvc := share.NewShareService(shareRepo, fileStore, userSvc)
 	sessionSvc := session.NewSessionService(userSvc, sessionRepo)
 
@@ -53,31 +45,16 @@ func main() {
 		log.Fatalf("failed to generate unlock secret: %v", err)
 	}
 
-	sessionCookie := security.NewCookieManager("session_id",
-		security.WithMaxAge(SESSION_DURATION_SEC),
-		security.WithSecure(SECURE_COOKIE),
-	)
-	shareUnlockCookie := security.NewCookieManager("share_unlock",
-		security.WithPath("/s/"),
-		security.WithMaxAge(SHARE_UNLOCK_DURATION_SEC),
-		security.WithSecure(SECURE_COOKIE),
-	)
-	flashCookie := security.NewCookieManager("flash",
-		security.WithMaxAge(60),
-		security.WithSecure(SECURE_COOKIE),
-	)
-
-	apiContr := api.NewController(sessionSvc, userSvc, shareSvc)
-	pageContr := page.NewController(sessionSvc, userSvc, shareSvc, sessionCookie, shareUnlockCookie, shareUnlockSecret, flashCookie)
+	contr := web.NewController(sessionSvc, userSvc, shareSvc, shareUnlockSecret, cfg)
 
 	mux := http.NewServeMux()
-	mux.Handle("/", pageContr.Routes())
-	mux.Handle("/api/", http.StripPrefix("/api", apiContr.Routes()))
+	mux.Handle("/", contr.HTMLRoutes())
+	mux.Handle("/api/", web.UploadRoutes(shareSvc))
 
 	server := http.Server{
-		Addr: ":" + strconv.Itoa(PORT),
-		Handler: middleware.Logger(
-			middleware.WithSession(sessionSvc, sessionCookie)(mux),
+		Addr: fmt.Sprintf(":%d", cfg.Port),
+		Handler: web.Logger(
+			web.WithSession(sessionSvc)(mux),
 		),
 	}
 
@@ -92,7 +69,7 @@ func main() {
 		server.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("server listening on port %v\n", PORT)
+	log.Printf("server listening on port %v\n", cfg.Port)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Printf("Server error: %v\n", err)
 	}
