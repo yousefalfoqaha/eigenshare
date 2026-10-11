@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"html/template"
 	"io/fs"
 	"log"
@@ -54,7 +55,7 @@ type Controller struct {
 	templs       map[string]*template.Template
 	static       http.Handler
 	unlockSecret []byte
-	cfg          config.Config
+	cookies      *cookies
 }
 
 func NewController(authSvc *session.SessionService, userSvc *user.UserService, shareSvc *share.ShareService, unlockSecret []byte, cfg config.Config) *Controller {
@@ -95,7 +96,7 @@ func NewController(authSvc *session.SessionService, userSvc *user.UserService, s
 		templs:       pages,
 		static:       http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
 		unlockSecret: unlockSecret,
-		cfg:          cfg,
+		cookies:      newCookies(cfg.SecureCookies),
 	}
 }
 
@@ -147,6 +148,32 @@ func (c *Controller) HTMLRoutes() http.Handler {
 	return mux
 }
 
+func (c *Controller) APIRoutes() http.Handler {
+	mux := http.NewServeMux()
+
+	mux.Handle("POST /shares/{id}/files", handleAPI(c.AddFilesToShare))
+	mux.Handle("HEAD /shares/{id}/files/{fileID}/stream", handleAPI(c.GetUploadOffset))
+	mux.Handle("PUT /shares/{id}/files/{fileID}/stream", handleAPI(c.StreamFile))
+	mux.Handle("DELETE /shares/{id}/files/{fileID}", handleAPI(c.DeleteShareFile))
+
+	return requireSession(writeAPIUnauthorized)(mux)
+}
+
+func handleAPI(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := h(w, r); err != nil {
+			status, msg := mapError(err)
+			if status >= http.StatusInternalServerError {
+				log.Printf("INTERNAL ERROR: %v", err)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "message": msg})
+		}
+	}
+}
+
 func (c *Controller) handleHTML(h func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		err := h(w, r)
@@ -161,7 +188,7 @@ func (c *Controller) handleHTML(h func(w http.ResponseWriter, r *http.Request) e
 
 		if r.Method == http.MethodPost && status < http.StatusInternalServerError &&
 			status != http.StatusNotFound && status != http.StatusForbidden {
-			setCookie(w, c.cfg.SecureCookies, flashCookieName, flashValue("error", msg), 0)
+			c.cookies.set(w, flashCookieName, flashValue("error", msg), 0)
 			http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 			return
 		}
@@ -180,8 +207,8 @@ func (c *Controller) renderPage(w http.ResponseWriter, r *http.Request, status i
 		Content: content,
 	}
 
-	if value, ok := getCookie(r, flashCookieName); ok {
-		clearCookie(w, flashCookieName)
+	if value, ok := c.cookies.get(r, flashCookieName); ok {
+		c.cookies.clear(w, flashCookieName)
 
 		kind, raw, found := strings.Cut(value, ":")
 		msg := raw

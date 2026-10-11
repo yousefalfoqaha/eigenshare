@@ -49,12 +49,12 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", contr.HTMLRoutes())
-	mux.Handle("/api/", web.UploadRoutes(shareSvc))
+	mux.Handle("/api/", contr.APIRoutes())
 
 	server := http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port),
 		Handler: web.Logger(
-			web.WithSession(sessionSvc)(mux),
+			contr.WithSession(mux),
 		),
 	}
 

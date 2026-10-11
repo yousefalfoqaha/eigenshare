@@ -9,19 +9,17 @@ import (
 
 // WithSession validates the session cookie (if present) and injects the
 // authenticated user into the request context.
-func WithSession(sessionSvc *session.SessionService) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if token, ok := getCookie(r, sessionCookieName); ok {
-				if u, err := sessionSvc.Validate(token); err == nil {
-					next.ServeHTTP(w, r.WithContext(session.WithUser(r.Context(), u)))
-					return
-				}
-				clearCookie(w, sessionCookieName)
+func (c *Controller) WithSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token, ok := c.cookies.get(r, sessionCookieName); ok {
+			if u, err := c.sessionSvc.Validate(token); err == nil {
+				next.ServeHTTP(w, r.WithContext(session.WithUser(r.Context(), u)))
+				return
 			}
-			next.ServeHTTP(w, r)
-		})
-	}
+			c.cookies.clear(w, sessionCookieName)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type sessionErrorHandler func(w http.ResponseWriter, r *http.Request)
