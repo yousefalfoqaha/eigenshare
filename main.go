@@ -13,7 +13,6 @@ import (
 	"eigenshare/internal/config"
 	"eigenshare/internal/database"
 	"eigenshare/internal/security"
-	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 	"eigenshare/internal/web"
@@ -25,16 +24,14 @@ func main() {
 	db := database.NewDatabase("./data.db")
 	userRepo := user.NewUserRepository(db)
 	userSvc := user.NewUserService(userRepo)
-	sessionRepo := session.NewSessionRepository(db)
 	shareRepo := share.NewShareRepository(db)
 	fileStore := share.NewFileStorage(cfg.DataPath)
 	shareSvc := share.NewShareService(shareRepo, fileStore, userSvc)
-	sessionSvc := session.NewSessionService(userSvc, sessionRepo)
 
 	cleanerCtx, stopCleaner := context.WithCancel(context.Background())
 	defer stopCleaner()
-	cleaner := share.NewCleaner(shareRepo, fileStore)
-	go cleaner.Run(cleanerCtx, 1*time.Minute)
+	shareCleaner := share.NewShareCleaner(shareRepo, fileStore)
+	go shareCleaner.Run(cleanerCtx, 1*time.Minute)
 
 	if err := userSvc.SeedAdmin(); err != nil {
 		log.Printf("Failed to seed admin: %v\n", err)
@@ -45,7 +42,7 @@ func main() {
 		log.Fatalf("failed to generate unlock secret: %v", err)
 	}
 
-	contr := web.NewController(sessionSvc, userSvc, shareSvc, secret, cfg.SecureCookies)
+	contr := web.NewController(userSvc, shareSvc, secret, cfg.SecureCookies)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", contr.HTMLRoutes())

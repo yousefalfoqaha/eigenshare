@@ -1,238 +1,140 @@
 package web
 
 import (
-	"crypto"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
-	"eigenshare/internal/session"
 	"eigenshare/internal/share"
+	"eigenshare/internal/user"
 )
 
 const (
-	sessionCookieName = "session_id"
-	unlockCookieName  = "share_unlock"
-	flashCookieName   = "flash"
+	CookieSession      = "session_id"
+	CookieFlash        = "flash"
+	CookieUnlockPrefix = "share_unlock_"
+
+	sessionTTL = 7 * 24 * time.Hour
 )
 
-type cookieProfile struct {
-	path   string
-	maxAge time.Duration
-}
-
 type cookies struct {
-	secure   bool
-	profiles map[string]cookieProfile
-	secret   []byte
-}
-
-type cookiePayload struct {
-	value      string
-	expiration int // in seconds
+	secure bool
+	secret []byte
 }
 
 func newCookies(secure bool, secret []byte) *cookies {
-	return &cookies{
-		secure: secure,
-		profiles: map[string]cookieProfile{
-			"session": {maxAge: session.TTL},
-			"flash":   {maxAge: 0},
-			"unlock":  {path: "/s/", maxAge: share.UnlockTTL},
-		},
-		secret: secret,
-	}
+	return &cookies{secure: secure, secret: secret}
 }
 
-func (c *cookies) lookup(key string) cookieProfile {
-	p, ok := c.profiles[key]
+func (c *cookies) SetSession(w http.ResponseWriter, u *user.User) {
+	c.write(w, CookieSession, fmt.Sprintf("%s:%d", u.ID, u.Version), "/", sessionTTL)
+}
+
+func (c *cookies) GetSession(r *http.Request) (id, version string, ok bool) {
+	val, ok := c.read(r, CookieSession)
 	if !ok {
-		panic("web: unknown cookie kind: " + key)
+		return "", "", false
 	}
-	return p
+	id, version, ok = strings.Cut(val, ":")
+	return id, version, ok
 }
 
-// set writes a cookie of the given kind with Path "/", HttpOnly,
-// SameSite=Lax, MaxAge from the profile and Secure=c.secure.
-func (c *cookies) set(w http.ResponseWriter, key, value string) {
-	profile := c.lookup(key)
-
-	payload, err := json.Marshal(
-		cookiePayload{
-			value:      value,
-			expiration: int(profile.maxAge / time.Second),
-		},
-	)
-	if err != nil {
-		return
-	}
-
-	encodedValue := base64.URLEncoding.EncodeToString(payload)
-
-	path := "/"
-	if profile.path != "" {
-		path = profile.path
-	}
-
-	cookie := http.Cookie{
-		Name:     key,
-		Value:    encodedValue,
-		Path:     path,
-		MaxAge:   int(profile.maxAge / time.Second),
-		HttpOnly: true,
-		Secure:   c.secure,
-		SameSite: http.SameSiteLaxMode,
-	}
-
-	if len(cookie.String()) > 4096 {
-		return
-	}
-
-	http.SetCookie(w, &cookie)
+func (c *cookies) ClearSession(w http.ResponseWriter) {
+	c.write(w, CookieSession, "", "/", -1)
 }
 
-// get reads the cookie of the given kind. The second return value is false
-// when the cookie is missing or empty.
-func (c *cookies) get(r *http.Request, key string) (string, bool) {
-	cookie, err := r.Cookie(key)
-	if err != nil {
-		return "", false
-	}
-
-	value, err := base64.URLEncoding.DecodeString(cookie.Value)
-	if err != nil {
-		return "", false
-	}
-
-	return string(value), true
+func (c *cookies) SetFlash(w http.ResponseWriter, kind, message string) {
+	c.write(w, CookieFlash, kind+":"+message, "/", 5*time.Minute)
 }
 
-// clear deletes the cookie of the given kind by setting MaxAge to -1.
-func (c *cookies) clear(w http.ResponseWriter, key string) {
-	cookie := http.Cookie{
-		Name:     key,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   c.secure,
-		SameSite: http.SameSiteLaxMode,
+func (c *cookies) GetFlash(r *http.Request, w http.ResponseWriter) (kind, message string, ok bool) {
+	raw, ok := c.read(r, CookieFlash)
+	if !ok {
+		return "", "", false
 	}
-
-	http.SetCookie(w, &cookie)
+	c.write(w, CookieFlash, "", "/", -1)
+	return strings.Cut(raw, ":")
 }
 
-// setSigned HMAC-signs msg (SHA-256 with the profile's secret), appends it
-// to the list of unlocked items stored in the kind's cookie (keeping at most
-// the last 30 entries), and writes the cookie with the profile's MaxAge.
-//
-// The stored payload has the form "{unixExpiry}|{csv list}" followed by a
-// hex-encoded HMAC tag: "{payload}.{tag}". Messages that fail validIDPattern
-// are silently dropped.
-func (c *cookies) setSigned(w http.ResponseWriter, r *http.Request, key, msg string) {
-	profile := c.lookup(key)
+func (c *cookies) SetUnlock(w http.ResponseWriter, id string) {
+	c.write(w, CookieUnlockPrefix+id, id, "/s/", share.UnlockTTL)
+}
 
-	payload, err := json.Marshal(
-		cookiePayload{
-			value:      msg,
-			expiration: int(profile.maxAge / time.Second),
-		},
-	)
-	if err != nil {
-		return
-	}
+func (c *cookies) HasUnlock(r *http.Request, id string) bool {
+	val, ok := c.read(r, CookieUnlockPrefix+id)
+	return ok && val == id
+}
+
+func (c *cookies) write(w http.ResponseWriter, name, value, path string, ttl time.Duration) {
+	expires := time.Now().Add(ttl).Unix()
+	expStr := strconv.FormatInt(expires, 10)
+
+	payload := fmt.Sprintf("%s:%s", value, expStr)
 
 	mac := hmac.New(sha256.New, c.secret)
-	mac.Write([]byte(key))
-	mac.Write([]byte(msg))
-	signature := mac.Sum(nil)
-
-	signedValue := string(signature) + string(payload)
-	c.write(w, key, signedValue)
-}
-
-func (c *cookies) write(w http.ResponseWriter, key string, value string) {
-	profile := c.lookup(key)
-
-	payload, err := json.Marshal(
-		cookiePayload{
-			value:      value,
-			expiration: int(profile.maxAge / time.Second),
-		},
-	)
-	if err != nil {
-		return
-	}
-
-	encodedValue := base64.URLEncoding.EncodeToString(payload)
-
-	path := "/"
-	if profile.path != "" {
-		path = profile.path
-	}
-
-	cookie := http.Cookie{
-		Name:     key,
-		Value:    encodedValue,
-		Path:     path,
-		MaxAge:   int(profile.maxAge / time.Second),
-		HttpOnly: true,
-		Secure:   c.secure,
-		SameSite: http.SameSiteLaxMode,
-	}
-
-	if len(cookie.String()) > 4096 {
-		return
-	}
-
-	http.SetCookie(w, &cookie)
-}
-
-func (c *cookies) read(r *http.Request, key string) (string, bool) {
-	cookie, err := r.Cookie(key)
-	if err != nil {
-		return "", false
-	}
-
-	signedValue, err := base64.URLEncoding.DecodeString(cookie.Value)
-	if err != nil {
-		return "", false
-	}
-
-	return string(signedValue), true
-}
-
-func (c *cookies) getSigned(r *http.Request, key string) (string, bool) {
-	signedValue, ok := c.read(r, key)
-	if !ok {
-		return "", false
-	}
-
-	if len(signedValue) < sha256.Size {
-		return "", false
-	}
-
-	signature := signedValue[:sha256.Size]
-	value := signedValue[sha256.Size:]
-
-	mac := hmac.New(sha256.New, c.secret)
-	mac.Write([]byte(key))
+	mac.Write([]byte(name))
 	mac.Write([]byte(value))
-	expectedSignature := mac.Sum(nil)
+	mac.Write([]byte(expStr))
 
-	if !hmac.Equal([]byte(signature), expectedSignature) {
+	signedValue := append(mac.Sum(nil), payload...)
+	encoded := base64.URLEncoding.EncodeToString(signedValue)
+
+	maxAge := int(ttl / time.Second)
+	if ttl < 0 {
+		maxAge = -1
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    encoded,
+		Path:     path,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   c.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (c *cookies) read(r *http.Request, name string) (string, bool) {
+	cookie, err := r.Cookie(name)
+	if err != nil {
+		return "", false
+	}
+
+	decoded, err := base64.URLEncoding.DecodeString(cookie.Value)
+	if err != nil || len(decoded) <= sha256.Size {
+		return "", false
+	}
+
+	signature := decoded[:sha256.Size]
+	payload := string(decoded[sha256.Size:])
+
+	lastColon := strings.LastIndex(payload, ":")
+	if lastColon == -1 {
+		return "", false
+	}
+
+	value := payload[:lastColon]
+	expStr := payload[lastColon+1:]
+
+	mac := hmac.New(sha256.New, c.secret)
+	mac.Write([]byte(name))
+	mac.Write([]byte(value))
+	mac.Write([]byte(expStr))
+
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return "", false
+	}
+
+	expires, err := strconv.ParseInt(expStr, 10, 64)
+	if err != nil || time.Now().Unix() > expires {
 		return "", false
 	}
 
 	return value, true
-}
-
-// checkSigned reports whether msg is present in the kind's signed list of
-// unlocked items. It returns false on any tamper, expiry or parse error.
-func (c *cookies) checkSigned(r *http.Request, key, msg string) bool {
-	// TODO: your implementation — p := c.lookup(key); use p.secret.
-	return false
 }

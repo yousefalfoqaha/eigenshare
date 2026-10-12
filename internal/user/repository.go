@@ -17,26 +17,39 @@ func NewUserRepository(db *database.Database) *UserRepository {
 
 func (r *UserRepository) Save(u User) error {
 	_, err := r.db.DB.Exec(
-		"INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
-		u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.CreatedAt.String(),
+		"INSERT INTO users (id, username, password_hash, is_admin, created_at, version) VALUES (?, ?, ?, ?, ?, ?)",
+		u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.CreatedAt.String(), u.Version,
 	)
 	return err
 }
 
-func (r *UserRepository) Update(u User) error {
-	_, err := r.db.DB.Exec(
-		"UPDATE users SET username = ?, password_hash = ?, is_admin = ? WHERE id = ?",
-		u.Username, u.PasswordHash, u.IsAdmin, u.ID,
+func (r *UserRepository) Update(u *User) (*User, error) {
+	result, err := r.db.DB.Exec(
+		"UPDATE users SET username = ?, password_hash = ?, is_admin = ?, version = version + 1 WHERE id = ? AND version = ?",
+		u.Username, u.PasswordHash, u.IsAdmin, u.ID, u.Version,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if rowsAffected != 1 {
+		return nil, ErrVersionConflict
+	}
+
+	u.Version++
+	return u, nil
 }
 
 func (r *UserRepository) GetByUsername(username string) (*User, error) {
 	var u User
 	err := r.db.DB.QueryRow(
-		"SELECT id, username, password_hash, is_admin, created_at FROM users WHERE username = ?",
+		"SELECT id, username, password_hash, is_admin, created_at, version FROM users WHERE username = ?",
 		username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt, &u.Version)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrUserNotFound
@@ -49,9 +62,9 @@ func (r *UserRepository) GetByUsername(username string) (*User, error) {
 func (r *UserRepository) Get(id string) (*User, error) {
 	var u User
 	err := r.db.DB.QueryRow(
-		"SELECT id, username, password_hash, is_admin, created_at FROM users WHERE id = ?",
+		"SELECT id, username, password_hash, is_admin, created_at, version FROM users WHERE id = ?",
 		id,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt, &u.Version)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrUserNotFound
@@ -63,7 +76,7 @@ func (r *UserRepository) Get(id string) (*User, error) {
 
 func (r *UserRepository) GetAll() ([]*User, error) {
 	rows, err := r.db.DB.Query(
-		"SELECT id, username, password_hash, is_admin, created_at FROM users ORDER BY created_at",
+		"SELECT id, username, password_hash, is_admin, created_at, version FROM users ORDER BY created_at",
 	)
 	if err != nil {
 		return nil, err
@@ -73,7 +86,7 @@ func (r *UserRepository) GetAll() ([]*User, error) {
 	var users []*User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt, &u.Version); err != nil {
 			return nil, err
 		}
 		users = append(users, &u)

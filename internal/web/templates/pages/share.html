@@ -28,10 +28,14 @@
     <tbody>
       {{range $done}}
       <tr>
-        <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
-        <td>{{formatSize .ExpectedSize}}</td>
         <td>
-          <a href="/s/{{$.Content.Share.Handle}}/files/{{.ID}}/download" download
+          <span class="truncate" title="{{.Name}}">{{.Name}}</span>
+        </td>
+        <td class="nowrap">{{formatSize .ExpectedSize}}</td>
+        <td>
+          <a
+            href="/s/{{$.Content.Share.Handle}}/files/{{.ID}}/download"
+            download
             >download</a
           >
         </td>

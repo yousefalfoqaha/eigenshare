@@ -23,11 +23,11 @@
     <tbody>
       {{range $.Users}}
       <tr>
-        <td>{{.Username}}</td>
+        <td><span class="truncate">{{.Username}}</span></td>
         <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
-        <td>{{.CreatedAt.Time.Format "Jan 02, 2006"}}</td>
+        <td class="nowrap">{{.CreatedAt.Time.Format "Jan 02, 2006"}}</td>
         {{if $.CurrentUser.IsAdmin}}
-        <td class="actions">
+        <td class="actions nowrap">
           <a href="/users/{{.ID}}/edit">edit</a>
 
           {{if ne .ID $.CurrentUser.ID}}

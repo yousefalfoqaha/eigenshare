@@ -9,16 +9,16 @@ import (
 	"eigenshare/internal/timestamp"
 )
 
-type Cleaner struct {
+type ShareCleaner struct {
 	repo  *ShareRepository
 	store *FileStorage
 }
 
-func NewCleaner(repo *ShareRepository, storage *FileStorage) *Cleaner {
-	return &Cleaner{repo: repo, store: storage}
+func NewShareCleaner(repo *ShareRepository, storage *FileStorage) *ShareCleaner {
+	return &ShareCleaner{repo: repo, store: storage}
 }
 
-func (e *Cleaner) Run(ctx context.Context, interval time.Duration) {
+func (e *ShareCleaner) Run(ctx context.Context, interval time.Duration) {
 	e.clean()
 
 	ticker := time.NewTicker(interval)
@@ -34,7 +34,7 @@ func (e *Cleaner) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-func (e *Cleaner) clean() {
+func (e *ShareCleaner) clean() {
 	if err := e.handleExpired(); err != nil {
 		log.Printf("failed to clean up expired shares: %v", err)
 	}
@@ -46,7 +46,7 @@ func (e *Cleaner) clean() {
 	}
 }
 
-func (e *Cleaner) handleExpired() error {
+func (e *ShareCleaner) handleExpired() error {
 	shares, err := e.repo.GetAll()
 	if err != nil {
 		return err
@@ -68,7 +68,7 @@ func (e *Cleaner) handleExpired() error {
 	return e.repo.Delete(expiredIDs...)
 }
 
-func (e *Cleaner) handleTrashed() error {
+func (e *ShareCleaner) handleTrashed() error {
 	shares, err := e.repo.GetAllTrashed()
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func (e *Cleaner) handleTrashed() error {
 	return e.repo.Delete(trashedIDs...)
 }
 
-func (e *Cleaner) deleteOrphaned() error {
+func (e *ShareCleaner) deleteOrphaned() error {
 	repoKeys, err := e.repo.GetKeys()
 	if err != nil {
 		return err

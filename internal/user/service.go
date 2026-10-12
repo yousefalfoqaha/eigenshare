@@ -90,11 +90,7 @@ func (s *UserService) UpdateUser(id, actorID string, req UpdateRequest) (*User, 
 
 	u.IsAdmin = req.IsAdmin
 
-	if err := s.userRepo.Update(*u); err != nil {
-		return nil, err
-	}
-
-	return u, nil
+	return s.userRepo.Update(u)
 }
 
 func (s *UserService) DeleteUser(id, actorID string) error {

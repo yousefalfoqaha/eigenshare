@@ -29,7 +29,7 @@
       .Share.Files}}
       <tr>
         <td>
-          <p class="truncate nowrap">{{.Share.Handle}}</p>
+          <p class="truncate">{{.Share.Handle}}</p>
         </td>
         <td>
           {{len $done}}{{if lt (len $done) (len .Share.Files)}} (in
@@ -37,7 +37,7 @@
         </td>
         <td class="nowrap">{{formatSize (uploadedSize $done)}}</td>
         <td class="nowrap">{{timeAgo .Share.TrashedAt}}</td>
-        <td>
+        <td class="nowrap">
           <div class="actions">
             <a href="/shares/{{.Share.ID}}/edit">edit</a>
             <form

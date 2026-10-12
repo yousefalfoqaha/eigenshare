@@ -23,16 +23,11 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     is_admin INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS sessions (
-    token TEXT NOT NULL PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    expires_at TEXT,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+DROP TABLE IF EXISTS sessions;
 
 CREATE TABLE IF NOT EXISTS share_owner (
     share_id TEXT NOT NULL,

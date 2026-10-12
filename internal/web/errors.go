@@ -5,10 +5,11 @@ import (
 	"net/http"
 
 	"eigenshare/internal/security"
-	"eigenshare/internal/session"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
+
+var ErrInvalidCredentials = errors.New("invalid credentials")
 
 func mapError(err error) (int, string) {
 	switch {
@@ -20,15 +21,11 @@ func mapError(err error) (int, string) {
 		errors.Is(err, share.ErrInvalidVisibility),
 		errors.Is(err, security.ErrInvalidPassword),
 		errors.Is(err, security.ErrPasswordTooLong),
-		errors.Is(err, user.ErrInvalidUsername),
-		errors.Is(err, session.ErrInvalidToken),
-		errors.Is(err, session.ErrInvalidUserID),
-		errors.Is(err, session.ErrInvalidExpiry):
+		errors.Is(err, user.ErrInvalidUsername):
 		return http.StatusBadRequest, err.Error()
 
-	case errors.Is(err, session.ErrInvalidCredentials),
-		errors.Is(err, security.ErrWrongPassword),
-		errors.Is(err, session.ErrSessionNotFound):
+	case errors.Is(err, ErrInvalidCredentials),
+		errors.Is(err, security.ErrWrongPassword):
 		return http.StatusUnauthorized, err.Error()
 
 	case errors.Is(err, share.ErrShareNotFound),
@@ -46,6 +43,7 @@ func mapError(err error) (int, string) {
 		errors.Is(err, share.ErrLastOwner),
 		errors.Is(err, share.ErrOwnerExists),
 		errors.Is(err, user.ErrUsernameTaken),
+		errors.Is(err, user.ErrVersionConflict),
 		errors.Is(err, user.ErrCannotDeleteSelf),
 		errors.Is(err, user.ErrCannotDeleteLastAdmin),
 		errors.Is(err, user.ErrCannotDemoteSelf):

@@ -142,6 +142,7 @@ td {
   max-width: 24rem;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nowrap {

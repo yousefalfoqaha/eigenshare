@@ -16,6 +16,7 @@ type User struct {
 	PasswordHash string              `json:"-"`
 	IsAdmin      bool                `json:"isAdmin"`
 	CreatedAt    timestamp.Timestamp `json:"createdAt"`
+	Version      int64               `json:"-"`
 }
 
 func validateUsername(username string) error {
@@ -42,5 +43,6 @@ func NewUser(id, username, passwordHash string, isAdmin bool) (*User, error) {
 		PasswordHash: passwordHash,
 		IsAdmin:      isAdmin,
 		CreatedAt:    timestamp.Now(),
+		Version:      1,
 	}, nil
 }

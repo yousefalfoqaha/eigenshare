@@ -54,8 +54,8 @@
       {{range $done}}
       <tr>
         <td><span class="truncate" title="{{.Name}}">{{.Name}}</span></td>
-        <td>{{formatSize .ExpectedSize}}</td>
-        <td>
+        <td class="nowrap">{{formatSize .ExpectedSize}}</td>
+        <td class="nowrap">
           <form method="post" action="/shares/{{$.Content.Share.ID}}/files/{{.ID}}/delete" class="inline">
             <button type="submit">delete</button>
           </form>
@@ -201,9 +201,9 @@
     <tbody>
       {{range $.Users}}{{if $.Content.Share.IsOwner .}}
       <tr>
-        <td>{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</td>
+        <td><span class="truncate">{{.Username}}{{if eq .ID $.CurrentUser.ID}} (you){{end}}</span></td>
         <td>{{if .IsAdmin}}yes{{else}}no{{end}}</td>
-        <td>
+        <td class="nowrap">
           {{if gt (len $.Content.Share.Owners) 1}}
           <form method="post" action="/shares/{{$.Content.Share.ID}}/owners/{{.ID}}/delete" class="inline">
             <button type="submit">remove</button>

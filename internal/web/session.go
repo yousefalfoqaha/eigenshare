@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"eigenshare/internal/user"
 )
@@ -17,14 +18,14 @@ func actor(r *http.Request) *user.User {
 
 func (c *Controller) WithSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if token, ok := c.cookies.get(r, "session"); ok {
-			if u, err := c.sessionSvc.Validate(token); err == nil {
+		if id, version, ok := c.cookies.GetSession(r); ok {
+			if u, err := c.userSvc.GetUser(id); err == nil && strconv.FormatInt(u.Version, 10) == version {
 				ctx := context.WithValue(r.Context(), userKey{}, u)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
-			c.cookies.clear(w, "session")
 		}
+		c.cookies.ClearSession(w)
 		next.ServeHTTP(w, r)
 	})
 }
