@@ -40,12 +40,12 @@ func main() {
 		log.Printf("Failed to seed admin: %v\n", err)
 	}
 
-	shareUnlockSecret, err := security.RandomBytes(32)
+	secret, err := security.RandomBytes(32)
 	if err != nil {
 		log.Fatalf("failed to generate unlock secret: %v", err)
 	}
 
-	contr := web.NewController(sessionSvc, userSvc, shareSvc, shareUnlockSecret, cfg.SecureCookies)
+	contr := web.NewController(sessionSvc, userSvc, shareSvc, secret, cfg.SecureCookies)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", contr.HTMLRoutes())

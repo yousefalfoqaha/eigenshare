@@ -8,28 +8,19 @@ import (
 	"eigenshare/internal/user"
 )
 
-// userKey is the context key under which WithSession stores the
-// authenticated user.
 type userKey struct{}
 
-func withUser(ctx context.Context, u *user.User) context.Context {
-	return context.WithValue(ctx, userKey{}, u)
-}
-
-// actor returns the authenticated user attached by WithSession, or nil for
-// anonymous visitors. Handlers treat nil as "nobody is acting".
 func actor(r *http.Request) *user.User {
 	u, _ := r.Context().Value(userKey{}).(*user.User)
 	return u
 }
 
-// WithSession validates the session cookie (if present) and injects the
-// authenticated user into the request context.
 func (c *Controller) WithSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if token, ok := c.cookies.get(r, "session"); ok {
 			if u, err := c.sessionSvc.Validate(token); err == nil {
-				next.ServeHTTP(w, r.WithContext(withUser(r.Context(), u)))
+				ctx := context.WithValue(r.Context(), userKey{}, u)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 			c.cookies.clear(w, "session")

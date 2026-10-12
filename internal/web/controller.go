@@ -57,10 +57,10 @@ type Controller struct {
 }
 
 func NewController(
-	authSvc *session.SessionService,
+	sessionSvc *session.SessionService,
 	userSvc *user.UserService,
 	shareSvc *share.ShareService,
-	unlockSecret []byte,
+	secret []byte,
 	secureCookies bool,
 ) *Controller {
 	funcs := template.FuncMap{
@@ -94,12 +94,12 @@ func NewController(
 	}
 
 	return &Controller{
-		sessionSvc: authSvc,
+		sessionSvc: sessionSvc,
 		userSvc:    userSvc,
 		shareSvc:   shareSvc,
 		templs:     pages,
 		static:     http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
-		cookies:    newCookies(secureCookies, unlockSecret),
+		cookies:    newCookies(secureCookies, secret),
 	}
 }
 
