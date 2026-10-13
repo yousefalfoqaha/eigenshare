@@ -27,14 +27,8 @@ func NewShareService(repo *ShareRepository, fs *FileStorage, users *user.UserSer
 	}
 }
 
-func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, stream io.Reader, u *user.User) (int64, error) {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return 0, err
-	}
-	if !sh.CanManage(u) {
-		return 0, ErrShareNotFound
-	}
+// StreamFile writes an upload chunk for a file on the share.
+func (s *ShareService) StreamFile(sh *Share, fileID string, offset int64, stream io.Reader) (int64, error) {
 	if sh.Trashed() {
 		return 0, ErrShareTrashed
 	}
@@ -54,7 +48,7 @@ func (s *ShareService) StreamFile(shareID string, fileID string, offset int64, s
 		return 0, ErrChunkOffsetExceedsSize
 	}
 
-	bytesWritten, err := s.store.WriteFileStream(shareID, file.ID, file.ExpectedSize, offset, stream)
+	bytesWritten, err := s.store.WriteFileStream(sh.ID, file.ID, file.ExpectedSize, offset, stream)
 	if err != nil {
 		return bytesWritten, err
 	}
@@ -80,14 +74,8 @@ func (s *ShareService) RequestShare(req ShareRequest, u *user.User) (*Share, err
 	return s.repo.Save(sh)
 }
 
-func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest, u *user.User) ([]File, error) {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return nil, err
-	}
-	if !sh.CanManage(u) {
-		return nil, ErrShareNotFound
-	}
+// UploadFiles registers new file records on the share.
+func (s *ShareService) UploadFiles(sh *Share, fileReqs []FileRequest) ([]File, error) {
 	if sh.Trashed() {
 		return nil, ErrShareTrashed
 	}
@@ -111,16 +99,17 @@ func (s *ShareService) UploadFiles(shareID string, fileReqs []FileRequest, u *us
 	return newFiles, nil
 }
 
-func (s *ShareService) GetShareByHandle(handle string, u *user.User) (*Share, error) {
-	sh, err := s.repo.GetByHandle(handle)
-	if err != nil {
-		return nil, err
-	}
-	if !sh.CanView(u) {
-		return nil, ErrShareNotFound
-	}
+// GetShareByHandle fetches a share by its handle. Access policy is not
+// enforced here; route middleware decides what the caller may do with
+// the share.
+func (s *ShareService) GetShareByHandle(handle string) (*Share, error) {
+	return s.repo.GetByHandle(handle)
+}
 
-	return sh, nil
+// GetShare fetches a share by ID without enforcing access policy; see
+// GetShareByHandle.
+func (s *ShareService) GetShare(id string) (*Share, error) {
+	return s.repo.Get(id)
 }
 
 func (s *ShareService) Delete(u *user.User, ids ...string) error {
@@ -163,30 +152,14 @@ func (s *ShareService) GetTrashedShares(u *user.User) ([]*Share, error) {
 	}), nil
 }
 
-func (s *ShareService) GetShare(id string, u *user.User) (*Share, error) {
-	sh, err := s.repo.Get(id)
-	if err != nil {
-		return nil, err
-	}
-	if !sh.CanManage(u) {
-		return nil, ErrShareNotFound
-	}
-	return sh, nil
-}
-
-func (s *ShareService) GetFileUploadState(sh *Share, u *user.User, fileID string) (FileUploadState, error) {
-	if !sh.CanView(u) {
-		return FileUploadState{}, ErrShareNotFound
-	}
-
+// GetFileUploadState reports the on-disk upload progress of a file.
+func (s *ShareService) GetFileUploadState(sh *Share, fileID string) (FileUploadState, error) {
 	return s.store.FileUploadState(sh.ID, fileID)
 }
 
-func (s *ShareService) GetShareUploadState(sh *Share, u *user.User) (map[string]FileUploadState, error) {
-	if !sh.CanView(u) {
-		return nil, ErrShareNotFound
-	}
-
+// GetShareUploadState reports the on-disk upload progress of every file
+// on the share.
+func (s *ShareService) GetShareUploadState(sh *Share) (map[string]FileUploadState, error) {
 	states := make(map[string]FileUploadState, len(sh.Files))
 	for _, f := range sh.Files {
 		st, err := s.store.FileUploadState(sh.ID, f.ID)
@@ -199,21 +172,13 @@ func (s *ShareService) GetShareUploadState(sh *Share, u *user.User) (map[string]
 	return states, nil
 }
 
-func (s *ShareService) DownloadAll(shareID string, w io.Writer) error {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return err
-	}
-
+// DownloadAll streams the share as a zip archive.
+func (s *ShareService) DownloadAll(sh *Share, w io.Writer) error {
 	return s.store.CreateShareZipStream(*sh, w)
 }
 
-func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, string, error) {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return nil, "", err
-	}
-
+// DownloadFile returns a completed file's metadata and path.
+func (s *ShareService) DownloadFile(sh *Share, fileID string) (*File, string, error) {
 	var file *File
 	for i, f := range sh.Files {
 		if f.ID == fileID {
@@ -242,14 +207,8 @@ func (s *ShareService) DownloadFile(shareID string, fileID string) (*File, strin
 	return file, path, nil
 }
 
-func (s *ShareService) DeleteFile(shareID, fileID string, u *user.User) error {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return err
-	}
-	if !sh.CanManage(u) {
-		return ErrShareNotFound
-	}
+// DeleteFile removes a file record from the share.
+func (s *ShareService) DeleteFile(sh *Share, fileID string) error {
 	if sh.Trashed() {
 		return ErrShareTrashed
 	}
@@ -266,19 +225,13 @@ func (s *ShareService) DeleteFile(shareID, fileID string, u *user.User) error {
 		return ErrFileNotFound
 	}
 
-	_, err = s.repo.Save(sh)
+	_, err := s.repo.Save(sh)
 
 	return err
 }
 
-func (s *ShareService) TrashShare(shareID string, u *user.User) error {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return err
-	}
-	if !sh.CanManage(u) {
-		return ErrShareNotFound
-	}
+// TrashShare moves the share to the trash.
+func (s *ShareService) TrashShare(sh *Share) error {
 	if sh.Trashed() {
 		return ErrShareTrashed
 	}
@@ -286,38 +239,26 @@ func (s *ShareService) TrashShare(shareID string, u *user.User) error {
 	now := timestamp.Now()
 	sh.TrashedAt = &now
 
-	_, err = s.repo.Save(sh)
+	_, err := s.repo.Save(sh)
 
 	return err
 }
 
-func (s *ShareService) RecoverShare(shareID string, u *user.User) error {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return err
-	}
-	if !sh.CanManage(u) {
-		return ErrShareNotFound
-	}
+// RecoverShare restores the share from the trash.
+func (s *ShareService) RecoverShare(sh *Share) error {
 	if !sh.Trashed() {
 		return ErrShareNotTrashed
 	}
 
 	sh.TrashedAt = nil
 
-	_, err = s.repo.Save(sh)
+	_, err := s.repo.Save(sh)
 
 	return err
 }
 
-func (s *ShareService) AddOwner(shareID string, u *user.User, newOwnerID string) error {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return err
-	}
-	if !sh.CanManage(u) {
-		return ErrShareNotFound
-	}
+// AddOwner adds a user as an owner of the share.
+func (s *ShareService) AddOwner(sh *Share, newOwnerID string) error {
 	if sh.Trashed() {
 		return ErrShareTrashed
 	}
@@ -332,19 +273,13 @@ func (s *ShareService) AddOwner(shareID string, u *user.User, newOwnerID string)
 
 	sh.Owners = append(sh.Owners, newOwnerID)
 
-	_, err = s.repo.Save(sh)
+	_, err := s.repo.Save(sh)
 
 	return err
 }
 
-func (s *ShareService) RemoveOwner(shareID string, u *user.User, ownerID string) error {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return err
-	}
-	if !sh.CanManage(u) {
-		return ErrShareNotFound
-	}
+// RemoveOwner removes a user from the share's owners.
+func (s *ShareService) RemoveOwner(sh *Share, ownerID string) error {
 	if sh.Trashed() {
 		return ErrShareTrashed
 	}
@@ -359,23 +294,17 @@ func (s *ShareService) RemoveOwner(shareID string, u *user.User, ownerID string)
 
 	sh.Owners = slices.Delete(sh.Owners, idx, idx+1)
 
-	_, err = s.repo.Save(sh)
+	_, err := s.repo.Save(sh)
 
 	return err
 }
 
-func (s *ShareService) SetVisibility(shareID string, u *user.User, visibility Visibility) error {
+// SetVisibility updates the share's visibility.
+func (s *ShareService) SetVisibility(sh *Share, visibility Visibility) error {
 	if !visibility.Valid() {
 		return fmt.Errorf("visibility must be public or private: %w", ErrInvalidVisibility)
 	}
 
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return err
-	}
-	if !sh.CanManage(u) {
-		return ErrShareNotFound
-	}
 	if sh.Trashed() {
 		return ErrShareTrashed
 	}
@@ -386,19 +315,13 @@ func (s *ShareService) SetVisibility(shareID string, u *user.User, visibility Vi
 
 	sh.Visibility = visibility
 
-	_, err = s.repo.Save(sh)
+	_, err := s.repo.Save(sh)
 
 	return err
 }
 
-func (s *ShareService) SetPassword(shareID string, u *user.User, raw string, remove bool) error {
-	sh, err := s.repo.Get(shareID)
-	if err != nil {
-		return err
-	}
-	if !sh.CanManage(u) {
-		return ErrShareNotFound
-	}
+// SetPassword sets, changes, or removes the share's password.
+func (s *ShareService) SetPassword(sh *Share, raw string, remove bool) error {
 	if sh.Trashed() {
 		return ErrShareTrashed
 	}
@@ -414,16 +337,15 @@ func (s *ShareService) SetPassword(shareID string, u *user.User, raw string, rem
 		sh.PasswordHash = hash
 	}
 
-	_, err = s.repo.Save(sh)
+	_, err := s.repo.Save(sh)
 
 	return err
 }
 
-// hashSharePassword normalizes a raw password and returns a bcrypt hash, or
-// "" when no password should be set. Rules:
-//   - "" or whitespace-only => no password
-//   - otherwise the value is used exactly as typed (no trimming)
-//   - non-empty passwords must be 3-72 bytes
+// files.alfoqaha.me/s/music/upload?token=a1b2c3d4
+// the server takes the token, sees if there are any upload links open with this token, we need to somehow
+// ensure that the token is i guess signed?? but that doesnt really matter no? its not like cookies where i have to sign
+
 func hashSharePassword(raw string) (string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return "", nil

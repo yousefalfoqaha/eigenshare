@@ -44,15 +44,9 @@ func main() {
 
 	contr := web.NewController(userSvc, shareSvc, secret, cfg.SecureCookies)
 
-	mux := http.NewServeMux()
-	mux.Handle("/", contr.HTMLRoutes())
-	mux.Handle("/api/", contr.APIRoutes())
-
 	server := http.Server{
-		Addr: fmt.Sprintf(":%d", cfg.Port),
-		Handler: web.Logger(
-			contr.WithSession(mux),
-		),
+		Addr:    fmt.Sprintf(":%d", cfg.Port),
+		Handler: contr.Handler(),
 	}
 
 	go func() {

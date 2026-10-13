@@ -9,7 +9,10 @@ import (
 	"eigenshare/internal/user"
 )
 
-var ErrInvalidCredentials = errors.New("invalid credentials")
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrForbidden          = errors.New("insufficient permission")
+)
 
 func mapError(err error) (int, string) {
 	switch {
@@ -48,6 +51,9 @@ func mapError(err error) (int, string) {
 		errors.Is(err, user.ErrCannotDeleteLastAdmin),
 		errors.Is(err, user.ErrCannotDemoteSelf):
 		return http.StatusConflict, err.Error()
+
+	case errors.Is(err, ErrForbidden):
+		return http.StatusForbidden, err.Error()
 
 	case errors.Is(err, share.ErrUploadInProgress):
 		return http.StatusLocked, err.Error()

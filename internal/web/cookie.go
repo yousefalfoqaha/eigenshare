@@ -1,7 +1,6 @@
 package web
 
 import (
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"eigenshare/internal/security"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
@@ -24,24 +24,41 @@ const (
 
 type cookies struct {
 	secure bool
-	secret []byte
+	signer *security.Signer
 }
 
-func newCookies(secure bool, secret []byte) *cookies {
-	return &cookies{secure: secure, secret: secret}
+func newCookies(secure bool, signer *security.Signer) *cookies {
+	return &cookies{secure: secure, signer: signer}
 }
 
+// SetSession issues a session cookie bound to the user's current
+// password: the fingerprint embedded in the cookie invalidates it as
+// soon as the password changes.
 func (c *cookies) SetSession(w http.ResponseWriter, u *user.User) {
-	c.write(w, CookieSession, fmt.Sprintf("%s:%d", u.ID, u.Version), "/", sessionTTL)
+	c.write(w, CookieSession, fmt.Sprintf("%s:%s", u.ID, security.Fingerprint(u.PasswordHash)), "/", sessionTTL)
 }
 
-func (c *cookies) GetSession(r *http.Request) (id, version string, ok bool) {
+// GetSession returns the user id carried by a valid session cookie.
+func (c *cookies) GetSession(r *http.Request) (id string, ok bool) {
 	val, ok := c.read(r, CookieSession)
 	if !ok {
-		return "", "", false
+		return "", false
 	}
-	id, version, ok = strings.Cut(val, ":")
-	return id, version, ok
+	id, _, ok = strings.Cut(val, ":")
+	return id, ok
+}
+
+// SessionValid reports whether r's session cookie belongs to u: the
+// fingerprint embedded in the cookie must match the fingerprint of u's
+// current password hash, so rotating the password invalidates issued
+// sessions.
+func (c *cookies) SessionValid(r *http.Request, u *user.User) bool {
+	val, ok := c.read(r, CookieSession)
+	if !ok {
+		return false
+	}
+	_, fp, ok := strings.Cut(val, ":")
+	return ok && fp == security.Fingerprint(u.PasswordHash)
 }
 
 func (c *cookies) ClearSession(w http.ResponseWriter) {
@@ -61,13 +78,39 @@ func (c *cookies) GetFlash(r *http.Request, w http.ResponseWriter) (kind, messag
 	return strings.Cut(raw, ":")
 }
 
-func (c *cookies) SetUnlock(w http.ResponseWriter, id string) {
-	c.write(w, CookieUnlockPrefix+id, id, "/s/", share.UnlockTTL)
+// SetUnlock issues an unlock cookie bound to the share's current
+// password: changing the share's password invalidates every cookie
+// issued under the old one.
+func (c *cookies) SetUnlock(w http.ResponseWriter, sh *share.Share) {
+	c.write(w, CookieUnlockPrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/s/", share.UnlockTTL)
 }
 
-func (c *cookies) HasUnlock(r *http.Request, id string) bool {
-	val, ok := c.read(r, CookieUnlockPrefix+id)
-	return ok && val == id
+// HasUnlock reports whether the share is unlocked with a cookie issued
+// against its current password. Invalid or stale cookies are cleared.
+func (c *cookies) HasUnlock(r *http.Request, w http.ResponseWriter, sh *share.Share) bool {
+	cookieName := CookieUnlockPrefix + sh.ID
+
+	if _, err := r.Cookie(cookieName); err != nil {
+		return false
+	}
+
+	val, ok := c.read(r, cookieName)
+	if !ok {
+		return false
+	}
+
+	id, fp, ok := strings.Cut(val, ":")
+	if !ok || id != sh.ID || fp != security.Fingerprint(sh.PasswordHash) {
+		c.write(w, cookieName, "", "/s/", -1)
+		return false
+	}
+
+	return true
+}
+
+func (c *cookies) ClearUnlock(w http.ResponseWriter, id string) {
+	cookieName := CookieUnlockPrefix + id
+	c.write(w, cookieName, "", "/s/", -1)
 }
 
 func (c *cookies) write(w http.ResponseWriter, name, value, path string, ttl time.Duration) {
@@ -76,12 +119,7 @@ func (c *cookies) write(w http.ResponseWriter, name, value, path string, ttl tim
 
 	payload := fmt.Sprintf("%s:%s", value, expStr)
 
-	mac := hmac.New(sha256.New, c.secret)
-	mac.Write([]byte(name))
-	mac.Write([]byte(value))
-	mac.Write([]byte(expStr))
-
-	signedValue := append(mac.Sum(nil), payload...)
+	signedValue := append(c.signer.Sign(name, value, expStr), payload...)
 	encoded := base64.URLEncoding.EncodeToString(signedValue)
 
 	maxAge := int(ttl / time.Second)
@@ -122,12 +160,7 @@ func (c *cookies) read(r *http.Request, name string) (string, bool) {
 	value := payload[:lastColon]
 	expStr := payload[lastColon+1:]
 
-	mac := hmac.New(sha256.New, c.secret)
-	mac.Write([]byte(name))
-	mac.Write([]byte(value))
-	mac.Write([]byte(expStr))
-
-	if !hmac.Equal(signature, mac.Sum(nil)) {
+	if !c.signer.Verify(signature, name, value, expStr) {
 		return "", false
 	}
 

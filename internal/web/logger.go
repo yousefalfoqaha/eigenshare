@@ -23,7 +23,7 @@ func (w *WrappedWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-func Logger(next http.Handler) http.Handler {
+func logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wrapped := &WrappedWriter{
 			ResponseWriter: w,

@@ -18,7 +18,7 @@ func (c *Controller) Index(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) LoginPage(w http.ResponseWriter, r *http.Request) error {
-	return c.renderPage(w, r, http.StatusOK, "login.html", nil)
+	return c.templs.renderPage(w, r, http.StatusOK, "login.html", nil)
 }
 
 func (c *Controller) LoginSubmit(w http.ResponseWriter, r *http.Request) error {
@@ -53,39 +53,31 @@ func (c *Controller) Logout(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
-	actor := actor(r)
+	sh := shareFromContext(r)
 
-	sh, err := c.shareSvc.GetShareByHandle(r.PathValue("handle"), actor)
+	states, err := c.shareSvc.GetShareUploadState(sh)
 	if err != nil {
 		return err
 	}
 
-	if sh.RequiresPassword(actor) && !c.cookies.HasUnlock(r, sh.ID) {
-		return c.renderPage(w, r, http.StatusOK, "share_unlock.html", &struct{ Handle string }{sh.Handle})
-	}
-
-	states, err := c.shareSvc.GetShareUploadState(sh, actor)
-	if err != nil {
-		return err
-	}
-
-	return c.renderPage(w, r, http.StatusOK, "share.html", &struct {
+	return c.templs.renderPage(w, r, http.StatusOK, "share.html", &struct {
 		Share  *share.Share
 		Upload map[string]share.FileUploadState
 	}{sh, states})
 }
 
-func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
-	handle := r.PathValue("handle")
-	actor := actor(r)
+// UnlockPage renders the unlock form for a password-protected share.
+func (c *Controller) UnlockPage(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+	return c.templs.renderPage(w, r, http.StatusOK, "share_unlock.html", &struct{ Handle string }{sh.Handle})
+}
 
-	sh, err := c.shareSvc.GetShareByHandle(handle, actor)
-	if err != nil {
-		return err
-	}
+func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+	actor := userFromContext(r)
 
 	if !sh.RequiresPassword(actor) {
-		http.Redirect(w, r, "/s/"+handle, http.StatusSeeOther)
+		http.Redirect(w, r, "/s/"+sh.Handle, http.StatusSeeOther)
 		return nil
 	}
 
@@ -97,18 +89,18 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 		return security.ErrWrongPassword
 	}
 
-	c.cookies.SetUnlock(w, sh.ID)
+	c.cookies.SetUnlock(w, sh)
 	c.cookies.SetFlash(w, "success", "share unlocked")
-	http.Redirect(w, r, "/s/"+handle, http.StatusSeeOther)
+	http.Redirect(w, r, "/s/"+sh.Handle, http.StatusSeeOther)
 	return nil
 }
 
 func (c *Controller) UsersPage(w http.ResponseWriter, r *http.Request) error {
-	return c.renderPage(w, r, http.StatusOK, "users.html", nil)
+	return c.templs.renderPage(w, r, http.StatusOK, "users.html", nil)
 }
 
 func (c *Controller) NewUserPage(w http.ResponseWriter, r *http.Request) error {
-	return c.renderPage(w, r, http.StatusOK, "user_form.html", nil)
+	return c.templs.renderPage(w, r, http.StatusOK, "user_form.html", nil)
 }
 
 func (c *Controller) CreateUser(w http.ResponseWriter, r *http.Request) error {
@@ -133,7 +125,7 @@ func (c *Controller) EditUserPage(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	return c.renderPage(w, r, http.StatusOK, "user_form.html", u)
+	return c.templs.renderPage(w, r, http.StatusOK, "user_form.html", u)
 }
 
 func (c *Controller) UpdateUser(w http.ResponseWriter, r *http.Request) error {
@@ -145,7 +137,7 @@ func (c *Controller) UpdateUser(w http.ResponseWriter, r *http.Request) error {
 		Password: r.PostForm.Get("password"),
 		IsAdmin:  r.PostForm.Get("isAdmin") == "on",
 	}
-	if _, err := c.userSvc.UpdateUser(r.PathValue("id"), actor(r).ID, req); err != nil {
+	if _, err := c.userSvc.UpdateUser(r.PathValue("id"), userFromContext(r).ID, req); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "user updated")
@@ -154,7 +146,7 @@ func (c *Controller) UpdateUser(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) DeleteUser(w http.ResponseWriter, r *http.Request) error {
-	if err := c.userSvc.DeleteUser(r.PathValue("id"), actor(r).ID); err != nil {
+	if err := c.userSvc.DeleteUser(r.PathValue("id"), userFromContext(r).ID); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "user deleted")
@@ -163,7 +155,7 @@ func (c *Controller) DeleteUser(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) SharesPage(w http.ResponseWriter, r *http.Request) error {
-	actor := actor(r)
+	actor := userFromContext(r)
 
 	shares, err := c.shareSvc.GetShares(actor)
 	if err != nil {
@@ -175,7 +167,7 @@ func (c *Controller) SharesPage(w http.ResponseWriter, r *http.Request) error {
 		Upload map[string]share.FileUploadState
 	}, len(shares))
 	for i, sh := range shares {
-		states, err := c.shareSvc.GetShareUploadState(sh, actor)
+		states, err := c.shareSvc.GetShareUploadState(sh)
 		if err != nil {
 			return err
 		}
@@ -183,7 +175,7 @@ func (c *Controller) SharesPage(w http.ResponseWriter, r *http.Request) error {
 		rows[i].Upload = states
 	}
 
-	return c.renderPage(w, r, http.StatusOK, "shares.html", &struct {
+	return c.templs.renderPage(w, r, http.StatusOK, "shares.html", &struct {
 		Shares []struct {
 			Share  *share.Share
 			Upload map[string]share.FileUploadState
@@ -192,7 +184,7 @@ func (c *Controller) SharesPage(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) NewSharePage(w http.ResponseWriter, r *http.Request) error {
-	return c.renderPage(w, r, http.StatusOK, "new_share.html", nil)
+	return c.templs.renderPage(w, r, http.StatusOK, "new_share.html", nil)
 }
 
 func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
@@ -209,7 +201,7 @@ func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
 		Password:      r.PostForm.Get("password"),
 	}
 
-	sh, err := c.shareSvc.RequestShare(req, actor(r))
+	sh, err := c.shareSvc.RequestShare(req, userFromContext(r))
 	if err != nil {
 		return err
 	}
@@ -220,7 +212,7 @@ func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
-	actor := actor(r)
+	actor := userFromContext(r)
 
 	shares, err := c.shareSvc.GetTrashedShares(actor)
 	if err != nil {
@@ -232,7 +224,7 @@ func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
 		Upload map[string]share.FileUploadState
 	}, len(shares))
 	for i, sh := range shares {
-		states, err := c.shareSvc.GetShareUploadState(sh, actor)
+		states, err := c.shareSvc.GetShareUploadState(sh)
 		if err != nil {
 			return err
 		}
@@ -240,7 +232,7 @@ func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
 		rows[i].Upload = states
 	}
 
-	return c.renderPage(w, r, http.StatusOK, "trash.html", &struct {
+	return c.templs.renderPage(w, r, http.StatusOK, "trash.html", &struct {
 		Shares []struct {
 			Share  *share.Share
 			Upload map[string]share.FileUploadState
@@ -249,14 +241,9 @@ func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error {
-	actor := actor(r)
+	sh := shareFromContext(r)
 
-	sh, err := c.shareSvc.GetShare(r.PathValue("id"), actor)
-	if err != nil {
-		return err
-	}
-
-	states, err := c.shareSvc.GetShareUploadState(sh, actor)
+	states, err := c.shareSvc.GetShareUploadState(sh)
 	if err != nil {
 		return err
 	}
@@ -268,7 +255,7 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 		tab = "files"
 	}
 
-	return c.renderPage(w, r, http.StatusOK, "edit_share.html", &struct {
+	return c.templs.renderPage(w, r, http.StatusOK, "edit_share.html", &struct {
 		Share  *share.Share
 		Upload map[string]share.FileUploadState
 		Tab    string
@@ -276,7 +263,7 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 }
 
 func (c *Controller) TrashShare(w http.ResponseWriter, r *http.Request) error {
-	if err := c.shareSvc.TrashShare(r.PathValue("id"), actor(r)); err != nil {
+	if err := c.shareSvc.TrashShare(shareFromContext(r)); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "share trashed")
@@ -285,17 +272,16 @@ func (c *Controller) TrashShare(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) RestoreShare(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	actor := actor(r)
+	sh := shareFromContext(r)
 	toEdit := r.PostFormValue("redirect") == "edit"
 
-	if err := c.shareSvc.RecoverShare(id, actor); err != nil {
+	if err := c.shareSvc.RecoverShare(sh); err != nil {
 		return err
 	}
 
 	c.cookies.SetFlash(w, "success", "share restored")
 	if toEdit {
-		http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusSeeOther)
+		http.Redirect(w, r, "/shares/"+sh.ID+"/edit", http.StatusSeeOther)
 	} else {
 		http.Redirect(w, r, "/trash", http.StatusSeeOther)
 	}
@@ -306,7 +292,7 @@ func (c *Controller) DeleteShares(w http.ResponseWriter, r *http.Request) error 
 	if err := r.ParseForm(); err != nil {
 		return share.ErrInvalidRequest
 	}
-	if err := c.shareSvc.Delete(actor(r), r.PostForm["shareID"]...); err != nil {
+	if err := c.shareSvc.Delete(userFromContext(r), r.PostForm["shareID"]...); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "share deleted")
@@ -315,61 +301,60 @@ func (c *Controller) DeleteShares(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (c *Controller) DeleteFile(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	if err := c.shareSvc.DeleteFile(id, r.PathValue("fileID"), actor(r)); err != nil {
+	sh := shareFromContext(r)
+	if err := c.shareSvc.DeleteFile(sh, r.PathValue("fileID")); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "file deleted")
-	http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusSeeOther)
+	http.Redirect(w, r, "/shares/"+sh.ID+"/edit", http.StatusSeeOther)
 	return nil
 }
 
 func (c *Controller) AddOwner(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
+	sh := shareFromContext(r)
 	if err := r.ParseForm(); err != nil {
 		return share.ErrInvalidRequest
 	}
-	if err := c.shareSvc.AddOwner(id, actor(r), r.PostForm.Get("userID")); err != nil {
+	if err := c.shareSvc.AddOwner(sh, r.PostForm.Get("userID")); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "owner added")
-	http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners", http.StatusSeeOther)
+	http.Redirect(w, r, "/shares/"+sh.ID+"/edit?tab=owners", http.StatusSeeOther)
 	return nil
 }
 
 func (c *Controller) RemoveOwner(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	if err := c.shareSvc.RemoveOwner(id, actor(r), r.PathValue("ownerID")); err != nil {
+	sh := shareFromContext(r)
+	if err := c.shareSvc.RemoveOwner(sh, r.PathValue("ownerID")); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "owner removed")
-	http.Redirect(w, r, "/shares/"+id+"/edit?tab=owners", http.StatusSeeOther)
+	http.Redirect(w, r, "/shares/"+sh.ID+"/edit?tab=owners", http.StatusSeeOther)
 	return nil
 }
 
 func (c *Controller) UpdateShareSecurity(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
+	sh := shareFromContext(r)
 	if err := r.ParseForm(); err != nil {
 		return share.ErrInvalidRequest
 	}
-	if err := c.shareSvc.SetPassword(id, actor(r), r.PostForm.Get("password"), r.PostForm.Get("removePassword") == "on"); err != nil {
+	if err := c.shareSvc.SetPassword(sh, r.PostForm.Get("password"), r.PostForm.Get("removePassword") == "on"); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "security saved")
-	http.Redirect(w, r, "/shares/"+id+"/edit?tab=security", http.StatusSeeOther)
+	http.Redirect(w, r, "/shares/"+sh.ID+"/edit?tab=security", http.StatusSeeOther)
 	return nil
 }
 
 func (c *Controller) SetVisibility(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
 		return share.ErrInvalidRequest
 	}
-	if err := c.shareSvc.SetVisibility(id, actor(r), share.Visibility(r.PostForm.Get("visibility"))); err != nil {
+	if err := c.shareSvc.SetVisibility(shareFromContext(r), share.Visibility(r.PostForm.Get("visibility"))); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "visibility updated")
-	http.Redirect(w, r, "/shares/"+id+"/edit", http.StatusSeeOther)
+	http.Redirect(w, r, "/shares", http.StatusSeeOther)
 	return nil
 }
 
@@ -378,35 +363,17 @@ func contentDisposition(filename string) string {
 }
 
 func (c *Controller) DownloadAll(w http.ResponseWriter, r *http.Request) error {
-	actor := actor(r)
-	sh, err := c.shareSvc.GetShareByHandle(r.PathValue("handle"), actor)
-	if err != nil {
-		return err
-	}
-
-	if sh.RequiresPassword(actor) && !c.cookies.HasUnlock(r, sh.ID) {
-		http.Redirect(w, r, "/s/"+sh.Handle, http.StatusFound)
-		return nil
-	}
+	sh := shareFromContext(r)
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", contentDisposition(sh.Handle+".zip"))
-	return c.shareSvc.DownloadAll(sh.ID, w)
+	return c.shareSvc.DownloadAll(sh, w)
 }
 
 func (c *Controller) DownloadFile(w http.ResponseWriter, r *http.Request) error {
-	actor := actor(r)
-	sh, err := c.shareSvc.GetShareByHandle(r.PathValue("handle"), actor)
-	if err != nil {
-		return err
-	}
+	sh := shareFromContext(r)
 
-	if sh.RequiresPassword(actor) && !c.cookies.HasUnlock(r, sh.ID) {
-		http.Redirect(w, r, "/s/"+sh.Handle, http.StatusFound)
-		return nil
-	}
-
-	file, filePath, err := c.shareSvc.DownloadFile(sh.ID, r.PathValue("fileID"))
+	file, filePath, err := c.shareSvc.DownloadFile(sh, r.PathValue("fileID"))
 	if err != nil {
 		return err
 	}
@@ -424,7 +391,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 		return share.ErrInvalidRequest
 	}
 
-	newFiles, err := c.shareSvc.UploadFiles(r.PathValue("id"), req.Files, actor(r))
+	newFiles, err := c.shareSvc.UploadFiles(shareFromContext(r), req.Files)
 	if err != nil {
 		return err
 	}
@@ -435,13 +402,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 }
 
 func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) error {
-	actor := actor(r)
-	sh, err := c.shareSvc.GetShare(r.PathValue("id"), actor)
-	if err != nil {
-		return err
-	}
-
-	state, err := c.shareSvc.GetFileUploadState(sh, actor, r.PathValue("fileID"))
+	state, err := c.shareSvc.GetFileUploadState(shareFromContext(r), r.PathValue("fileID"))
 	if err != nil {
 		return err
 	}
@@ -461,7 +422,7 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	bytesWritten, err := c.shareSvc.StreamFile(
-		r.PathValue("id"), r.PathValue("fileID"), offset, r.Body, actor(r))
+		shareFromContext(r), r.PathValue("fileID"), offset, r.Body)
 	if err != nil {
 		if errors.Is(err, share.ErrInvalidChunkOffset) {
 			w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
@@ -475,7 +436,7 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (c *Controller) DeleteShareFile(w http.ResponseWriter, r *http.Request) error {
-	if err := c.shareSvc.DeleteFile(r.PathValue("id"), r.PathValue("fileID"), actor(r)); err != nil {
+	if err := c.shareSvc.DeleteFile(shareFromContext(r), r.PathValue("fileID")); err != nil {
 		return err
 	}
 
