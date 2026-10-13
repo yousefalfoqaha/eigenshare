@@ -4,6 +4,7 @@ type Config struct {
 	Port          int
 	DataPath      string
 	SecureCookies bool
+	Secret        []byte
 }
 
 func Load() Config {
@@ -11,5 +12,6 @@ func Load() Config {
 		Port:          8080,
 		DataPath:      "data",
 		SecureCookies: false,
+		Secret:        []byte("haha123"),
 	}
 }

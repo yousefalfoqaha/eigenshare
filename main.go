@@ -12,7 +12,6 @@ import (
 
 	"eigenshare/internal/config"
 	"eigenshare/internal/database"
-	"eigenshare/internal/security"
 	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 	"eigenshare/internal/web"
@@ -37,12 +36,12 @@ func main() {
 		log.Printf("Failed to seed admin: %v\n", err)
 	}
 
-	secret, err := security.RandomBytes(32)
-	if err != nil {
-		log.Fatalf("failed to generate unlock secret: %v", err)
-	}
+	// secret, err := security.RandomBytes(32)
+	// if err != nil {
+	// 	log.Fatalf("failed to generate unlock secret: %v", err)
+	// }
 
-	contr := web.NewController(userSvc, shareSvc, secret, cfg.SecureCookies)
+	contr := web.NewController(userSvc, shareSvc, cfg.Secret, cfg.SecureCookies)
 
 	server := http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),

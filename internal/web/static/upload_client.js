@@ -10,14 +10,6 @@ function formatBytes(bytes) {
   return `${(bytes / div).toFixed(1)} ${"KMGTPE"[exp]}B`;
 }
 
-async function readErrorMessage(res) {
-  try {
-    const payload = await res.json();
-    if (payload?.message) return payload.message;
-  } catch {}
-  return `HTTP ${res.status}`;
-}
-
 async function registerFiles(shareID, files) {
   try {
     const res = await fetch(`/api/shares/${shareID}/files`, {
@@ -27,7 +19,7 @@ async function registerFiles(shareID, files) {
         files: files.map((f) => ({ name: f.name, expectedSize: f.size })),
       }),
     });
-    if (!res.ok) throw new Error(await readErrorMessage(res));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     return { status: "success", entries: (await res.json()) || [] };
   } catch (ex) {
@@ -40,7 +32,7 @@ async function deleteFile(shareID, fileID) {
     const res = await fetch(`/api/shares/${shareID}/files/${fileID}`, {
       method: "DELETE",
     });
-    if (!res.ok) throw new Error(await readErrorMessage(res));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     return { status: "success" };
   } catch (ex) {
@@ -54,7 +46,7 @@ async function getUploadState(shareID, fileID, signal) {
       method: "HEAD",
       signal,
     });
-    if (!res.ok) throw new Error(await readErrorMessage(res));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const header = res.headers.get("Upload-Offset");
     if (header === null) throw new Error("Missing Upload-Offset header");
