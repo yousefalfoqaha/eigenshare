@@ -24,45 +24,11 @@ const (
 
 type cookies struct {
 	secure bool
-	signer *security.Signer
+	secret []byte
 }
 
-func newCookies(secure bool, signer *security.Signer) *cookies {
-	return &cookies{secure: secure, signer: signer}
-}
-
-// SetSession issues a session cookie bound to the user's current
-// password: the fingerprint embedded in the cookie invalidates it as
-// soon as the password changes.
-func (c *cookies) SetSession(w http.ResponseWriter, u *user.User) {
-	c.write(w, CookieSession, fmt.Sprintf("%s:%s", u.ID, security.Fingerprint(u.PasswordHash)), "/", sessionTTL)
-}
-
-// GetSession returns the user id carried by a valid session cookie.
-func (c *cookies) GetSession(r *http.Request) (id string, ok bool) {
-	val, ok := c.read(r, CookieSession)
-	if !ok {
-		return "", false
-	}
-	id, _, ok = strings.Cut(val, ":")
-	return id, ok
-}
-
-// SessionValid reports whether r's session cookie belongs to u: the
-// fingerprint embedded in the cookie must match the fingerprint of u's
-// current password hash, so rotating the password invalidates issued
-// sessions.
-func (c *cookies) SessionValid(r *http.Request, u *user.User) bool {
-	val, ok := c.read(r, CookieSession)
-	if !ok {
-		return false
-	}
-	_, fp, ok := strings.Cut(val, ":")
-	return ok && fp == security.Fingerprint(u.PasswordHash)
-}
-
-func (c *cookies) ClearSession(w http.ResponseWriter) {
-	c.write(w, CookieSession, "", "/", -1)
+func newCookies(secure bool, secret []byte) *cookies {
+	return &cookies{secure: secure, secret: secret}
 }
 
 func (c *cookies) SetFlash(w http.ResponseWriter, kind, message string) {
@@ -78,39 +44,38 @@ func (c *cookies) GetFlash(r *http.Request, w http.ResponseWriter) (kind, messag
 	return strings.Cut(raw, ":")
 }
 
-// SetUnlock issues an unlock cookie bound to the share's current
-// password: changing the share's password invalidates every cookie
-// issued under the old one.
+func (c *cookies) SetSession(w http.ResponseWriter, u *user.User) {
+	c.write(w, CookieSession, fmt.Sprintf("%s:%s", u.ID, security.Fingerprint(u.PasswordHash)), "/", sessionTTL)
+}
+
+func (c *cookies) GetSession(r *http.Request) (id, fp string, ok bool) {
+	val, ok := c.read(r, CookieSession)
+	if !ok {
+		return "", "", false
+	}
+	id, fp, ok = strings.Cut(val, ":")
+	return id, fp, ok
+}
+
+func (c *cookies) ClearSession(w http.ResponseWriter) {
+	c.write(w, CookieSession, "", "/", -1)
+}
+
 func (c *cookies) SetUnlock(w http.ResponseWriter, sh *share.Share) {
 	c.write(w, CookieUnlockPrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/s/", share.UnlockTTL)
 }
 
-// HasUnlock reports whether the share is unlocked with a cookie issued
-// against its current password. Invalid or stale cookies are cleared.
-func (c *cookies) HasUnlock(r *http.Request, w http.ResponseWriter, sh *share.Share) bool {
-	cookieName := CookieUnlockPrefix + sh.ID
-
-	if _, err := r.Cookie(cookieName); err != nil {
-		return false
-	}
-
-	val, ok := c.read(r, cookieName)
+func (c *cookies) GetUnlock(r *http.Request, shareID string) (id, fp string, ok bool) {
+	val, ok := c.read(r, CookieUnlockPrefix+shareID)
 	if !ok {
-		return false
+		return "", "", false
 	}
-
-	id, fp, ok := strings.Cut(val, ":")
-	if !ok || id != sh.ID || fp != security.Fingerprint(sh.PasswordHash) {
-		c.write(w, cookieName, "", "/s/", -1)
-		return false
-	}
-
-	return true
+	id, fp, ok = strings.Cut(val, ":")
+	return id, fp, ok
 }
 
 func (c *cookies) ClearUnlock(w http.ResponseWriter, id string) {
-	cookieName := CookieUnlockPrefix + id
-	c.write(w, cookieName, "", "/s/", -1)
+	c.write(w, CookieUnlockPrefix+id, "", "/s/", -1)
 }
 
 func (c *cookies) write(w http.ResponseWriter, name, value, path string, ttl time.Duration) {
@@ -119,7 +84,7 @@ func (c *cookies) write(w http.ResponseWriter, name, value, path string, ttl tim
 
 	payload := fmt.Sprintf("%s:%s", value, expStr)
 
-	signedValue := append(c.signer.Sign(name, value, expStr), payload...)
+	signedValue := append(security.Sign(c.secret, name, value, expStr), payload...)
 	encoded := base64.URLEncoding.EncodeToString(signedValue)
 
 	maxAge := int(ttl / time.Second)
@@ -160,7 +125,7 @@ func (c *cookies) read(r *http.Request, name string) (string, bool) {
 	value := payload[:lastColon]
 	expStr := payload[lastColon+1:]
 
-	if !c.signer.Verify(signature, name, value, expStr) {
+	if !security.VerifySignature(c.secret, signature, name, value, expStr) {
 		return "", false
 	}
 

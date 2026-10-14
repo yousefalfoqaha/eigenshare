@@ -12,6 +12,6 @@ func Load() Config {
 		Port:          8080,
 		DataPath:      "data",
 		SecureCookies: false,
-		Secret:        []byte("haha123"),
+		Secret:        []byte("haha12"),
 	}
 }

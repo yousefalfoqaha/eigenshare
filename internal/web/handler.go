@@ -66,7 +66,6 @@ func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
 	}{sh, states})
 }
 
-// UnlockPage renders the unlock form for a password-protected share.
 func (c *Controller) UnlockPage(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	return c.templs.renderPage(w, r, http.StatusOK, "share_unlock.html", &struct{ Handle string }{sh.Handle})
@@ -347,14 +346,16 @@ func (c *Controller) UpdateShareSecurity(w http.ResponseWriter, r *http.Request)
 }
 
 func (c *Controller) SetVisibility(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+
 	if err := r.ParseForm(); err != nil {
 		return share.ErrInvalidRequest
 	}
-	if err := c.shareSvc.SetVisibility(shareFromContext(r), share.Visibility(r.PostForm.Get("visibility"))); err != nil {
+	if err := c.shareSvc.SetVisibility(sh, share.Visibility(r.PostForm.Get("visibility"))); err != nil {
 		return err
 	}
 	c.cookies.SetFlash(w, "success", "visibility updated")
-	http.Redirect(w, r, "/shares", http.StatusSeeOther)
+	http.Redirect(w, r, "/shares/"+sh.ID+"/edit", http.StatusSeeOther)
 	return nil
 }
 

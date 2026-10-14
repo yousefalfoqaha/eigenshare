@@ -42,7 +42,6 @@ func (p *page) CurrentUser() *user.User {
 	return nil
 }
 
-// templates renders pages from the embedded template and static assets.
 type templates struct {
 	templs  map[string]*template.Template
 	static  http.Handler
@@ -89,7 +88,6 @@ func newTemplates(cookies *cookies, userSvc *user.UserService) *templates {
 	}
 }
 
-// renderPage renders tmpl through the layout at the given status.
 func (t *templates) renderPage(w http.ResponseWriter, r *http.Request, status int, tmpl string, content any) error {
 	pg := page{
 		Content: content,
