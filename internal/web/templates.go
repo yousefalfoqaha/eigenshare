@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"html/template"
 	"io/fs"
 	"log"
@@ -58,10 +59,17 @@ func newTemplates(cookies *cookies, userSvc *user.UserService) *templates {
 		"expiresIn":     expiresIn,
 		"timeAgo":       timeAgo,
 		"dict":          dict,
+		"jsonify": func(v any) template.JS {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return template.JS("null")
+			}
+			return template.JS(b)
+		},
 	}
 
 	base := template.Must(template.New("layout").Funcs(funcs).
-		ParseFS(templateFS, "templates/layout.html"))
+		ParseFS(templateFS, "templates/layout.html", "templates/partials/uploader.html"))
 
 	pageFiles, err := fs.Glob(templateFS, "templates/pages/*.html")
 	if err != nil {

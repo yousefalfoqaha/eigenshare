@@ -2,6 +2,9 @@
 <p class="banner" data-info>this share is protected by a password</p>
 <h1>{{.Content.Handle}}</h1>
 <form method="post" action="/s/{{.Content.Handle}}/unlock">
+  {{if .Content.Redirect}}
+  <input type="hidden" name="redirect" value="{{.Content.Redirect}}" />
+  {{end}}
   <label
     >password <input type="password" name="password" autofocus required
   /></label>

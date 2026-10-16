@@ -30,15 +30,14 @@ func NewDatabase(dbPath string) *Database {
 	}
 
 	db := &Database{DB: sqlDB}
-	initSchema(db)
+	if _, err := db.DB.Exec(schemaSQL); err != nil {
+		log.Fatal(err.Error())
+	}
+
+	log.Println("initialized database schema")
 
 	return db
 }
 
 func initSchema(s *Database) {
-	if _, err := s.DB.Exec(schemaSQL); err != nil {
-		log.Fatal(err.Error())
-	}
-
-	log.Println("initialized database schema")
 }

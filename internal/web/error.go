@@ -22,6 +22,7 @@ func mapError(err error) (int, string) {
 		errors.Is(err, share.ErrInvalidFileSize),
 		errors.Is(err, share.ErrInvalidExpiry),
 		errors.Is(err, share.ErrInvalidVisibility),
+		errors.Is(err, share.ErrInvalidMaxBytes),
 		errors.Is(err, security.ErrInvalidPassword),
 		errors.Is(err, security.ErrPasswordTooLong),
 		errors.Is(err, user.ErrInvalidUsername):
@@ -33,6 +34,7 @@ func mapError(err error) (int, string) {
 
 	case errors.Is(err, share.ErrShareNotFound),
 		errors.Is(err, share.ErrFileNotFound),
+		errors.Is(err, share.ErrUploadRequestNotFound),
 		errors.Is(err, user.ErrUserNotFound):
 		return http.StatusNotFound, err.Error()
 
@@ -45,6 +47,7 @@ func mapError(err error) (int, string) {
 		errors.Is(err, share.ErrShareNotTrashed),
 		errors.Is(err, share.ErrLastOwner),
 		errors.Is(err, share.ErrOwnerExists),
+		errors.Is(err, share.ErrUploadRequestLimit),
 		errors.Is(err, user.ErrUsernameTaken),
 		errors.Is(err, user.ErrVersionConflict),
 		errors.Is(err, user.ErrCannotDeleteSelf),

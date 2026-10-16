@@ -10,16 +10,16 @@ function formatBytes(bytes) {
   return `${(bytes / div).toFixed(1)} ${"KMGTPE"[exp]}B`;
 }
 
-async function registerFiles(shareID, files) {
+async function registerFiles(url, files) {
   try {
-    const res = await fetch(`/api/shares/${shareID}/files`, {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         files: files.map((f) => ({ name: f.name, expectedSize: f.size })),
       }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(await errorMessage(res));
 
     return { status: "success", entries: (await res.json()) || [] };
   } catch (ex) {
@@ -27,12 +27,20 @@ async function registerFiles(shareID, files) {
   }
 }
 
-async function deleteFile(shareID, fileID) {
+async function errorMessage(res) {
   try {
-    const res = await fetch(`/api/shares/${shareID}/files/${fileID}`, {
+    const payload = await res.json();
+    if (payload.message) return payload.message;
+  } catch {}
+  return `HTTP ${res.status}`;
+}
+
+async function deleteFile(url) {
+  try {
+    const res = await fetch(url, {
       method: "DELETE",
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(await errorMessage(res));
 
     return { status: "success" };
   } catch (ex) {
@@ -40,9 +48,9 @@ async function deleteFile(shareID, fileID) {
   }
 }
 
-async function getUploadState(shareID, fileID, signal) {
+async function getUploadState(url, signal) {
   try {
-    const res = await fetch(`/api/shares/${shareID}/files/${fileID}/stream`, {
+    const res = await fetch(url, {
       method: "HEAD",
       signal,
     });
@@ -63,7 +71,7 @@ async function getUploadState(shareID, fileID, signal) {
   }
 }
 
-function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
+function uploadChunk(url, fileID, file, offset, onProgress, signal) {
   if (signal.aborted) return Promise.resolve({ status: "aborted" });
   if (offset >= file.size) return Promise.resolve({ status: "complete" });
 
@@ -72,7 +80,7 @@ function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
     const data = file.slice(offset, offset + chunkSize);
 
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", `/api/shares/${shareID}/files/${fileID}/stream`);
+    xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.setRequestHeader("Upload-Offset", String(offset));
 
@@ -121,8 +129,8 @@ function uploadChunk(shareID, fileID, file, offset, onProgress, signal) {
   });
 }
 
-async function uploadFile(shareID, fileID, file, onProgress, signal) {
-  const state = await getUploadState(shareID, fileID, signal);
+async function uploadFile(url, fileID, file, onProgress, signal) {
+  const state = await getUploadState(url, signal);
   if (state.status !== "success") return state;
 
   let offset = state.offset;
@@ -132,7 +140,7 @@ async function uploadFile(shareID, fileID, file, onProgress, signal) {
 
   while (true) {
     const result = await uploadChunk(
-      shareID,
+      url,
       fileID,
       file,
       offset,
@@ -169,10 +177,16 @@ async function uploadFile(shareID, fileID, file, onProgress, signal) {
 }
 
 class UploadClient {
-  constructor(shareID, handlers) {
-    this.shareID = shareID;
+  constructor(basePath, handlers, token = "") {
+    this.basePath = basePath;
+    this.token = token;
     this.on = handlers;
     this.tasks = new Map();
+  }
+
+  #url(suffix) {
+    const query = this.token ? `?token=${encodeURIComponent(this.token)}` : "";
+    return `${this.basePath}${suffix}${query}`;
   }
 
   #base(id, name, expectedSize, loaded) {
@@ -287,7 +301,7 @@ class UploadClient {
     }
 
     if (fresh.length) {
-      const result = await registerFiles(this.shareID, fresh);
+      const result = await registerFiles(this.#url("/files"), fresh);
       if (result.status === "error") {
         this.on.onError?.(`failed to register files: ${result.message}`);
         return;
@@ -314,7 +328,7 @@ class UploadClient {
 
     if (task.status === "UPLOADING") task.abort();
 
-    const result = await deleteFile(this.shareID, id);
+    const result = await deleteFile(this.#url(`/files/${id}`));
     if (result.status === "error") {
       this.on.onError?.(`failed to delete ${task.name}: ${result.message}`);
       return;
@@ -347,7 +361,7 @@ class UploadClient {
 
       try {
         const outcome = await uploadFile(
-          this.shareID,
+          this.#url(`/files/${uploadingTask.id}/stream`),
           uploadingTask.id,
           uploadingTask.file,
           (bytes) => {

@@ -1,0 +1,142 @@
+{{define "uploader"}}
+<form
+  id="upload-form"
+  data-upload-client
+  data-upload-base="{{.UploadBase}}"
+  {{if .UploadToken}}data-upload-token="{{.UploadToken}}"{{end}}
+  {{if .ReloadOnDrain}}data-reload-on-drain{{end}}
+>
+  <fieldset data-file-picker>
+    <legend>upload files</legend>
+    <input type="file" data-file-input multiple hidden />
+    <button type="button" data-file-select>Browse...</button>
+    <ul data-lines></ul>
+  </fieldset>
+
+  <div data-status role="status" class="banner"></div>
+</form>
+
+<script src="/static/upload_client.js"></script>
+<script>
+  (function() {
+    const root = document.getElementById("upload-form");
+    const base = root.dataset.uploadBase;
+    const token = root.dataset.uploadToken || "";
+    const reloadOnDrain = root.hasAttribute("data-reload-on-drain");
+
+    const fileInput = root.querySelector("[data-file-input]");
+    const fileSelectBtn = root.querySelector("[data-file-select]");
+    const statusEl = root.querySelector("[data-status]");
+    const linesEl = root.querySelector("[data-lines]");
+
+    const rows = new Map();
+
+    function pickFile() {
+      return new Promise((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.addEventListener("change", () => resolve(input.files[0] ?? null), { once: true });
+        input.addEventListener("cancel", () => resolve(null), { once: true });
+        input.click();
+      });
+    }
+
+    fileSelectBtn.addEventListener("click", () => fileInput.click());
+
+    function createRow(task) {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <div class="line-head">
+          <span class="truncate"></span>
+          <button type="button" data-resume hidden>resume</button>
+          <button type="button" data-retry hidden>retry</button>
+          <button type="button" data-delete>delete</button>
+        </div>
+        <div class="line-meter"><progress></progress><span class="meta"></span></div>`;
+
+      linesEl.append(li);
+      return li;
+    }
+
+    function renderStatus(task) {
+      const li = rows.get(task.id);
+      if (!li) return;
+
+      const resumeBtn = li.querySelector("[data-resume]");
+      const retryBtn = li.querySelector("[data-retry]");
+      const deleteBtn = li.querySelector("[data-delete]");
+      const nameEl = li.querySelector(".truncate");
+      const bar = li.querySelector("progress");
+      const meta = li.querySelector(".meta");
+
+      resumeBtn.hidden = !task.resume;
+      if (task.resume) {
+        resumeBtn.onclick = async () => {
+          const file = await pickFile();
+          if (file) task.resume(file);
+        };
+      }
+
+      retryBtn.hidden = !task.retry;
+      if (task.retry) {
+        retryBtn.onclick = () => task.retry();
+      }
+
+      deleteBtn.onclick = () => task.remove();
+
+      nameEl.textContent = nameEl.title = task.name;
+      bar.max = task.expectedSize || 1;
+      bar.value = task.status === "DONE" ? bar.max : task.loaded;
+      const state = task.locked ? "locked" : task.status.toLowerCase();
+      meta.textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${state}`;
+    }
+
+    const queue = new UploadClient(base, {
+      onAdd: (task) => {
+        rows.set(task.id, createRow(task));
+        renderStatus(task);
+      },
+      onStatus: renderStatus,
+      onProgress: renderStatus,
+      onRemove: (id) => {
+        rows.get(id)?.remove();
+        rows.delete(id);
+      },
+      onError: (msg) => {
+        statusEl.textContent = msg;
+        statusEl.setAttribute("data-error", "");
+      },
+      onDrained: () => {
+        if (reloadOnDrain) {
+          location.reload();
+          return;
+        }
+        statusEl.textContent = "";
+        statusEl.removeAttribute("data-error");
+        rows.forEach((li) => li.remove());
+        rows.clear();
+      },
+    }, token);
+
+    queue.seed({{jsonify .SeedFiles}}, {{jsonify .SeedStates}});
+
+    fileInput.addEventListener("change", async () => {
+      if (fileInput.files.length === 0) return;
+
+      const filesToUpload = [...fileInput.files];
+      fileInput.value = "";
+      statusEl.textContent = "";
+      statusEl.removeAttribute("data-error");
+
+      try {
+        await queue.submit(filesToUpload);
+      } catch (err) {
+        statusEl.textContent = err.message;
+        statusEl.setAttribute("data-error", "");
+      }
+    });
+
+    root.addEventListener("submit", (e) => e.preventDefault());
+  })();
+</script>
+{{end}}

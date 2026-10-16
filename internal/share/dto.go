@@ -11,3 +11,8 @@ type ShareRequest struct {
 	Visibility    Visibility `json:"visibility"`
 	Password      string     `json:"password"`
 }
+
+type UploadRequestRequest struct {
+	ExpiryMinutes int   `json:"expiryMinutes"`
+	MaxBytes      int64 `json:"maxBytes"`
+}

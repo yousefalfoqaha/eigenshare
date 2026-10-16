@@ -40,6 +40,7 @@
 
 <nav>
   {{if eq .Content.Tab "files"}}files{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=files">files</a>{{end}}
+  {{if eq .Content.Tab "uploads"}}uploads{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=uploads">uploads</a>{{end}}
   {{if eq .Content.Tab "owners"}}owners{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=owners">owners</a>{{end}}
   {{if eq .Content.Tab "security"}}security{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=security">security</a>{{end}}
 </nav>
@@ -68,128 +69,53 @@
   </table>
 </div>
 
-<form id="upload-form" data-upload-client>
-  <fieldset data-file-picker>
-    <legend>upload files</legend>
-    <input type="file" data-file-input multiple hidden />
-    <button type="button" data-file-select>Browse...</button>
-    <ul data-lines></ul>
-  </fieldset>
+{{template "uploader" dict "UploadBase" (printf "/api/shares/%s" .Content.Share.ID) "SeedFiles" .Content.Share.Files "SeedStates" .Content.Upload "ReloadOnDrain" true}}
+{{end}}
 
-  <div data-status role="status" class="banner" data-error></div>
+{{if eq .Content.Tab "uploads"}}
+<div class="scrollable">
+  <table>
+    <thead>
+      <tr><th>token</th><th>size used</th><th>expires</th><th>created</th><th></th></tr>
+    </thead>
+    <tbody>
+      {{range .Content.Share.UploadRequests}}
+      <tr>
+        <td>
+            <a class="truncate" href="/s/{{$.Content.Share.Handle}}/uploads?token={{.Token}}">
+            {{.Token}}
+          </a>
+        </td>
+        <td class="nowrap">{{formatSize .BytesUsed}}{{if gt .MaxBytes 0}} / {{formatSize .MaxBytes}}{{end}}</td>
+        <td class="nowrap">{{expiresIn .ExpiresAt}}</td>
+        <td class="nowrap">{{timeAgo .CreatedAt}}</td>
+        <td class="nowrap">
+            <div class="actions">
+              <button type="button" data-copy-upload-link data-token="{{.Token}}">copy link</button>
+              <form method="post" action="/shares/{{$.Content.Share.ID}}/uploads/{{.ID}}/revoke" class="inline">
+                <button type="submit">revoke</button>
+              </form>
+            </div>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="5" class="empty-table">no upload requests</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<form method="post" action="/shares/{{.Content.Share.ID}}/uploads">
+  <label
+    >expiry (minutes, 0 = permanent)
+    <input type="number" name="expiryMinutes" value="60" min="0" />
+  </label>
+  <label
+    >max size (MB, 0 = unlimited)
+    <input type="number" name="maxSizeMB" value="0" min="0" />
+  </label>
+  <button type="submit" class="submit">create</button>
 </form>
-
-<script src="/static/upload_client.js"></script>
-<script>
-  (function() {
-    const shareID = "{{.Content.Share.ID}}";
-    
-    const root = document.getElementById("upload-form");
-    const fileInput = root.querySelector("[data-file-input]");
-    const fileSelectBtn = root.querySelector("[data-file-select]");
-    const statusEl = root.querySelector("[data-status]");
-    const linesEl = root.querySelector("[data-lines]");
-
-    const rows = new Map();
-
-    function pickFile() {
-      return new Promise((resolve) => {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.addEventListener("change", () => resolve(input.files[0] ?? null), { once: true });
-        input.addEventListener("cancel", () => resolve(null), { once: true });
-        input.click();
-      });
-    }
-
-    fileSelectBtn.addEventListener("click", () => fileInput.click());
-
-    function createRow(task) {
-      const li = document.createElement("li");
-      li.innerHTML = `
-        <div class="line-head">
-          <span class="truncate"></span>
-          <button type="button" data-resume hidden>resume</button>
-          <button type="button" data-retry hidden>retry</button>
-          <button type="button" data-delete>delete</button>
-        </div>
-        <div class="line-meter"><progress></progress><span class="meta"></span></div>`;
-
-      linesEl.append(li);
-      return li;
-    }
-
-    function renderStatus(task) {
-      const li = rows.get(task.id);
-      if (!li) return;
-      
-      const resumeBtn = li.querySelector("[data-resume]");
-      const retryBtn = li.querySelector("[data-retry]");
-      const deleteBtn = li.querySelector("[data-delete]");
-      const nameEl = li.querySelector(".truncate");
-      const bar = li.querySelector("progress");
-      const meta = li.querySelector(".meta");
-
-      resumeBtn.hidden = !task.resume;
-      if (task.resume) {
-        resumeBtn.onclick = async () => {
-          const file = await pickFile();
-          if (file) task.resume(file); 
-        };
-      }
-
-      retryBtn.hidden = !task.retry;
-      if (task.retry) {
-        retryBtn.onclick = () => task.retry();
-      }
-
-      deleteBtn.onclick = () => task.remove(); 
-
-      nameEl.textContent = nameEl.title = task.name;
-      bar.max = task.expectedSize || 1;
-      bar.value = task.status === "DONE" ? bar.max : task.loaded;
-      const state = task.locked ? "locked" : task.status.toLowerCase();
-      meta.textContent = `${formatBytes(task.loaded)} / ${formatBytes(task.expectedSize)} · ${state}`;
-    }
-
-    const queue = new UploadClient(shareID, {
-      onAdd: (task) => {
-        rows.set(task.id, createRow(task));
-        renderStatus(task);
-      },
-      onStatus: renderStatus,
-      onProgress: renderStatus,
-      onRemove: (id) => {
-        rows.get(id)?.remove();
-        rows.delete(id);
-      },
-      onError: (msg) => {
-        statusEl.textContent = msg;
-      },
-      onDrained: () => {
-        location.reload();
-      },
-    });
-
-    queue.seed({{.Content.Share.Files}}, {{$u}});
-
-    fileInput.addEventListener("change", async () => {
-      if (fileInput.files.length === 0) return;
-      
-      const filesToUpload = [...fileInput.files];
-      fileInput.value = ""; 
-      statusEl.textContent = ""; 
-
-      try {
-        await queue.submit(filesToUpload);
-      } catch (err) {
-        statusEl.textContent = err.message;
-      }
-    });
-
-    root.addEventListener("submit", (e) => e.preventDefault());
-  })();
-</script>
 {{end}}
 
 {{if eq .Content.Tab "owners"}}
@@ -249,21 +175,35 @@
 {{end}}
 
 <script>
-  const copyBtn = document.getElementById("copy-link-btn");
-  copyBtn.addEventListener("click", async () => {
-    const url = location.origin + "/s/{{.Content.Share.Handle}}";
+  async function copyText(text) {
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(text);
     } catch {
       const ta = document.createElement("textarea");
-      ta.value = url;
+      ta.value = text;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand("copy");
       ta.remove();
     }
+  }
+
+  const copyBtn = document.getElementById("copy-link-btn");
+  copyBtn.addEventListener("click", async () => {
+    const url = location.origin + "/s/{{.Content.Share.Handle}}";
+    await copyText(url);
     copyBtn.textContent = "copied";
     setTimeout(() => (copyBtn.textContent = "copy link"), 1500);
+  });
+
+  document.querySelectorAll("[data-copy-upload-link]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const url =
+        location.origin + "/s/{{.Content.Share.Handle}}/uploads?token=" + btn.dataset.token;
+      await copyText(url);
+      btn.textContent = "copied";
+      setTimeout(() => (btn.textContent = "copy link"), 1500);
+    });
   });
 </script>
 {{end}}

@@ -74,21 +74,37 @@ func (s *ShareService) RequestShare(req ShareRequest, u *user.User) (*Share, err
 	return s.repo.Save(sh)
 }
 
-// UploadFiles registers new file records on the share.
-func (s *ShareService) UploadFiles(sh *Share, fileReqs []FileRequest) ([]File, error) {
+// UploadFiles registers new file records on the share. When req is non-nil
+// the files are attributed to that upload request, counting against its
+// size quota.
+func (s *ShareService) UploadFiles(sh *Share, fileReqs []FileRequest, req *UploadRequest) ([]File, error) {
 	if sh.Trashed() {
 		return nil, ErrShareTrashed
 	}
 
+	if req != nil {
+		var total int64
+		for _, f := range fileReqs {
+			total += f.ExpectedSize
+		}
+		if req.MaxBytes > 0 && req.BytesUsed+total > req.MaxBytes {
+			return nil, ErrUploadRequestLimit
+		}
+	}
+
 	var newFiles []File
 
-	for _, req := range fileReqs {
-		file, err := NewFile(req.Name, req.ExpectedSize)
+	for _, fileReq := range fileReqs {
+		file, err := NewFile(fileReq.Name, fileReq.ExpectedSize)
 		if err != nil {
 			return nil, err
 		}
 		file.ID = uuid.New().String()
 		sh.Files = append(sh.Files, *file)
+		if req != nil {
+			req.FileIDs = append(req.FileIDs, file.ID)
+			req.BytesUsed += file.ExpectedSize
+		}
 		newFiles = append(newFiles, *file)
 	}
 
@@ -97,6 +113,50 @@ func (s *ShareService) UploadFiles(sh *Share, fileReqs []FileRequest) ([]File, e
 	}
 
 	return newFiles, nil
+}
+
+// CreateUploadRequest adds a new upload request to the share.
+func (s *ShareService) CreateUploadRequest(sh *Share, req UploadRequestRequest) (*UploadRequest, error) {
+	if sh.Trashed() {
+		return nil, ErrShareTrashed
+	}
+
+	ur, err := NewUploadRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	sh.UploadRequests = append(sh.UploadRequests, *ur)
+
+	if _, err := s.repo.Save(sh); err != nil {
+		return nil, err
+	}
+
+	return ur, nil
+}
+
+// RevokeUploadRequest deletes the upload request from the share.
+func (s *ShareService) RevokeUploadRequest(sh *Share, id string) error {
+	if sh.Trashed() {
+		return ErrShareTrashed
+	}
+
+	idx := -1
+	for i := range sh.UploadRequests {
+		if sh.UploadRequests[i].ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return ErrUploadRequestNotFound
+	}
+
+	sh.UploadRequests = append(sh.UploadRequests[:idx], sh.UploadRequests[idx+1:]...)
+
+	_, err := s.repo.Save(sh)
+
+	return err
 }
 
 // GetShareByHandle fetches a share by its handle. Access policy is not
@@ -207,22 +267,34 @@ func (s *ShareService) DownloadFile(sh *Share, fileID string) (*File, string, er
 	return file, path, nil
 }
 
-// DeleteFile removes a file record from the share.
+// DeleteFile removes a file record from the share. Files registered through
+// an upload request are detached from it, but their declared size is not
+// returned to the request's quota.
 func (s *ShareService) DeleteFile(sh *Share, fileID string) error {
 	if sh.Trashed() {
 		return ErrShareTrashed
 	}
 
-	var removedFileID string
-	for i, f := range sh.Files {
-		if f.ID == fileID {
-			removedFileID = f.ID
+	var removed *File
+	for i := range sh.Files {
+		if sh.Files[i].ID == fileID {
+			f := sh.Files[i]
+			removed = &f
 			sh.Files = append(sh.Files[:i], sh.Files[i+1:]...)
 			break
 		}
 	}
-	if removedFileID == "" {
+	if removed == nil {
 		return ErrFileNotFound
+	}
+
+	for i := range sh.UploadRequests {
+		req := &sh.UploadRequests[i]
+		if !slices.Contains(req.FileIDs, removed.ID) {
+			continue
+		}
+		idx := slices.Index(req.FileIDs, removed.ID)
+		req.FileIDs = slices.Delete(req.FileIDs, idx, idx+1)
 	}
 
 	_, err := s.repo.Save(sh)
@@ -341,10 +413,6 @@ func (s *ShareService) SetPassword(sh *Share, raw string, remove bool) error {
 
 	return err
 }
-
-// files.alfoqaha.me/s/music/upload?token=a1b2c3d4
-// the server takes the token, sees if there are any upload links open with this token, we need to somehow
-// ensure that the token is i guess signed?? but that doesnt really matter no? its not like cookies where i have to sign
 
 func hashSharePassword(raw string) (string, error) {
 	if strings.TrimSpace(raw) == "" {

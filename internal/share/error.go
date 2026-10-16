@@ -13,10 +13,12 @@ var (
 	ErrInvalidExpiry      = errors.New("invalid expiry")
 	ErrInvalidVisibility  = errors.New("invalid visibility")
 	ErrInvalidChunkOffset = errors.New("invalid chunk offset")
+	ErrInvalidMaxBytes    = errors.New("invalid max size")
 
 	// 404 — not found
-	ErrShareNotFound = errors.New("share not found")
-	ErrFileNotFound  = errors.New("file not found")
+	ErrShareNotFound         = errors.New("share not found")
+	ErrFileNotFound          = errors.New("file not found")
+	ErrUploadRequestNotFound = errors.New("upload request not found")
 
 	// 409 — conflict
 	ErrHandleExists           = errors.New("handle already exists")
@@ -27,6 +29,7 @@ var (
 	ErrShareNotTrashed        = errors.New("share is not trashed")
 	ErrLastOwner              = errors.New("cannot remove the last owner of a share")
 	ErrOwnerExists            = errors.New("user is already an owner of this share")
+	ErrUploadRequestLimit     = errors.New("upload request size limit reached")
 
 	// 423 — locked
 	ErrUploadInProgress = errors.New("an upload is already in progress for this file")

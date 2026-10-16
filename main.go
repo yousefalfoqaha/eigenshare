@@ -33,7 +33,7 @@ func main() {
 	go shareCleaner.Run(cleanerCtx, 1*time.Minute)
 
 	if err := userSvc.SeedAdmin(); err != nil {
-		log.Printf("Failed to seed admin: %v\n", err)
+		log.Printf("failed to seed admin: %v\n", err)
 	}
 
 	// secret, err := security.RandomBytes(32)
@@ -52,7 +52,7 @@ func main() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
-		fmt.Println("Shutting down...")
+		fmt.Println("shutting down...")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 
@@ -61,6 +61,6 @@ func main() {
 
 	log.Printf("server listening on port %v\n", cfg.Port)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Printf("Server error: %v\n", err)
+		fmt.Printf("server error: %v\n", err)
 	}
 }

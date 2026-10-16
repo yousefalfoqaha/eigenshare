@@ -62,7 +62,7 @@ func (c *cookies) ClearSession(w http.ResponseWriter) {
 }
 
 func (c *cookies) SetUnlock(w http.ResponseWriter, sh *share.Share) {
-	c.write(w, CookieUnlockPrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/s/", share.UnlockTTL)
+	c.write(w, CookieUnlockPrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/", share.UnlockTTL)
 }
 
 func (c *cookies) GetUnlock(r *http.Request, shareID string) (id, fp string, ok bool) {
@@ -75,7 +75,7 @@ func (c *cookies) GetUnlock(r *http.Request, shareID string) (id, fp string, ok 
 }
 
 func (c *cookies) ClearUnlock(w http.ResponseWriter, id string) {
-	c.write(w, CookieUnlockPrefix+id, "", "/s/", -1)
+	c.write(w, CookieUnlockPrefix+id, "", "/", -1)
 }
 
 func (c *cookies) write(w http.ResponseWriter, name, value, path string, ttl time.Duration) {

@@ -3,9 +3,12 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"mime"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"eigenshare/internal/security"
 	"eigenshare/internal/share"
@@ -68,11 +71,20 @@ func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
 
 func (c *Controller) UnlockPage(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
-	return c.templs.renderPage(w, r, http.StatusOK, "share_unlock.html", &struct{ Handle string }{sh.Handle})
+	if sh == nil {
+		return share.ErrShareNotFound
+	}
+	return c.templs.renderPage(w, r, http.StatusOK, "share_unlock.html", &struct {
+		Handle   string
+		Redirect string
+	}{sh.Handle, r.URL.Query().Get("redirect")})
 }
 
 func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
+	if sh == nil {
+		return share.ErrShareNotFound
+	}
 	actor := userFromContext(r)
 
 	if !sh.RequiresPassword(actor) {
@@ -90,8 +102,17 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 
 	c.cookies.SetUnlock(w, sh)
 	c.cookies.SetFlash(w, "success", "share unlocked")
-	http.Redirect(w, r, "/s/"+sh.Handle, http.StatusSeeOther)
+	http.Redirect(w, r, redirectAfterUnlock(r.PostForm.Get("redirect"), sh), http.StatusSeeOther)
 	return nil
+}
+
+// redirectAfterUnlock returns a safe same-site path to return to after
+// unlocking, defaulting to the share page.
+func redirectAfterUnlock(redirect string, sh *share.Share) string {
+	if redirect == "" || !strings.HasPrefix(redirect, "/") || strings.HasPrefix(redirect, "//") {
+		return "/s/" + sh.Handle
+	}
+	return redirect
 }
 
 func (c *Controller) UsersPage(w http.ResponseWriter, r *http.Request) error {
@@ -249,7 +270,7 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 
 	tab := r.URL.Query().Get("tab")
 	switch tab {
-	case "files", "owners", "security":
+	case "files", "uploads", "owners", "security":
 	default:
 		tab = "files"
 	}
@@ -259,6 +280,82 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 		Upload map[string]share.FileUploadState
 		Tab    string
 	}{sh, states, tab})
+}
+
+func (c *Controller) UploadRequestPage(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+
+	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
+	if err != nil {
+		return err
+	}
+
+	states, err := c.shareSvc.GetShareUploadState(sh)
+	if err != nil {
+		return err
+	}
+
+	var seedFiles []share.File
+	var pending int
+	for _, f := range sh.Files {
+		if !slices.Contains(req.FileIDs, f.ID) {
+			continue
+		}
+		seedFiles = append(seedFiles, f)
+		if states[f.ID].Written < f.ExpectedSize {
+			pending++
+		}
+	}
+
+	remaining := req.MaxBytes - req.BytesUsed
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	return c.templs.renderPage(w, r, http.StatusOK, "upload_request.html", &struct {
+		Share     *share.Share
+		Request   *share.UploadRequest
+		Upload    map[string]share.FileUploadState
+		SeedFiles []share.File
+		Pending   int
+		Remaining int64
+	}{sh, req, states, seedFiles, pending, remaining})
+}
+
+func (c *Controller) CreateUploadRequest(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+	if err := r.ParseForm(); err != nil {
+		return share.ErrInvalidRequest
+	}
+
+	expiryMinutes, _ := strconv.Atoi(r.PostForm.Get("expiryMinutes"))
+	maxSizeMB, _ := strconv.ParseInt(r.PostForm.Get("maxSizeMB"), 10, 64)
+	if maxSizeMB < 0 || maxSizeMB > math.MaxInt64/(1024*1024) {
+		return share.ErrInvalidMaxBytes
+	}
+
+	req := share.UploadRequestRequest{
+		ExpiryMinutes: expiryMinutes,
+		MaxBytes:      maxSizeMB * 1024 * 1024,
+	}
+
+	if _, err := c.shareSvc.CreateUploadRequest(sh, req); err != nil {
+		return err
+	}
+
+	c.cookies.SetFlash(w, "success", "upload request created")
+	http.Redirect(w, r, "/shares/"+sh.ID+"/edit?tab=uploads", http.StatusSeeOther)
+	return nil
+}
+
+func (c *Controller) RevokeUploadRequest(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+	if err := c.shareSvc.RevokeUploadRequest(sh, r.PathValue("requestID")); err != nil {
+		return err
+	}
+	c.cookies.SetFlash(w, "success", "upload request revoked")
+	http.Redirect(w, r, "/shares/"+sh.ID+"/edit?tab=uploads", http.StatusSeeOther)
+	return nil
 }
 
 func (c *Controller) TrashShare(w http.ResponseWriter, r *http.Request) error {
@@ -392,7 +489,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 		return share.ErrInvalidRequest
 	}
 
-	newFiles, err := c.shareSvc.UploadFiles(shareFromContext(r), req.Files)
+	newFiles, err := c.shareSvc.UploadFiles(shareFromContext(r), req.Files, nil)
 	if err != nil {
 		return err
 	}
@@ -400,6 +497,119 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	return json.NewEncoder(w).Encode(newFiles)
+}
+
+func (c *Controller) AddFilesViaUploadRequest(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+
+	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
+	if err != nil {
+		return err
+	}
+
+	var body struct {
+		Files []share.FileRequest `json:"files"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return share.ErrInvalidRequest
+	}
+
+	newFiles, err := c.shareSvc.UploadFiles(sh, body.Files, req)
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	return json.NewEncoder(w).Encode(newFiles)
+}
+
+func (c *Controller) GetUploadRequestFileOffset(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+
+	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
+	if err != nil {
+		return err
+	}
+	f, err := sh.File(r.PathValue("fileID"))
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(req.FileIDs, f.ID) {
+		return share.ErrFileNotFound
+	}
+
+	state, err := c.shareSvc.GetFileUploadState(sh, f.ID)
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Upload-Offset", strconv.FormatInt(state.Written, 10))
+	if state.Locked {
+		w.Header().Set("Upload-Locked", "1")
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (c *Controller) StreamUploadRequestFile(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+
+	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
+	if err != nil {
+		return err
+	}
+	f, err := sh.File(r.PathValue("fileID"))
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(req.FileIDs, f.ID) {
+		return share.ErrFileNotFound
+	}
+
+	offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
+	if err != nil {
+		return share.ErrInvalidRequest
+	}
+
+	bytesWritten, err := c.shareSvc.StreamFile(sh, f.ID, offset, r.Body)
+	if err != nil {
+		if errors.Is(err, share.ErrInvalidChunkOffset) {
+			w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
+		}
+		return err
+	}
+
+	if bytesWritten >= f.ExpectedSize {
+		c.cookies.SetFlash(w, "success", "files uploaded")
+	}
+
+	w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (c *Controller) DeleteUploadRequestFile(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+
+	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
+	if err != nil {
+		return err
+	}
+	f, err := sh.File(r.PathValue("fileID"))
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(req.FileIDs, f.ID) {
+		return share.ErrFileNotFound
+	}
+
+	if err := c.shareSvc.DeleteFile(sh, f.ID); err != nil {
+		return err
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) error {
@@ -417,13 +627,18 @@ func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) err
 }
 
 func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+	f, err := sh.File(r.PathValue("fileID"))
+	if err != nil {
+		return err
+	}
+
 	offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
 	if err != nil {
 		return share.ErrInvalidRequest
 	}
 
-	bytesWritten, err := c.shareSvc.StreamFile(
-		shareFromContext(r), r.PathValue("fileID"), offset, r.Body)
+	bytesWritten, err := c.shareSvc.StreamFile(sh, f.ID, offset, r.Body)
 	if err != nil {
 		if errors.Is(err, share.ErrInvalidChunkOffset) {
 			w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))

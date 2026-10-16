@@ -8,6 +8,8 @@ import (
 
 	"eigenshare/internal/timestamp"
 	"eigenshare/internal/user"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -27,16 +29,17 @@ func (v Visibility) Valid() bool {
 }
 
 type Share struct {
-	ID           string               `json:"id"`
-	Handle       string               `json:"handle"`
-	Visibility   Visibility           `json:"visibility"`
-	Owners       []string             `json:"owners"`
-	Files        []File               `json:"files"`
-	PasswordHash string               `json:"-"`
-	CreatedAt    timestamp.Timestamp  `json:"createdAt"`
-	ExpiresAt    *timestamp.Timestamp `json:"expiresAt"`
-	TrashedAt    *timestamp.Timestamp `json:"trashedAt"`
-	Version      int64                `json:"-"`
+	ID             string               `json:"id"`
+	Handle         string               `json:"handle"`
+	Visibility     Visibility           `json:"visibility"`
+	Owners         []string             `json:"owners"`
+	Files          []File               `json:"files"`
+	UploadRequests []UploadRequest      `json:"uploadRequests"`
+	PasswordHash   string               `json:"-"`
+	CreatedAt      timestamp.Timestamp  `json:"createdAt"`
+	ExpiresAt      *timestamp.Timestamp `json:"expiresAt"`
+	TrashedAt      *timestamp.Timestamp `json:"trashedAt"`
+	Version        int64                `json:"-"`
 }
 
 func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creatorID string) (*Share, error) {
@@ -101,6 +104,26 @@ func (s *Share) RequiresPassword(u *user.User) bool {
 	return s.HasPassword() && !s.CanManage(u)
 }
 
+// UploadRequest returns the upload request with the given token.
+func (s *Share) UploadRequest(token string) (*UploadRequest, error) {
+	for i := range s.UploadRequests {
+		if s.UploadRequests[i].Token == token {
+			return &s.UploadRequests[i], nil
+		}
+	}
+	return nil, ErrUploadRequestNotFound
+}
+
+// File returns the file with the given id.
+func (s *Share) File(fileID string) (*File, error) {
+	for i := range s.Files {
+		if s.Files[i].ID == fileID {
+			return &s.Files[i], nil
+		}
+	}
+	return nil, ErrFileNotFound
+}
+
 func (s *Share) UnlockMessage() string {
 	return s.ID + "\x00" + s.PasswordHash
 }
@@ -134,4 +157,38 @@ func NewFile(name string, expectedSize int64) (*File, error) {
 type FileUploadState struct {
 	Written int64 `json:"written"`
 	Locked  bool  `json:"locked"`
+}
+
+type UploadRequest struct {
+	ID        string               `json:"id"`
+	Token     string               `json:"token"`
+	MaxBytes  int64                `json:"maxBytes"`
+	BytesUsed int64                `json:"bytesUsed"`
+	FileIDs   []string             `json:"fileIDs"`
+	ExpiresAt *timestamp.Timestamp `json:"expiresAt"`
+	CreatedAt timestamp.Timestamp  `json:"createdAt"`
+}
+
+func NewUploadRequest(req UploadRequestRequest) (*UploadRequest, error) {
+	if req.ExpiryMinutes < 0 {
+		return nil, fmt.Errorf("expiry minutes must be non-negative: %w", ErrInvalidExpiry)
+	}
+	if req.MaxBytes < 0 {
+		return nil, fmt.Errorf("max bytes must be non-negative: %w", ErrInvalidMaxBytes)
+	}
+
+	createdAt := timestamp.Now()
+	ur := &UploadRequest{
+		ID:        uuid.New().String(),
+		Token:     uuid.New().String(),
+		MaxBytes:  req.MaxBytes,
+		CreatedAt: createdAt,
+	}
+
+	if req.ExpiryMinutes > 0 {
+		expiresAt := timestamp.Timestamp(time.Time(createdAt).Add(time.Duration(req.ExpiryMinutes) * time.Minute))
+		ur.ExpiresAt = &expiresAt
+	}
+
+	return ur, nil
 }

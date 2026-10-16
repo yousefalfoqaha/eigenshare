@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"net/url"
@@ -15,7 +16,8 @@ type Controller struct {
 	shareSvc *share.ShareService
 	cookies  *cookies
 	templs   *templates
-	mw       *middleware
+	load     *dataLoader
+	guard    *guards
 }
 
 func NewController(
@@ -26,14 +28,16 @@ func NewController(
 ) *Controller {
 	cookies := newCookies(secureCookies, secret)
 	templs := newTemplates(cookies, userSvc)
-	mw := newMiddleware(cookies, userSvc, shareSvc)
+	load := newDataLoader(cookies, userSvc, shareSvc)
+	guard := newGuards(cookies)
 
 	return &Controller{
 		userSvc:  userSvc,
 		shareSvc: shareSvc,
 		cookies:  cookies,
 		templs:   templs,
-		mw:       mw,
+		load:     load,
+		guard:    guard,
 	}
 }
 
@@ -41,51 +45,52 @@ func (c *Controller) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", c.HTMLRoutes())
 	mux.Handle("/api/", c.APIRoutes())
-	return logger(c.mw.WithSession(mux))
+	return logger(c.load.LoadSession(mux))
 }
 
 func (c *Controller) HTMLRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", c.templs.static)
 
-	mw := c.mw
-
 	pub := http.NewServeMux()
 	pub.Handle("GET /login", c.handleError(c.LoginPage))
 	pub.Handle("POST /login", c.handleError(c.LoginSubmit))
 	pub.Handle("POST /logout", c.handleError(c.Logout))
-	pub.Handle("GET /s/{handle}", c.handleError(mw.WithShare(mw.requireUnlockedShare(c.SharePage))))
-	pub.Handle("GET /s/{handle}/unlock", c.handleError(mw.WithShare(requireShare(c.UnlockPage))))
-	pub.Handle("POST /s/{handle}/unlock", c.handleError(mw.WithShare(requireShare(c.UnlockShare))))
-	pub.Handle("GET /s/{handle}/download", c.handleError(mw.WithShare(mw.requireUnlockedShare(c.DownloadAll))))
-	pub.Handle("GET /s/{handle}/files/{fileID}/download", c.handleError(mw.WithShare(mw.requireUnlockedShare(c.DownloadFile))))
+	pub.Handle("GET /s/{handle}", c.handleError(c.load.LoadShare(c.guard.Share(c.guard.UnlockedShare(c.SharePage)))))
+	pub.Handle("GET /s/{handle}/unlock", c.handleError(c.load.LoadShare(c.UnlockPage)))
+	pub.Handle("POST /s/{handle}/unlock", c.handleError(c.load.LoadShare(c.UnlockShare)))
+	pub.Handle("GET /s/{handle}/download", c.handleError(c.load.LoadShare(c.guard.Share(c.guard.UnlockedShare(c.DownloadAll)))))
+	pub.Handle("GET /s/{handle}/files/{fileID}/download", c.handleError(c.load.LoadShare(c.guard.Share(c.guard.UnlockedShare(c.DownloadFile)))))
+	pub.Handle("GET /s/{handle}/uploads", c.handleError(c.load.LoadShare(c.guard.UnlockedShare(c.UploadRequestPage))))
 
 	mux.Handle("/login", pub)
 	mux.Handle("/logout", pub)
 	mux.Handle("/s/", pub)
 
 	prot := http.NewServeMux()
-	prot.Handle("GET /", c.handleError(requireSession(c.Index)))
-	prot.Handle("GET /shares", c.handleError(requireSession(c.SharesPage)))
-	prot.Handle("GET /shares/new", c.handleError(requireSession(c.NewSharePage)))
-	prot.Handle("POST /shares", c.handleError(requireSession(c.CreateShare)))
-	prot.Handle("GET /shares/{id}/edit", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.EditSharePage)))))
-	prot.Handle("POST /shares/delete", c.handleError(requireSession(c.DeleteShares)))
-	prot.Handle("POST /shares/{id}/trash", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.TrashShare)))))
-	prot.Handle("POST /shares/{id}/restore", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.RestoreShare)))))
-	prot.Handle("POST /shares/{id}/visibility", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.SetVisibility)))))
-	prot.Handle("POST /shares/{id}/security", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.UpdateShareSecurity)))))
-	prot.Handle("POST /shares/{id}/owners", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.AddOwner)))))
-	prot.Handle("POST /shares/{id}/owners/{ownerID}/delete", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.RemoveOwner)))))
-	prot.Handle("POST /shares/{id}/files/{fileID}/delete", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.DeleteFile)))))
-	prot.Handle("GET /trash", c.handleError(requireSession(c.TrashPage)))
-	prot.Handle("GET /users", c.handleError(requireSession(c.UsersPage)))
+	prot.Handle("GET /", c.handleError(c.guard.Session(c.Index)))
+	prot.Handle("GET /shares", c.handleError(c.guard.Session(c.SharesPage)))
+	prot.Handle("GET /shares/new", c.handleError(c.guard.Session(c.NewSharePage)))
+	prot.Handle("POST /shares", c.handleError(c.guard.Session(c.CreateShare)))
+	prot.Handle("GET /shares/{id}/edit", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.EditSharePage)))))
+	prot.Handle("POST /shares/delete", c.handleError(c.guard.Session(c.DeleteShares)))
+	prot.Handle("POST /shares/{id}/trash", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.TrashShare)))))
+	prot.Handle("POST /shares/{id}/restore", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.RestoreShare)))))
+	prot.Handle("POST /shares/{id}/visibility", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.SetVisibility)))))
+	prot.Handle("POST /shares/{id}/security", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.UpdateShareSecurity)))))
+	prot.Handle("POST /shares/{id}/owners", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.AddOwner)))))
+	prot.Handle("POST /shares/{id}/owners/{ownerID}/delete", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.RemoveOwner)))))
+	prot.Handle("POST /shares/{id}/files/{fileID}/delete", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.DeleteFile)))))
+	prot.Handle("POST /shares/{id}/uploads", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.CreateUploadRequest)))))
+	prot.Handle("POST /shares/{id}/uploads/{requestID}/revoke", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.RevokeUploadRequest)))))
+	prot.Handle("GET /trash", c.handleError(c.guard.Session(c.TrashPage)))
+	prot.Handle("GET /users", c.handleError(c.guard.Session(c.UsersPage)))
 
-	prot.Handle("GET /users/new", c.handleError(requireAdminSession(c.NewUserPage)))
-	prot.Handle("POST /users", c.handleError(requireAdminSession(c.CreateUser)))
-	prot.Handle("GET /users/{id}/edit", c.handleError(requireAdminSession(c.EditUserPage)))
-	prot.Handle("POST /users/{id}", c.handleError(requireAdminSession(c.UpdateUser)))
-	prot.Handle("POST /users/{id}/delete", c.handleError(requireAdminSession(c.DeleteUser)))
+	prot.Handle("GET /users/new", c.handleError(c.guard.Admin(c.NewUserPage)))
+	prot.Handle("POST /users", c.handleError(c.guard.Admin(c.CreateUser)))
+	prot.Handle("GET /users/{id}/edit", c.handleError(c.guard.Admin(c.EditUserPage)))
+	prot.Handle("POST /users/{id}", c.handleError(c.guard.Admin(c.UpdateUser)))
+	prot.Handle("POST /users/{id}/delete", c.handleError(c.guard.Admin(c.DeleteUser)))
 
 	mux.Handle("/", prot)
 
@@ -94,12 +99,16 @@ func (c *Controller) HTMLRoutes() http.Handler {
 
 func (c *Controller) APIRoutes() http.Handler {
 	mux := http.NewServeMux()
-	mw := c.mw
 
-	mux.Handle("POST /api/shares/{id}/files", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.AddFilesToShare)))))
-	mux.Handle("HEAD /api/shares/{id}/files/{fileID}/stream", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.GetUploadOffset)))))
-	mux.Handle("PUT /api/shares/{id}/files/{fileID}/stream", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.StreamFile)))))
-	mux.Handle("DELETE /api/shares/{id}/files/{fileID}", c.handleError(requireSession(mw.WithShare(requireManageableShare(c.DeleteShareFile)))))
+	mux.Handle("POST /api/shares/{id}/files", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.AddFilesToShare)))))
+	mux.Handle("HEAD /api/shares/{id}/files/{fileID}/stream", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.GetUploadOffset)))))
+	mux.Handle("PUT /api/shares/{id}/files/{fileID}/stream", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.StreamFile)))))
+	mux.Handle("DELETE /api/shares/{id}/files/{fileID}", c.handleError(c.guard.Session(c.load.LoadShare(c.guard.ManageableShare(c.DeleteShareFile)))))
+
+	mux.Handle("POST /api/s/{handle}/uploads/files", c.handleError(c.load.LoadShare(c.guard.UnlockedShare(c.AddFilesViaUploadRequest))))
+	mux.Handle("HEAD /api/s/{handle}/uploads/files/{fileID}/stream", c.handleError(c.load.LoadShare(c.guard.UnlockedShare(c.GetUploadRequestFileOffset))))
+	mux.Handle("PUT /api/s/{handle}/uploads/files/{fileID}/stream", c.handleError(c.load.LoadShare(c.guard.UnlockedShare(c.StreamUploadRequestFile))))
+	mux.Handle("DELETE /api/s/{handle}/uploads/files/{fileID}", c.handleError(c.load.LoadShare(c.guard.UnlockedShare(c.DeleteUploadRequestFile))))
 
 	return mux
 }
@@ -114,6 +123,13 @@ func (c *Controller) handleError(h func(w http.ResponseWriter, r *http.Request) 
 		status, msg := mapError(err)
 		if status >= http.StatusInternalServerError {
 			log.Printf("INTERNAL ERROR: %v", err)
+		}
+
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			json.NewEncoder(w).Encode(map[string]string{"message": msg})
+			return
 		}
 
 		if r.Method == http.MethodPost && status < http.StatusInternalServerError &&

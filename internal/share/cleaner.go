@@ -5,8 +5,6 @@ import (
 	"log"
 	"strings"
 	"time"
-
-	"eigenshare/internal/timestamp"
 )
 
 type ShareCleaner struct {
@@ -35,62 +33,15 @@ func (e *ShareCleaner) Run(ctx context.Context, interval time.Duration) {
 }
 
 func (e *ShareCleaner) clean() {
-	if err := e.handleExpired(); err != nil {
-		log.Printf("failed to clean up expired shares: %v", err)
+	if err := e.repo.CleanupStale(); err != nil {
+		log.Printf("failed to clean up stale shares and upload requests: %v", err)
 	}
-	if err := e.handleTrashed(); err != nil {
-		log.Printf("failed to clean up trashed share folders: %v", err)
-	}
-	if err := e.deleteOrphaned(); err != nil {
+	if err := e.CleanupStorage(); err != nil {
 		log.Printf("failed to clean up orphaned share folders: %v", err)
 	}
 }
 
-func (e *ShareCleaner) handleExpired() error {
-	shares, err := e.repo.GetAll()
-	if err != nil {
-		return err
-	}
-
-	var expiredIDs []string
-	now := timestamp.Now().Time()
-
-	for _, s := range shares {
-		if s.ExpiresAt != nil && s.ExpiresAt.Time().Before(now) {
-			expiredIDs = append(expiredIDs, s.ID)
-		}
-	}
-
-	if len(expiredIDs) == 0 {
-		return nil
-	}
-
-	return e.repo.Delete(expiredIDs...)
-}
-
-func (e *ShareCleaner) handleTrashed() error {
-	shares, err := e.repo.GetAllTrashed()
-	if err != nil {
-		return err
-	}
-
-	var trashedIDs []string
-	threshold := timestamp.Now().Time().Add(-24 * time.Hour)
-
-	for _, s := range shares {
-		if s.TrashedAt.Time().Before(threshold) {
-			trashedIDs = append(trashedIDs, s.ID)
-		}
-	}
-
-	if len(trashedIDs) == 0 {
-		return nil
-	}
-
-	return e.repo.Delete(trashedIDs...)
-}
-
-func (e *ShareCleaner) deleteOrphaned() error {
+func (e *ShareCleaner) CleanupStorage() error {
 	repoKeys, err := e.repo.GetKeys()
 	if err != nil {
 		return err
