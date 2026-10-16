@@ -40,7 +40,7 @@ func formatOwners(ownerIDs []string, users []*user.User) string {
 func uploadedFiles(states map[string]share.FileUploadState, files []share.File) []share.File {
 	uploaded := make([]share.File, 0, len(files))
 	for _, f := range files {
-		if states[f.ID].Written >= f.ExpectedSize {
+		if f.Complete(states[f.ID].Written) {
 			uploaded = append(uploaded, f)
 		}
 	}

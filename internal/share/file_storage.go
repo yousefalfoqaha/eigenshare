@@ -171,8 +171,7 @@ func (s *FileStorage) IsShareComplete(sh Share) (bool, error) {
 			return false, nil
 		}
 
-		inProgress := stat.Size() != f.ExpectedSize
-		if inProgress {
+		if !f.Complete(stat.Size()) {
 			return false, nil
 		}
 	}

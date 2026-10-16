@@ -138,6 +138,11 @@ type File struct {
 	ExpectedSize int64  `json:"expectedSize"`
 }
 
+// Complete reports whether the file has been fully written.
+func (f File) Complete(written int64) bool {
+	return written >= f.ExpectedSize
+}
+
 func NewFile(name string, expectedSize int64) (*File, error) {
 	if name == "" {
 		return nil, fmt.Errorf("file name is required: %w", ErrInvalidFileName)
@@ -166,6 +171,14 @@ type UploadRequest struct {
 	BytesUsed int64                `json:"bytesUsed"`
 	ExpiresAt *timestamp.Timestamp `json:"expiresAt"`
 	CreatedAt timestamp.Timestamp  `json:"createdAt"`
+}
+
+// Remaining returns how many bytes of the quota are left.
+func (ur *UploadRequest) Remaining() int64 {
+	if remaining := ur.MaxBytes - ur.BytesUsed; remaining > 0 {
+		return remaining
+	}
+	return 0
 }
 
 func NewUploadRequest(req UploadRequestRequest) (*UploadRequest, error) {

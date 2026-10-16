@@ -1,58 +1,129 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"math"
+	"fmt"
 	"mime"
 	"net/http"
-	"slices"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"eigenshare/internal/security"
 	"eigenshare/internal/share"
-	"eigenshare/internal/user"
 )
 
-func (c *Controller) Index(w http.ResponseWriter, r *http.Request) error {
-	http.Redirect(w, r, "/shares", http.StatusFound)
-	return nil
+const CookieUnlockPrefix = "share_unlock_"
+
+type shareKey struct{}
+
+func shareFromContext(r *http.Request) *share.Share {
+	sh, _ := r.Context().Value(shareKey{}).(*share.Share)
+	return sh
 }
 
-func (c *Controller) LoginPage(w http.ResponseWriter, r *http.Request) error {
-	return c.templs.renderPage(w, r, http.StatusOK, "login.html", nil)
+// SetUnlock stores the unlock cookie for a password-protected share.
+func SetUnlock(jar *cookies, w http.ResponseWriter, sh *share.Share) {
+	jar.write(w, CookieUnlockPrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/", share.UnlockTTL)
 }
 
-func (c *Controller) LoginSubmit(w http.ResponseWriter, r *http.Request) error {
-	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+// GetUnlock returns the unlock cookie for the share.
+func GetUnlock(jar *cookies, r *http.Request, shareID string) (id, fp string, ok bool) {
+	val, ok := jar.read(r, CookieUnlockPrefix+shareID)
+	if !ok {
+		return "", "", false
 	}
+	id, fp, ok = strings.Cut(val, ":")
+	return id, fp, ok
+}
 
-	u, err := c.userSvc.GetUserByUsername(r.PostForm.Get("username"))
-	if err != nil {
-		if errors.Is(err, user.ErrUserNotFound) {
-			return ErrInvalidCredentials
+// ClearUnlock removes the unlock cookie for the share.
+func ClearUnlock(jar *cookies, w http.ResponseWriter, id string) {
+	jar.write(w, CookieUnlockPrefix+id, "", "/", -1)
+}
+
+// LoadShare loads the share aggregate identified by the {handle} or {id}
+// path value into the request context. Shares that cannot be found are left
+// nil so guards can decide how to respond.
+func LoadShare(shareSvc *share.ShareService) middleware {
+	return func(next handler) handler {
+		return func(w http.ResponseWriter, r *http.Request) error {
+			var (
+				sh  *share.Share
+				err error
+			)
+			if handle := r.PathValue("handle"); handle != "" {
+				sh, err = shareSvc.GetShareByHandle(handle)
+			} else if id := r.PathValue("id"); id != "" {
+				sh, err = shareSvc.GetShare(id)
+			}
+			if err != nil {
+				if !errors.Is(err, share.ErrShareNotFound) {
+					return err
+				}
+				return next(w, r)
+			}
+			if sh == nil {
+				return next(w, r)
+			}
+
+			ctx := context.WithValue(r.Context(), shareKey{}, sh)
+			return next(w, r.WithContext(ctx))
 		}
-		return err
 	}
-
-	if !security.VerifyPassword(u.PasswordHash, r.PostForm.Get("password")) {
-		return ErrInvalidCredentials
-	}
-
-	c.cookies.SetSession(w, u)
-	c.cookies.SetFlash(w, "success", "logged in")
-	http.Redirect(w, r, "/shares", http.StatusSeeOther)
-	return nil
 }
 
-func (c *Controller) Logout(w http.ResponseWriter, r *http.Request) error {
-	c.cookies.ClearSession(w)
-	c.cookies.SetFlash(w, "success", "logged out")
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+// RequireShare requires the loaded share to be viewable.
+var RequireShare middleware = func(next handler) handler {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		sh := shareFromContext(r)
+		if sh == nil || !sh.CanView(userFromContext(r)) {
+			return share.ErrShareNotFound
+		}
+		return next(w, r)
+	}
+}
 
-	return nil
+// RequireManageable requires the loaded share to be manageable.
+var RequireManageable middleware = func(next handler) handler {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		sh := shareFromContext(r)
+		if sh == nil || !sh.CanManage(userFromContext(r)) {
+			return share.ErrShareNotFound
+		}
+		return next(w, r)
+	}
+}
+
+// RequireUnlocked requires a password-protected share to be unlocked,
+// otherwise redirects to the unlock page preserving the original URL.
+// Visibility is not checked here; routes that need it compose RequireShare.
+func RequireUnlocked(jar *cookies) middleware {
+	return func(next handler) handler {
+		return func(w http.ResponseWriter, r *http.Request) error {
+			sh := shareFromContext(r)
+			if sh == nil {
+				return share.ErrShareNotFound
+			}
+			if !sh.RequiresPassword(userFromContext(r)) {
+				return next(w, r)
+			}
+
+			id, fp, ok := GetUnlock(jar, r, sh.ID)
+			if ok && id == sh.ID && fp == security.Fingerprint(sh.PasswordHash) {
+				return next(w, r)
+			}
+
+			if ok {
+				ClearUnlock(jar, w, sh.ID)
+			}
+
+			http.Redirect(w, r, "/s/"+sh.Handle+"/unlock?redirect="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+			return nil
+		}
+	}
 }
 
 func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
@@ -100,7 +171,7 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 		return security.ErrWrongPassword
 	}
 
-	c.cookies.SetUnlock(w, sh)
+	SetUnlock(c.cookies, w, sh)
 	c.cookies.SetFlash(w, "success", "share unlocked")
 	http.Redirect(w, r, redirectAfterUnlock(r.PostForm.Get("redirect"), sh), http.StatusSeeOther)
 	return nil
@@ -115,62 +186,28 @@ func redirectAfterUnlock(redirect string, sh *share.Share) string {
 	return redirect
 }
 
-func (c *Controller) UsersPage(w http.ResponseWriter, r *http.Request) error {
-	return c.templs.renderPage(w, r, http.StatusOK, "users.html", nil)
+func contentDisposition(filename string) string {
+	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
 }
 
-func (c *Controller) NewUserPage(w http.ResponseWriter, r *http.Request) error {
-	return c.templs.renderPage(w, r, http.StatusOK, "user_form.html", nil)
+func (c *Controller) DownloadAll(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", contentDisposition(sh.Handle+".zip"))
+	return c.shareSvc.DownloadAll(sh, w)
 }
 
-func (c *Controller) CreateUser(w http.ResponseWriter, r *http.Request) error {
-	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
-	}
-	req := user.CreateRequest{
-		Username: r.PostForm.Get("username"),
-		Password: r.PostForm.Get("password"),
-		IsAdmin:  r.PostForm.Get("isAdmin") == "on",
-	}
-	if _, err := c.userSvc.CreateUser(req); err != nil {
-		return err
-	}
-	c.cookies.SetFlash(w, "success", "user created")
-	http.Redirect(w, r, "/users", http.StatusSeeOther)
-	return nil
-}
+func (c *Controller) DownloadFile(w http.ResponseWriter, r *http.Request) error {
+	sh := shareFromContext(r)
 
-func (c *Controller) EditUserPage(w http.ResponseWriter, r *http.Request) error {
-	u, err := c.userSvc.GetUser(r.PathValue("id"))
+	file, filePath, err := c.shareSvc.DownloadFile(sh, r.PathValue("fileID"))
 	if err != nil {
 		return err
 	}
-	return c.templs.renderPage(w, r, http.StatusOK, "user_form.html", u)
-}
 
-func (c *Controller) UpdateUser(w http.ResponseWriter, r *http.Request) error {
-	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
-	}
-	req := user.UpdateRequest{
-		Username: r.PostForm.Get("username"),
-		Password: r.PostForm.Get("password"),
-		IsAdmin:  r.PostForm.Get("isAdmin") == "on",
-	}
-	if _, err := c.userSvc.UpdateUser(r.PathValue("id"), userFromContext(r).ID, req); err != nil {
-		return err
-	}
-	c.cookies.SetFlash(w, "success", "user updated")
-	http.Redirect(w, r, "/users", http.StatusSeeOther)
-	return nil
-}
-
-func (c *Controller) DeleteUser(w http.ResponseWriter, r *http.Request) error {
-	if err := c.userSvc.DeleteUser(r.PathValue("id"), userFromContext(r).ID); err != nil {
-		return err
-	}
-	c.cookies.SetFlash(w, "success", "user deleted")
-	http.Redirect(w, r, "/users", http.StatusSeeOther)
+	w.Header().Set("Content-Disposition", contentDisposition(file.Name))
+	http.ServeFile(w, r, filePath)
 	return nil
 }
 
@@ -282,87 +319,6 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 	}{sh, states, tab})
 }
 
-func (c *Controller) UploadRequestPage(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-	req := uploadRequestFromContext(r)
-
-	states, err := c.shareSvc.GetShareUploadState(sh)
-	if err != nil {
-		return err
-	}
-
-	var seedFiles []share.File
-	fileIDs := c.cookies.GetUploadFileIDs(r, req.ID)
-	fileIDSet := make(map[string]bool, len(fileIDs))
-	for _, id := range fileIDs {
-		fileIDSet[id] = true
-	}
-	for _, f := range sh.Files {
-		if !fileIDSet[f.ID] {
-			continue
-		}
-		if states[f.ID].Written >= f.ExpectedSize {
-			c.cookies.ClearUploadFile(w, req, f.ID)
-			continue
-		}
-		seedFiles = append(seedFiles, f)
-	}
-	for id := range fileIDSet {
-		if _, err := sh.File(id); err != nil {
-			c.cookies.ClearUploadFile(w, req, id)
-		}
-	}
-
-	remaining := req.MaxBytes - req.BytesUsed
-	if remaining < 0 {
-		remaining = 0
-	}
-
-	return c.templs.renderPage(w, r, http.StatusOK, "upload_request.html", &struct {
-		Share     *share.Share
-		Request   *share.UploadRequest
-		Upload    map[string]share.FileUploadState
-		SeedFiles []share.File
-		Remaining int64
-	}{sh, req, states, seedFiles, remaining})
-}
-
-func (c *Controller) CreateUploadRequest(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
-	}
-
-	expiryMinutes, _ := strconv.Atoi(r.PostForm.Get("expiryMinutes"))
-	maxSizeMB, _ := strconv.ParseInt(r.PostForm.Get("maxSizeMB"), 10, 64)
-	if maxSizeMB < 0 || maxSizeMB > math.MaxInt64/(1024*1024) {
-		return share.ErrInvalidMaxBytes
-	}
-
-	req := share.UploadRequestRequest{
-		ExpiryMinutes: expiryMinutes,
-		MaxBytes:      maxSizeMB * 1024 * 1024,
-	}
-
-	if _, err := c.shareSvc.CreateUploadRequest(sh, req); err != nil {
-		return err
-	}
-
-	c.cookies.SetFlash(w, "success", "upload request created")
-	http.Redirect(w, r, "/shares/"+sh.ID+"/edit?tab=uploads", http.StatusSeeOther)
-	return nil
-}
-
-func (c *Controller) RevokeUploadRequest(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-	if err := c.shareSvc.RevokeUploadRequest(sh, r.PathValue("requestID")); err != nil {
-		return err
-	}
-	c.cookies.SetFlash(w, "success", "upload request revoked")
-	http.Redirect(w, r, "/shares/"+sh.ID+"/edit?tab=uploads", http.StatusSeeOther)
-	return nil
-}
-
 func (c *Controller) TrashShare(w http.ResponseWriter, r *http.Request) error {
 	if err := c.shareSvc.TrashShare(shareFromContext(r)); err != nil {
 		return err
@@ -461,31 +417,6 @@ func (c *Controller) SetVisibility(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-func contentDisposition(filename string) string {
-	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
-}
-
-func (c *Controller) DownloadAll(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", contentDisposition(sh.Handle+".zip"))
-	return c.shareSvc.DownloadAll(sh, w)
-}
-
-func (c *Controller) DownloadFile(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-
-	file, filePath, err := c.shareSvc.DownloadFile(sh, r.PathValue("fileID"))
-	if err != nil {
-		return err
-	}
-
-	w.Header().Set("Content-Disposition", contentDisposition(file.Name))
-	http.ServeFile(w, r, filePath)
-	return nil
-}
-
 func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Files []share.FileRequest `json:"files"`
@@ -502,113 +433,6 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	return json.NewEncoder(w).Encode(newFiles)
-}
-
-func (c *Controller) AddFilesViaUploadRequest(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-	req := uploadRequestFromContext(r)
-
-	var body struct {
-		Files []share.FileRequest `json:"files"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return share.ErrInvalidRequest
-	}
-
-	newFiles, err := c.shareSvc.UploadFiles(sh, body.Files, req)
-	if err != nil {
-		return err
-	}
-
-	for _, f := range newFiles {
-		c.cookies.SetUploadFile(w, req, f.ID)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	return json.NewEncoder(w).Encode(newFiles)
-}
-
-func (c *Controller) GetUploadRequestFileOffset(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-	req := uploadRequestFromContext(r)
-
-	f, err := sh.File(r.PathValue("fileID"))
-	if err != nil {
-		return err
-	}
-	if !slices.Contains(c.cookies.GetUploadFileIDs(r, req.ID), f.ID) {
-		return share.ErrFileNotFound
-	}
-
-	state, err := c.shareSvc.GetFileUploadState(sh, f.ID)
-	if err != nil {
-		return err
-	}
-
-	w.Header().Set("Upload-Offset", strconv.FormatInt(state.Written, 10))
-	if state.Locked {
-		w.Header().Set("Upload-Locked", "1")
-	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
-func (c *Controller) StreamUploadRequestFile(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-	req := uploadRequestFromContext(r)
-
-	f, err := sh.File(r.PathValue("fileID"))
-	if err != nil {
-		return err
-	}
-	if !slices.Contains(c.cookies.GetUploadFileIDs(r, req.ID), f.ID) {
-		return share.ErrFileNotFound
-	}
-
-	offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
-	if err != nil {
-		return share.ErrInvalidRequest
-	}
-
-	bytesWritten, err := c.shareSvc.StreamFile(sh, f.ID, offset, r.Body)
-	if err != nil {
-		if errors.Is(err, share.ErrInvalidChunkOffset) {
-			w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
-		}
-		return err
-	}
-
-	if bytesWritten >= f.ExpectedSize {
-		c.cookies.SetFlash(w, "success", "files uploaded")
-		c.cookies.ClearUploadFile(w, req, f.ID)
-	}
-
-	w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
-	w.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
-func (c *Controller) DeleteUploadRequestFile(w http.ResponseWriter, r *http.Request) error {
-	sh := shareFromContext(r)
-	req := uploadRequestFromContext(r)
-
-	f, err := sh.File(r.PathValue("fileID"))
-	if err != nil {
-		return err
-	}
-	if !slices.Contains(c.cookies.GetUploadFileIDs(r, req.ID), f.ID) {
-		return share.ErrFileNotFound
-	}
-
-	if err := c.shareSvc.DeleteFile(sh, f.ID); err != nil {
-		return err
-	}
-
-	c.cookies.ClearUploadFile(w, req, f.ID)
-
-	w.WriteHeader(http.StatusNoContent)
-	return nil
 }
 
 func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) error {
@@ -643,6 +467,10 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
 		}
 		return err
+	}
+
+	if f.Complete(bytesWritten) {
+		c.cookies.SetFlash(w, "success", "files uploaded")
 	}
 
 	w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))

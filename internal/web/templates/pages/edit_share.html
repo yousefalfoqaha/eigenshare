@@ -106,6 +106,8 @@
 </div>
 
 <form method="post" action="/shares/{{.Content.Share.ID}}/uploads">
+    <fieldset>
+        <legend>create request</legend>
   <label
     >expiry (minutes, 0 = permanent)
     <input type="number" name="expiryMinutes" value="60" min="0" />
@@ -115,6 +117,7 @@
     <input type="number" name="maxSizeMB" value="0" min="0" />
   </label>
   <button type="submit" class="submit">create</button>
+    </fieldset>
 </form>
 {{end}}
 
