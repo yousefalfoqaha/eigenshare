@@ -14,10 +14,8 @@ CREATE TABLE IF NOT EXISTS file (
     name TEXT NOT NULL,
     expected_size INTEGER NOT NULL,
     share_id TEXT NOT NULL,
-    upload_request_id TEXT,
     PRIMARY KEY (id),
-    FOREIGN KEY (share_id) REFERENCES share(id) ON DELETE CASCADE,
-    FOREIGN KEY (upload_request_id) REFERENCES upload_request(id) ON DELETE SET NULL
+    FOREIGN KEY (share_id) REFERENCES share(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS upload_request (

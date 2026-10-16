@@ -284,11 +284,7 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 
 func (c *Controller) UploadRequestPage(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
-
-	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
-	if err != nil {
-		return err
-	}
+	req := uploadRequestFromContext(r)
 
 	states, err := c.shareSvc.GetShareUploadState(sh)
 	if err != nil {
@@ -296,14 +292,24 @@ func (c *Controller) UploadRequestPage(w http.ResponseWriter, r *http.Request) e
 	}
 
 	var seedFiles []share.File
-	var pending int
+	fileIDs := c.cookies.GetUploadFileIDs(r, req.ID)
+	fileIDSet := make(map[string]bool, len(fileIDs))
+	for _, id := range fileIDs {
+		fileIDSet[id] = true
+	}
 	for _, f := range sh.Files {
-		if !slices.Contains(req.FileIDs, f.ID) {
+		if !fileIDSet[f.ID] {
+			continue
+		}
+		if states[f.ID].Written >= f.ExpectedSize {
+			c.cookies.ClearUploadFile(w, req, f.ID)
 			continue
 		}
 		seedFiles = append(seedFiles, f)
-		if states[f.ID].Written < f.ExpectedSize {
-			pending++
+	}
+	for id := range fileIDSet {
+		if _, err := sh.File(id); err != nil {
+			c.cookies.ClearUploadFile(w, req, id)
 		}
 	}
 
@@ -317,9 +323,8 @@ func (c *Controller) UploadRequestPage(w http.ResponseWriter, r *http.Request) e
 		Request   *share.UploadRequest
 		Upload    map[string]share.FileUploadState
 		SeedFiles []share.File
-		Pending   int
 		Remaining int64
-	}{sh, req, states, seedFiles, pending, remaining})
+	}{sh, req, states, seedFiles, remaining})
 }
 
 func (c *Controller) CreateUploadRequest(w http.ResponseWriter, r *http.Request) error {
@@ -501,11 +506,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 
 func (c *Controller) AddFilesViaUploadRequest(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
-
-	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
-	if err != nil {
-		return err
-	}
+	req := uploadRequestFromContext(r)
 
 	var body struct {
 		Files []share.FileRequest `json:"files"`
@@ -519,6 +520,10 @@ func (c *Controller) AddFilesViaUploadRequest(w http.ResponseWriter, r *http.Req
 		return err
 	}
 
+	for _, f := range newFiles {
+		c.cookies.SetUploadFile(w, req, f.ID)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	return json.NewEncoder(w).Encode(newFiles)
@@ -526,16 +531,13 @@ func (c *Controller) AddFilesViaUploadRequest(w http.ResponseWriter, r *http.Req
 
 func (c *Controller) GetUploadRequestFileOffset(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
+	req := uploadRequestFromContext(r)
 
-	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
-	if err != nil {
-		return err
-	}
 	f, err := sh.File(r.PathValue("fileID"))
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(req.FileIDs, f.ID) {
+	if !slices.Contains(c.cookies.GetUploadFileIDs(r, req.ID), f.ID) {
 		return share.ErrFileNotFound
 	}
 
@@ -554,16 +556,13 @@ func (c *Controller) GetUploadRequestFileOffset(w http.ResponseWriter, r *http.R
 
 func (c *Controller) StreamUploadRequestFile(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
+	req := uploadRequestFromContext(r)
 
-	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
-	if err != nil {
-		return err
-	}
 	f, err := sh.File(r.PathValue("fileID"))
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(req.FileIDs, f.ID) {
+	if !slices.Contains(c.cookies.GetUploadFileIDs(r, req.ID), f.ID) {
 		return share.ErrFileNotFound
 	}
 
@@ -582,6 +581,7 @@ func (c *Controller) StreamUploadRequestFile(w http.ResponseWriter, r *http.Requ
 
 	if bytesWritten >= f.ExpectedSize {
 		c.cookies.SetFlash(w, "success", "files uploaded")
+		c.cookies.ClearUploadFile(w, req, f.ID)
 	}
 
 	w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
@@ -591,22 +591,21 @@ func (c *Controller) StreamUploadRequestFile(w http.ResponseWriter, r *http.Requ
 
 func (c *Controller) DeleteUploadRequestFile(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
+	req := uploadRequestFromContext(r)
 
-	req, err := sh.UploadRequest(r.URL.Query().Get("token"))
-	if err != nil {
-		return err
-	}
 	f, err := sh.File(r.PathValue("fileID"))
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(req.FileIDs, f.ID) {
+	if !slices.Contains(c.cookies.GetUploadFileIDs(r, req.ID), f.ID) {
 		return share.ErrFileNotFound
 	}
 
 	if err := c.shareSvc.DeleteFile(sh, f.ID); err != nil {
 		return err
 	}
+
+	c.cookies.ClearUploadFile(w, req, f.ID)
 
 	w.WriteHeader(http.StatusNoContent)
 	return nil

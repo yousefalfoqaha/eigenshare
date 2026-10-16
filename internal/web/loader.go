@@ -24,6 +24,13 @@ func shareFromContext(r *http.Request) *share.Share {
 	return sh
 }
 
+type uploadRequestKey struct{}
+
+func uploadRequestFromContext(r *http.Request) *share.UploadRequest {
+	req, _ := r.Context().Value(uploadRequestKey{}).(*share.UploadRequest)
+	return req
+}
+
 // dataLoader loads request-scoped data into the request context. It never
 // enforces access; guards do.
 type dataLoader struct {
@@ -79,5 +86,21 @@ func (l *dataLoader) LoadShare(h func(w http.ResponseWriter, r *http.Request) er
 
 		ctx := context.WithValue(r.Context(), shareKey{}, sh)
 		return h(w, r.WithContext(ctx))
+	}
+}
+
+// LoadUploadRequest loads the upload request identified by the token query
+// parameter into the request context. Requests that cannot be resolved are
+// left nil so guards can decide how to respond.
+func (l *dataLoader) LoadUploadRequest(h func(w http.ResponseWriter, r *http.Request) error) func(w http.ResponseWriter, r *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		if sh := shareFromContext(r); sh != nil {
+			if req, err := sh.UploadRequest(r.URL.Query().Get("token")); err == nil {
+				ctx := context.WithValue(r.Context(), uploadRequestKey{}, req)
+				return h(w, r.WithContext(ctx))
+			}
+		}
+
+		return h(w, r)
 	}
 }

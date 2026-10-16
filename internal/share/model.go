@@ -164,7 +164,6 @@ type UploadRequest struct {
 	Token     string               `json:"token"`
 	MaxBytes  int64                `json:"maxBytes"`
 	BytesUsed int64                `json:"bytesUsed"`
-	FileIDs   []string             `json:"fileIDs"`
 	ExpiresAt *timestamp.Timestamp `json:"expiresAt"`
 	CreatedAt timestamp.Timestamp  `json:"createdAt"`
 }

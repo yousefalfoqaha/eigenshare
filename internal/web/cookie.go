@@ -78,6 +78,61 @@ func (c *cookies) ClearUnlock(w http.ResponseWriter, id string) {
 	c.write(w, CookieUnlockPrefix+id, "", "/", -1)
 }
 
+// uploadFileCookiePrefix names the cookies holding files registered through
+// an upload request. Each cookie carries one file id.
+const uploadFileCookiePrefix = "upload_file_"
+
+// uploadFileCookieTTL is how long an upload file cookie lives when the
+// request has no expiry. Registration and page loads refresh the cookies
+// they still care about.
+const uploadFileCookieTTL = 365 * 24 * time.Hour
+
+func uploadFileCookieName(requestID, fileID string) string {
+	return uploadFileCookiePrefix + requestID + "_" + fileID
+}
+
+// SetUploadFile remembers a file registered through the upload request.
+func (c *cookies) SetUploadFile(w http.ResponseWriter, req *share.UploadRequest, fileID string) {
+	ttl := uploadFileCookieTTL
+	if req.ExpiresAt != nil {
+		if remaining := time.Until(req.ExpiresAt.Time()); remaining > 0 {
+			ttl = remaining
+		}
+	}
+
+	c.write(w, uploadFileCookieName(req.ID, fileID), "1", "/", ttl)
+}
+
+// ClearUploadFile forgets a file previously registered through the upload
+// request.
+func (c *cookies) ClearUploadFile(w http.ResponseWriter, req *share.UploadRequest, fileID string) {
+	c.write(w, uploadFileCookieName(req.ID, fileID), "", "/", -1)
+}
+
+// GetUploadFileIDs returns the files registered through the upload request
+// by this client, or nil when none are remembered. Only cookies with a
+// valid signature are considered.
+func (c *cookies) GetUploadFileIDs(r *http.Request, requestID string) []string {
+	prefix := uploadFileCookiePrefix + requestID + "_"
+
+	var fileIDs []string
+	for _, cookie := range r.Cookies() {
+		if !strings.HasPrefix(cookie.Name, prefix) {
+			continue
+		}
+		fileID := strings.TrimPrefix(cookie.Name, prefix)
+		if fileID == "" {
+			continue
+		}
+		if v, ok := c.read(r, cookie.Name); !ok || v != "1" {
+			continue
+		}
+		fileIDs = append(fileIDs, fileID)
+	}
+
+	return fileIDs
+}
+
 func (c *cookies) write(w http.ResponseWriter, name, value, path string, ttl time.Duration) {
 	expires := time.Now().Add(ttl).Unix()
 	expStr := strconv.FormatInt(expires, 10)

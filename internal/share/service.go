@@ -102,7 +102,6 @@ func (s *ShareService) UploadFiles(sh *Share, fileReqs []FileRequest, req *Uploa
 		file.ID = uuid.New().String()
 		sh.Files = append(sh.Files, *file)
 		if req != nil {
-			req.FileIDs = append(req.FileIDs, file.ID)
 			req.BytesUsed += file.ExpectedSize
 		}
 		newFiles = append(newFiles, *file)
@@ -267,9 +266,7 @@ func (s *ShareService) DownloadFile(sh *Share, fileID string) (*File, string, er
 	return file, path, nil
 }
 
-// DeleteFile removes a file record from the share. Files registered through
-// an upload request are detached from it, but their declared size is not
-// returned to the request's quota.
+// DeleteFile removes a file record from the share.
 func (s *ShareService) DeleteFile(sh *Share, fileID string) error {
 	if sh.Trashed() {
 		return ErrShareTrashed
@@ -286,15 +283,6 @@ func (s *ShareService) DeleteFile(sh *Share, fileID string) error {
 	}
 	if removed == nil {
 		return ErrFileNotFound
-	}
-
-	for i := range sh.UploadRequests {
-		req := &sh.UploadRequests[i]
-		if !slices.Contains(req.FileIDs, removed.ID) {
-			continue
-		}
-		idx := slices.Index(req.FileIDs, removed.ID)
-		req.FileIDs = slices.Delete(req.FileIDs, idx, idx+1)
 	}
 
 	_, err := s.repo.Save(sh)

@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/url"
+	"time"
 
 	"eigenshare/internal/security"
 	"eigenshare/internal/share"
@@ -84,5 +85,20 @@ func (g *guards) UnlockedShare(h func(w http.ResponseWriter, r *http.Request) er
 
 		http.Redirect(w, r, "/s/"+sh.Handle+"/unlock?redirect="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
 		return nil
+	}
+}
+
+// RequireUploadRequest requires a valid, unexpired upload request resolved
+// from the token query parameter.
+func (g *guards) RequireUploadRequest(h func(w http.ResponseWriter, r *http.Request) error) func(w http.ResponseWriter, r *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		req := uploadRequestFromContext(r)
+		if req == nil {
+			return share.ErrUploadRequestNotFound
+		}
+		if req.ExpiresAt != nil && time.Now().After(req.ExpiresAt.Time()) {
+			return share.ErrUploadRequestNotFound
+		}
+		return h(w, r)
 	}
 }

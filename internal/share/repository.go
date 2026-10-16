@@ -64,7 +64,7 @@ func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (
 		return nil, err
 	}
 
-	files, fileRequestIDs, err := r.getAllFilesByShareID(sh.ID)
+	files, err := r.getAllFilesByShareID(sh.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -72,13 +72,6 @@ func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (
 
 	if sh.UploadRequests, err = r.getUploadRequestsByShareID(sh.ID); err != nil {
 		return nil, err
-	}
-	fileIDsByRequest := make(map[string][]string)
-	for fileID, requestID := range fileRequestIDs {
-		fileIDsByRequest[requestID] = append(fileIDsByRequest[requestID], fileID)
-	}
-	for i := range sh.UploadRequests {
-		sh.UploadRequests[i].FileIDs = fileIDsByRequest[sh.UploadRequests[i].ID]
 	}
 
 	return &sh, nil
@@ -126,7 +119,7 @@ func (r *ShareRepository) fetchAllShares(whereClause string, args ...any) ([]*Sh
 	if err != nil {
 		return nil, err
 	}
-	files, fileRequestIDs, err := r.getAllFiles()
+	files, err := r.getAllFiles()
 	if err != nil {
 		return nil, err
 	}
@@ -138,14 +131,6 @@ func (r *ShareRepository) fetchAllShares(whereClause string, args ...any) ([]*Sh
 		sh.Owners = owners[sh.ID]
 		sh.Files = files[sh.ID]
 		sh.UploadRequests = uploadRequests[sh.ID]
-
-		fileIDsByRequest := make(map[string][]string)
-		for fileID, requestID := range fileRequestIDs[sh.ID] {
-			fileIDsByRequest[requestID] = append(fileIDsByRequest[requestID], fileID)
-		}
-		for i := range sh.UploadRequests {
-			sh.UploadRequests[i].FileIDs = fileIDsByRequest[sh.UploadRequests[i].ID]
-		}
 	}
 
 	return shares, nil
@@ -321,62 +306,46 @@ func (r *ShareRepository) getAllOwners() (map[string][]string, error) {
 	return owners, rows.Err()
 }
 
-// getAllFilesByShareID returns the share's files along with the raw
-// file -> upload request association read from the file rows.
-func (r *ShareRepository) getAllFilesByShareID(id string) ([]File, map[string]string, error) {
-	rows, err := r.db.DB.Query("SELECT id, name, expected_size, upload_request_id FROM file WHERE share_id = ? ORDER BY id", id)
+// getAllFilesByShareID returns the share's files.
+func (r *ShareRepository) getAllFilesByShareID(id string) ([]File, error) {
+	rows, err := r.db.DB.Query("SELECT id, name, expected_size FROM file WHERE share_id = ? ORDER BY id", id)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer rows.Close()
 
 	var files []File
-	fileRequestIDs := make(map[string]string)
 	for rows.Next() {
-		var (
-			file        File
-			uploadReqID sql.NullString
-		)
-		if err := rows.Scan(&file.ID, &file.Name, &file.ExpectedSize, &uploadReqID); err != nil {
-			return nil, nil, err
-		}
-		if uploadReqID.Valid {
-			fileRequestIDs[file.ID] = uploadReqID.String
+		var file File
+		if err := rows.Scan(&file.ID, &file.Name, &file.ExpectedSize); err != nil {
+			return nil, err
 		}
 		files = append(files, file)
 	}
 
-	return files, fileRequestIDs, rows.Err()
+	return files, rows.Err()
 }
 
-func (r *ShareRepository) getAllFiles() (map[string][]File, map[string]map[string]string, error) {
-	rows, err := r.db.DB.Query("SELECT share_id, id, name, expected_size, upload_request_id FROM file ORDER BY share_id, id")
+func (r *ShareRepository) getAllFiles() (map[string][]File, error) {
+	rows, err := r.db.DB.Query("SELECT share_id, id, name, expected_size FROM file ORDER BY share_id, id")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer rows.Close()
 
 	files := make(map[string][]File)
-	fileRequestIDs := make(map[string]map[string]string)
 	for rows.Next() {
 		var (
-			shareID     string
-			file        File
-			uploadReqID sql.NullString
+			shareID string
+			file    File
 		)
-		if err := rows.Scan(&shareID, &file.ID, &file.Name, &file.ExpectedSize, &uploadReqID); err != nil {
-			return nil, nil, err
-		}
-		if uploadReqID.Valid {
-			if fileRequestIDs[shareID] == nil {
-				fileRequestIDs[shareID] = make(map[string]string)
-			}
-			fileRequestIDs[shareID][file.ID] = uploadReqID.String
+		if err := rows.Scan(&shareID, &file.ID, &file.Name, &file.ExpectedSize); err != nil {
+			return nil, err
 		}
 		files[shareID] = append(files[shareID], file)
 	}
 
-	return files, fileRequestIDs, rows.Err()
+	return files, rows.Err()
 }
 
 func (r *ShareRepository) getUploadRequestsByShareID(id string) ([]UploadRequest, error) {
@@ -475,21 +444,10 @@ func insertShareAggregate(tx *sql.Tx, share *Share) error {
 		}
 	}
 
-	requestIDByFile := make(map[string]string)
-	for _, ur := range share.UploadRequests {
-		for _, fileID := range ur.FileIDs {
-			requestIDByFile[fileID] = ur.ID
-		}
-	}
-
 	for _, file := range share.Files {
-		var uploadRequestID any
-		if requestID, ok := requestIDByFile[file.ID]; ok {
-			uploadRequestID = requestID
-		}
 		if _, err := tx.Exec(
-			"INSERT INTO file (id, name, expected_size, share_id, upload_request_id) VALUES (?, ?, ?, ?, ?)",
-			file.ID, file.Name, file.ExpectedSize, share.ID, uploadRequestID,
+			"INSERT INTO file (id, name, expected_size, share_id) VALUES (?, ?, ?, ?)",
+			file.ID, file.Name, file.ExpectedSize, share.ID,
 		); err != nil {
 			return err
 		}
