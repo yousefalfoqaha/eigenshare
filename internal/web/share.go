@@ -75,8 +75,8 @@ func LoadShare(shareSvc *share.ShareService) middleware {
 	}
 }
 
-// RequireShare requires the loaded share to be viewable.
-var RequireShare middleware = func(next handler) handler {
+// RequireViewableShare requires the loaded share to be viewable.
+var RequireViewableShare middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		sh := shareFromContext(r)
 		if sh == nil || !sh.CanView(userFromContext(r)) {
@@ -97,10 +97,10 @@ var RequireManageable middleware = func(next handler) handler {
 	}
 }
 
-// RequireUnlocked requires a password-protected share to be unlocked,
+// RequireUnlockedShare requires a password-protected share to be unlocked,
 // otherwise redirects to the unlock page preserving the original URL.
 // Visibility is not checked here; routes that need it compose RequireShare.
-func RequireUnlocked(jar *cookies) middleware {
+func RequireUnlockedShare(jar *cookies) middleware {
 	return func(next handler) handler {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			sh := shareFromContext(r)

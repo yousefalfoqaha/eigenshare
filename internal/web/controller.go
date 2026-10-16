@@ -65,14 +65,14 @@ func (c *Controller) HTMLRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", c.templs.static)
 
-	unlockShare := LoadShare(c.shareSvc)
-	viewShare := compose(unlockShare, RequireShare, RequireUnlocked(c.cookies))
-	uploadLink := compose(LoadShare(c.shareSvc), RequireUnlocked(c.cookies), LoadUploadRequest, RequireUploadRequest)
+	unlockShare := compose(LoadShare(c.shareSvc), RequireViewableShare)
+	viewShare := compose(LoadShare(c.shareSvc), RequireViewableShare, RequireUnlockedShare(c.cookies))
+	uploadLink := compose(LoadShare(c.shareSvc), RequireViewableShare, RequireUnlockedShare(c.cookies), LoadUploadRequest, RequireUploadRequest)
 
 	protected := RequireSession
 	admin := RequireAdmin
 
-	editShare := compose(protected, LoadShare(c.shareSvc), RequireManageable)
+	editShare := compose(RequireSession, LoadShare(c.shareSvc), RequireManageable)
 
 	pub := http.NewServeMux()
 	pub.Handle("GET /login", c.handle(c.LoginPage))
@@ -123,7 +123,7 @@ func (c *Controller) APIRoutes() http.Handler {
 	mux := http.NewServeMux()
 
 	editShare := compose(RequireSession, LoadShare(c.shareSvc), RequireManageable)
-	uploadLink := compose(LoadShare(c.shareSvc), RequireUnlocked(c.cookies), LoadUploadRequest, RequireUploadRequest)
+	uploadLink := compose(LoadShare(c.shareSvc), RequireUnlockedShare(c.cookies), LoadUploadRequest, RequireUploadRequest)
 
 	mux.Handle("POST /api/shares/{id}/files", c.handle(editShare(c.AddFilesToShare)))
 	mux.Handle("HEAD /api/shares/{id}/files/{fileID}/stream", c.handle(editShare(c.GetUploadOffset)))
