@@ -12,7 +12,7 @@ type ShareRequest struct {
 	Password      string     `json:"password"`
 }
 
-type UploadRequestRequest struct {
+type UploadLinkRequest struct {
 	ExpiryMinutes int   `json:"expiryMinutes"`
 	MaxBytes      int64 `json:"maxBytes"`
 }

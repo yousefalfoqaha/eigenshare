@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"eigenshare/internal/database"
-	"eigenshare/internal/timestamp"
 
 	"github.com/google/uuid"
 )
@@ -39,7 +38,7 @@ func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (
 	query := "SELECT id, handle, visibility, password, created_at, expires_at, trashed_at, version FROM share " + whereClause
 
 	var sh Share
-	var expiresAt, trashedAt sql.NullString
+	var expiresAt, trashedAt sql.NullTime
 
 	err := r.db.DB.QueryRow(query, args...).Scan(
 		&sh.ID, &sh.Handle, &sh.Visibility, &sh.PasswordHash, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version,
@@ -53,12 +52,15 @@ func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (
 		return nil, err
 	}
 
-	if sh.ExpiresAt, err = parseTimestamp(expiresAt); err != nil {
-		return nil, err
+	if expiresAt.Valid {
+		t := expiresAt.Time.UTC()
+		sh.ExpiresAt = &t
 	}
-	if sh.TrashedAt, err = parseTimestamp(trashedAt); err != nil {
-		return nil, err
+	if trashedAt.Valid {
+		t := trashedAt.Time.UTC()
+		sh.TrashedAt = &t
 	}
+	sh.CreatedAt = sh.CreatedAt.UTC()
 
 	if sh.Owners, err = r.getOwnersByShareID(sh.ID); err != nil {
 		return nil, err
@@ -70,7 +72,7 @@ func (r *ShareRepository) fetchShareAggregate(whereClause string, args ...any) (
 	}
 	sh.Files = files
 
-	if sh.UploadRequests, err = r.getUploadRequestsByShareID(sh.ID); err != nil {
+	if sh.UploadLinks, err = r.getUploadLinksByShareID(sh.ID); err != nil {
 		return nil, err
 	}
 
@@ -97,17 +99,20 @@ func (r *ShareRepository) fetchAllShares(whereClause string, args ...any) ([]*Sh
 	var shares []*Share
 	for rows.Next() {
 		var sh Share
-		var expiresAt, trashedAt sql.NullString
+		var expiresAt, trashedAt sql.NullTime
 
 		if err := rows.Scan(&sh.ID, &sh.Handle, &sh.Visibility, &sh.PasswordHash, &sh.CreatedAt, &expiresAt, &trashedAt, &sh.Version); err != nil {
 			return nil, err
 		}
-		if sh.ExpiresAt, err = parseTimestamp(expiresAt); err != nil {
-			return nil, err
+		if expiresAt.Valid {
+			t := expiresAt.Time.UTC()
+			sh.ExpiresAt = &t
 		}
-		if sh.TrashedAt, err = parseTimestamp(trashedAt); err != nil {
-			return nil, err
+		if trashedAt.Valid {
+			t := trashedAt.Time.UTC()
+			sh.TrashedAt = &t
 		}
+		sh.CreatedAt = sh.CreatedAt.UTC()
 
 		shares = append(shares, &sh)
 	}
@@ -123,14 +128,14 @@ func (r *ShareRepository) fetchAllShares(whereClause string, args ...any) ([]*Sh
 	if err != nil {
 		return nil, err
 	}
-	uploadRequests, err := r.getAllUploadRequests()
+	uploadLinks, err := r.getAllUploadLinks()
 	if err != nil {
 		return nil, err
 	}
 	for _, sh := range shares {
 		sh.Owners = owners[sh.ID]
 		sh.Files = files[sh.ID]
-		sh.UploadRequests = uploadRequests[sh.ID]
+		sh.UploadLinks = uploadLinks[sh.ID]
 	}
 
 	return shares, nil
@@ -201,9 +206,6 @@ func (r *ShareRepository) Delete(ids ...string) error {
 	return err
 }
 
-// CleanupStale removes expired shares, trashed shares past the retention
-// window, and expired upload requests. Runs as a single transaction so the
-// batch is atomic and takes only one write-lock window in SQLite.
 func (r *ShareRepository) CleanupStale() error {
 	tx, err := r.db.DB.Begin()
 	if err != nil {
@@ -211,18 +213,18 @@ func (r *ShareRepository) CleanupStale() error {
 	}
 	defer tx.Rollback()
 
-	now := timestamp.Now().String()
+	now := time.Now().UTC()
 	if _, err := tx.Exec("DELETE FROM share WHERE expires_at IS NOT NULL AND expires_at < ?", now); err != nil {
 		return fmt.Errorf("cleanup expired shares: %w", err)
 	}
 
-	threshold := timestamp.Timestamp(timestamp.Now().Time().Add(-24 * time.Hour)).String()
+	threshold := now.Add(-24 * time.Hour)
 	if _, err := tx.Exec("DELETE FROM share WHERE trashed_at IS NOT NULL AND trashed_at < ?", threshold); err != nil {
 		return fmt.Errorf("cleanup trashed shares: %w", err)
 	}
 
-	if _, err := tx.Exec("DELETE FROM upload_request WHERE expires_at IS NOT NULL AND expires_at < ?", now); err != nil {
-		return fmt.Errorf("cleanup expired upload requests: %w", err)
+	if _, err := tx.Exec("DELETE FROM upload_link WHERE expires_at IS NOT NULL AND expires_at < ?", now); err != nil {
+		return fmt.Errorf("cleanup expired upload links: %w", err)
 	}
 
 	return tx.Commit()
@@ -306,7 +308,6 @@ func (r *ShareRepository) getAllOwners() (map[string][]string, error) {
 	return owners, rows.Err()
 }
 
-// getAllFilesByShareID returns the share's files.
 func (r *ShareRepository) getAllFilesByShareID(id string) ([]File, error) {
 	rows, err := r.db.DB.Query("SELECT id, name, expected_size FROM file WHERE share_id = ? ORDER BY id", id)
 	if err != nil {
@@ -348,76 +349,77 @@ func (r *ShareRepository) getAllFiles() (map[string][]File, error) {
 	return files, rows.Err()
 }
 
-func (r *ShareRepository) getUploadRequestsByShareID(id string) ([]UploadRequest, error) {
-	rows, err := r.db.DB.Query("SELECT id, token, max_bytes, bytes_used, created_at, expires_at FROM upload_request WHERE share_id = ? ORDER BY created_at, id", id)
+func (r *ShareRepository) getUploadLinksByShareID(id string) ([]UploadLink, error) {
+	rows, err := r.db.DB.Query("SELECT id, token, max_bytes, bytes_used, created_at, expires_at FROM upload_link WHERE share_id = ? ORDER BY created_at, id", id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var uploadRequests []UploadRequest
+	var uploadLinks []UploadLink
 	for rows.Next() {
-		ur, err := scanUploadRequest(rows.Scan)
+		ul, err := scanUploadLink(rows.Scan)
 		if err != nil {
 			return nil, err
 		}
-		uploadRequests = append(uploadRequests, ur)
+		uploadLinks = append(uploadLinks, ul)
 	}
 
-	return uploadRequests, rows.Err()
+	return uploadLinks, rows.Err()
 }
 
-func (r *ShareRepository) getAllUploadRequests() (map[string][]UploadRequest, error) {
-	rows, err := r.db.DB.Query("SELECT share_id, id, token, max_bytes, bytes_used, created_at, expires_at FROM upload_request ORDER BY share_id, created_at, id")
+func (r *ShareRepository) getAllUploadLinks() (map[string][]UploadLink, error) {
+	rows, err := r.db.DB.Query("SELECT share_id, id, token, max_bytes, bytes_used, created_at, expires_at FROM upload_link ORDER BY share_id, created_at, id")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	uploadRequests := make(map[string][]UploadRequest)
+	uploadLinks := make(map[string][]UploadLink)
 	for rows.Next() {
 		var shareID string
-		ur, err := scanUploadRequest(func(dest ...any) error {
+		ul, err := scanUploadLink(func(dest ...any) error {
 			return rows.Scan(append([]any{&shareID}, dest...)...)
 		})
 		if err != nil {
 			return nil, err
 		}
-		uploadRequests[shareID] = append(uploadRequests[shareID], ur)
+		uploadLinks[shareID] = append(uploadLinks[shareID], ul)
 	}
 
-	return uploadRequests, rows.Err()
+	return uploadLinks, rows.Err()
 }
 
-func scanUploadRequest(scan func(dest ...any) error) (UploadRequest, error) {
+func scanUploadLink(scan func(dest ...any) error) (UploadLink, error) {
 	var (
-		ur        UploadRequest
-		expiresAt sql.NullString
+		ul        UploadLink
+		expiresAt sql.NullTime
 	)
-	err := scan(&ur.ID, &ur.Token, &ur.MaxBytes, &ur.BytesUsed, &ur.CreatedAt, &expiresAt)
+	err := scan(&ul.ID, &ul.Token, &ul.MaxBytes, &ul.BytesUsed, &ul.CreatedAt, &expiresAt)
 	if err != nil {
-		return UploadRequest{}, err
+		return UploadLink{}, err
 	}
-	ur.ExpiresAt, err = parseTimestamp(expiresAt)
-	if err != nil {
-		return UploadRequest{}, err
+	if expiresAt.Valid {
+		t := expiresAt.Time.UTC()
+		ul.ExpiresAt = &t
 	}
-	return ur, nil
+	ul.CreatedAt = ul.CreatedAt.UTC()
+	return ul, nil
 }
 
 func insertShareAggregate(tx *sql.Tx, share *Share) error {
 	var expiresAt any
 	if share.ExpiresAt != nil {
-		expiresAt = share.ExpiresAt.String()
+		expiresAt = share.ExpiresAt.UTC()
 	}
 	var trashedAt any
 	if share.TrashedAt != nil {
-		trashedAt = share.TrashedAt.String()
+		trashedAt = share.TrashedAt.UTC()
 	}
 
 	if _, err := tx.Exec(
 		"INSERT INTO share (id, handle, visibility, password, created_at, expires_at, trashed_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		share.ID, share.Handle, string(share.Visibility), share.PasswordHash, share.CreatedAt.String(), expiresAt, trashedAt, share.Version,
+		share.ID, share.Handle, string(share.Visibility), share.PasswordHash, share.CreatedAt.UTC(), expiresAt, trashedAt, share.Version,
 	); err != nil {
 		return err
 	}
@@ -431,14 +433,14 @@ func insertShareAggregate(tx *sql.Tx, share *Share) error {
 		}
 	}
 
-	for _, ur := range share.UploadRequests {
+	for _, ul := range share.UploadLinks {
 		var expiresAt any
-		if ur.ExpiresAt != nil {
-			expiresAt = ur.ExpiresAt.String()
+		if ul.ExpiresAt != nil {
+			expiresAt = ul.ExpiresAt.UTC()
 		}
 		if _, err := tx.Exec(
-			"INSERT INTO upload_request (id, token, share_id, expires_at, max_bytes, bytes_used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			ur.ID, ur.Token, share.ID, expiresAt, ur.MaxBytes, ur.BytesUsed, ur.CreatedAt.String(),
+			"INSERT INTO upload_link (id, token, share_id, expires_at, max_bytes, bytes_used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			ul.ID, ul.Token, share.ID, expiresAt, ul.MaxBytes, ul.BytesUsed, ul.CreatedAt.UTC(),
 		); err != nil {
 			return err
 		}
@@ -453,15 +455,4 @@ func insertShareAggregate(tx *sql.Tx, share *Share) error {
 		}
 	}
 	return nil
-}
-
-func parseTimestamp(ns sql.NullString) (*timestamp.Timestamp, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	var t timestamp.Timestamp
-	if err := t.Scan(ns.String); err != nil {
-		return nil, err
-	}
-	return &t, nil
 }

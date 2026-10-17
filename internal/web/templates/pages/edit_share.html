@@ -40,7 +40,7 @@
 
 <nav>
   {{if eq .Content.Tab "files"}}files{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=files">files</a>{{end}}
-  {{if eq .Content.Tab "uploads"}}uploads{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=uploads">uploads</a>{{end}}
+  {{if eq .Content.Tab "uploads"}}upload links{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=uploads">upload links</a>{{end}}
   {{if eq .Content.Tab "owners"}}owners{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=owners">owners</a>{{end}}
   {{if eq .Content.Tab "security"}}security{{else}}<a href="/shares/{{.Content.Share.ID}}/edit?tab=security">security</a>{{end}}
 </nav>
@@ -79,7 +79,7 @@
       <tr><th>token</th><th>size used</th><th>expires</th><th>created</th><th></th></tr>
     </thead>
     <tbody>
-      {{range .Content.Share.UploadRequests}}
+      {{range .Content.Share.UploadLinks}}
       <tr>
         <td>
             <a class="truncate" href="/s/{{$.Content.Share.Handle}}/uploads?token={{.Token}}">
@@ -99,7 +99,7 @@
         </td>
       </tr>
       {{else}}
-      <tr><td colspan="5" class="empty-table">no upload requests</td></tr>
+      <tr><td colspan="5" class="empty-table">no upload links</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -107,7 +107,7 @@
 
 <form method="post" action="/shares/{{.Content.Share.ID}}/uploads">
     <fieldset>
-        <legend>create request</legend>
+        <legend>create link</legend>
   <label
     >expiry (minutes, 0 = permanent)
     <input type="number" name="expiryMinutes" value="60" min="0" />

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"eigenshare/internal/share"
-	"eigenshare/internal/timestamp"
 	"eigenshare/internal/user"
 )
 
@@ -55,12 +54,12 @@ func uploadedSize(files []share.File) int64 {
 	return total
 }
 
-func expiresIn(t *timestamp.Timestamp) string {
+func expiresIn(t *time.Time) string {
 	if t == nil {
 		return "never"
 	}
 
-	d := time.Until(t.Time())
+	d := time.Until(*t)
 	if d <= 0 {
 		return "now (cleaning up)"
 	}
@@ -81,12 +80,12 @@ func expiresIn(t *timestamp.Timestamp) string {
 	return "in < 1 min"
 }
 
-func timeAgo(t *timestamp.Timestamp) string {
+func timeAgo(t *time.Time) string {
 	if t == nil {
 		return "never"
 	}
 
-	d := time.Since(t.Time())
+	d := time.Since(*t)
 	if d < time.Minute {
 		return "just now"
 	}

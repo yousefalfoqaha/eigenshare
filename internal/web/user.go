@@ -3,7 +3,6 @@ package web
 import (
 	"net/http"
 
-	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
 
@@ -17,7 +16,7 @@ func (c *Controller) NewUserPage(w http.ResponseWriter, r *http.Request) error {
 
 func (c *Controller) CreateUser(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 	req := user.CreateRequest{
 		Username: r.PostForm.Get("username"),
@@ -42,7 +41,7 @@ func (c *Controller) EditUserPage(w http.ResponseWriter, r *http.Request) error 
 
 func (c *Controller) UpdateUser(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 	req := user.UpdateRequest{
 		Username: r.PostForm.Get("username"),

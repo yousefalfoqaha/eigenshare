@@ -14,8 +14,6 @@ import (
 
 const CookieFlash = "flash"
 
-// cookies is a signed-cookie jar: it holds the signing secret and the
-// secure-cookie flag shared by every cookie operation.
 type cookies struct {
 	secure bool
 	secret []byte
@@ -25,12 +23,10 @@ func newCookies(secure bool, secret []byte) *cookies {
 	return &cookies{secure: secure, secret: secret}
 }
 
-// SetFlash stages a flash message for the next rendered page.
 func (c *cookies) SetFlash(w http.ResponseWriter, kind, message string) {
 	c.write(w, CookieFlash, kind+":"+message, "/", 5*time.Minute)
 }
 
-// GetFlash returns and consumes the staged flash message.
 func (c *cookies) GetFlash(r *http.Request, w http.ResponseWriter) (kind, message string, ok bool) {
 	raw, ok := c.read(r, CookieFlash)
 	if !ok {

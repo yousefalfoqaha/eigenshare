@@ -2,9 +2,9 @@ CREATE TABLE IF NOT EXISTS share (
     id TEXT NOT NULL PRIMARY KEY,
     handle TEXT NOT NULL UNIQUE,
     visibility TEXT NOT NULL DEFAULT 'private',
-    created_at TEXT NOT NULL,
-    expires_at TEXT,
-    trashed_at TEXT,
+    created_at DATETIME NOT NULL,
+    expires_at DATETIME,
+    trashed_at DATETIME,
     password TEXT NOT NULL DEFAULT '',
     version INTEGER NOT NULL
 );
@@ -18,14 +18,14 @@ CREATE TABLE IF NOT EXISTS file (
     FOREIGN KEY (share_id) REFERENCES share(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS upload_request (
+CREATE TABLE IF NOT EXISTS upload_link (
     id TEXT NOT NULL PRIMARY KEY,
     token TEXT NOT NULL UNIQUE,
     share_id TEXT NOT NULL,
-    expires_at TEXT,
+    expires_at DATETIME,
     max_bytes INTEGER NOT NULL DEFAULT 0,
     bytes_used INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
     FOREIGN KEY (share_id) REFERENCES share(id) ON DELETE CASCADE
 );
 
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     is_admin INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
     version INTEGER NOT NULL DEFAULT 1
 );
 

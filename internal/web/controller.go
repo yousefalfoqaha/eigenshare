@@ -14,13 +14,11 @@ import (
 	"eigenshare/internal/user"
 )
 
-// handler is any request handler that may fail.
-type handler = func(http.ResponseWriter, *http.Request) error
+type (
+	handler    = func(http.ResponseWriter, *http.Request) error
+	middleware = func(handler) handler
+)
 
-// middleware wraps a handler.
-type middleware = func(handler) handler
-
-// compose collapses a middleware sequence into one middleware.
 func compose(mws ...middleware) middleware {
 	return func(h handler) handler {
 		for _, mw := range slices.Backward(mws) {
@@ -67,7 +65,7 @@ func (c *Controller) HTMLRoutes() http.Handler {
 
 	unlockShareChain := compose(LoadShare(c.shareSvc), RequireViewableShare)
 	viewShareChain := compose(LoadShare(c.shareSvc), RequireViewableShare, RequireUnlockedShare(c.cookies))
-	uploadRequestChain := compose(LoadShare(c.shareSvc), RequireViewableShare, RequireUnlockedShare(c.cookies), LoadUploadRequest, RequireUploadRequest)
+	uploadLinkChain := compose(LoadShare(c.shareSvc), RequireViewableShare, RequireUnlockedShare(c.cookies), LoadUploadLink, RequireUploadLink)
 
 	protectedChain := RequireSession
 	adminChain := RequireAdmin
@@ -83,7 +81,7 @@ func (c *Controller) HTMLRoutes() http.Handler {
 	pub.Handle("POST /s/{handle}/unlock", c.handle(unlockShareChain(c.UnlockShare)))
 	pub.Handle("GET /s/{handle}/download", c.handle(viewShareChain(c.DownloadAll)))
 	pub.Handle("GET /s/{handle}/files/{fileID}/download", c.handle(viewShareChain(c.DownloadFile)))
-	pub.Handle("GET /s/{handle}/uploads", c.handle(uploadRequestChain(c.UploadRequestPage)))
+	pub.Handle("GET /s/{handle}/uploads", c.handle(uploadLinkChain(c.UploadLinkPage)))
 
 	mux.Handle("/login", pub)
 	mux.Handle("/logout", pub)
@@ -103,8 +101,8 @@ func (c *Controller) HTMLRoutes() http.Handler {
 	prot.Handle("POST /shares/{id}/owners", c.handle(editShareChain(c.AddOwner)))
 	prot.Handle("POST /shares/{id}/owners/{ownerID}/delete", c.handle(editShareChain(c.RemoveOwner)))
 	prot.Handle("POST /shares/{id}/files/{fileID}/delete", c.handle(editShareChain(c.DeleteFile)))
-	prot.Handle("POST /shares/{id}/uploads", c.handle(editShareChain(c.CreateUploadRequest)))
-	prot.Handle("POST /shares/{id}/uploads/{requestID}/revoke", c.handle(editShareChain(c.RevokeUploadRequest)))
+	prot.Handle("POST /shares/{id}/uploads", c.handle(editShareChain(c.CreateUploadLink)))
+	prot.Handle("POST /shares/{id}/uploads/{linkID}/revoke", c.handle(editShareChain(c.RevokeUploadLink)))
 	prot.Handle("GET /trash", c.handle(protectedChain(c.TrashPage)))
 	prot.Handle("GET /users", c.handle(protectedChain(c.UsersPage)))
 
@@ -123,17 +121,17 @@ func (c *Controller) APIRoutes() http.Handler {
 	mux := http.NewServeMux()
 
 	editShareChain := compose(RequireSession, LoadShare(c.shareSvc), RequireManageable)
-	uploadRequestChain := compose(LoadShare(c.shareSvc), RequireUnlockedShare(c.cookies), LoadUploadRequest, RequireUploadRequest)
+	uploadLinkChain := compose(LoadShare(c.shareSvc), RequireUnlockedShare(c.cookies), LoadUploadLink, RequireUploadLink)
 
 	mux.Handle("POST /api/shares/{id}/files", c.handle(editShareChain(c.AddFilesToShare)))
 	mux.Handle("HEAD /api/shares/{id}/files/{fileID}/stream", c.handle(editShareChain(c.GetUploadOffset)))
 	mux.Handle("PUT /api/shares/{id}/files/{fileID}/stream", c.handle(editShareChain(c.StreamFile)))
 	mux.Handle("DELETE /api/shares/{id}/files/{fileID}", c.handle(editShareChain(c.DeleteShareFile)))
 
-	mux.Handle("POST /api/s/{handle}/uploads/files", c.handle(uploadRequestChain(c.AddFilesViaUploadRequest)))
-	mux.Handle("HEAD /api/s/{handle}/uploads/files/{fileID}/stream", c.handle(uploadRequestChain(c.GetUploadRequestFileOffset)))
-	mux.Handle("PUT /api/s/{handle}/uploads/files/{fileID}/stream", c.handle(uploadRequestChain(c.StreamUploadRequestFile)))
-	mux.Handle("DELETE /api/s/{handle}/uploads/files/{fileID}", c.handle(uploadRequestChain(c.DeleteUploadRequestFile)))
+	mux.Handle("POST /api/s/{handle}/uploads/files", c.handle(uploadLinkChain(c.AddFilesViaUploadLink)))
+	mux.Handle("HEAD /api/s/{handle}/uploads/files/{fileID}/stream", c.handle(uploadLinkChain(c.GetUploadLinkFileOffset)))
+	mux.Handle("PUT /api/s/{handle}/uploads/files/{fileID}/stream", c.handle(uploadLinkChain(c.StreamUploadLinkFile)))
+	mux.Handle("DELETE /api/s/{handle}/uploads/files/{fileID}", c.handle(uploadLinkChain(c.DeleteUploadLinkFile)))
 
 	return mux
 }
@@ -175,7 +173,7 @@ func (c *Controller) handle(h handler) http.HandlerFunc {
 
 func mapError(err error) (int, string) {
 	switch {
-	case errors.Is(err, share.ErrInvalidRequest),
+	case errors.Is(err, ErrInvalidRequest),
 		errors.Is(err, share.ErrInvalidHandle),
 		errors.Is(err, share.ErrInvalidFileName),
 		errors.Is(err, share.ErrInvalidFileSize),
@@ -193,7 +191,7 @@ func mapError(err error) (int, string) {
 
 	case errors.Is(err, share.ErrShareNotFound),
 		errors.Is(err, share.ErrFileNotFound),
-		errors.Is(err, share.ErrUploadRequestNotFound),
+		errors.Is(err, share.ErrUploadLinkNotFound),
 		errors.Is(err, user.ErrUserNotFound):
 		return http.StatusNotFound, err.Error()
 
@@ -206,7 +204,7 @@ func mapError(err error) (int, string) {
 		errors.Is(err, share.ErrShareNotTrashed),
 		errors.Is(err, share.ErrLastOwner),
 		errors.Is(err, share.ErrOwnerExists),
-		errors.Is(err, share.ErrUploadRequestLimit),
+		errors.Is(err, share.ErrUploadLinkLimit),
 		errors.Is(err, user.ErrUsernameTaken),
 		errors.Is(err, user.ErrVersionConflict),
 		errors.Is(err, user.ErrCannotDeleteSelf),

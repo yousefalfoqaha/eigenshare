@@ -34,7 +34,7 @@ func (e *ShareCleaner) Run(ctx context.Context, interval time.Duration) {
 
 func (e *ShareCleaner) clean() {
 	if err := e.repo.CleanupStale(); err != nil {
-		log.Printf("failed to clean up stale shares and upload requests: %v", err)
+		log.Printf("failed to clean up stale shares and upload links: %v", err)
 	}
 	if err := e.CleanupStorage(); err != nil {
 		log.Printf("failed to clean up orphaned share folders: %v", err)

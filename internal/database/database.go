@@ -16,7 +16,7 @@ type Database struct {
 }
 
 func NewDatabase(dbPath string) *Database {
-	sqlDB, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	sqlDB, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_time_format=sqlite")
 	if err != nil {
 		log.Fatal(err.Error())
 	}

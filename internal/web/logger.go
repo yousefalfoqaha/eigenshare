@@ -25,15 +25,9 @@ func (w *WrappedWriter) Write(b []byte) (int, error) {
 
 func logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := &WrappedWriter{
-			ResponseWriter: w,
-			status:         http.StatusOK,
-		}
-
+		wrapped := &WrappedWriter{ResponseWriter: w, status: http.StatusOK}
 		start := time.Now()
-
 		next.ServeHTTP(wrapped, r)
-
 		log.Println(wrapped.status, r.Method, r.URL.Path, time.Since(start))
 	})
 }

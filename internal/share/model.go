@@ -6,7 +6,6 @@ import (
 	"slices"
 	"time"
 
-	"eigenshare/internal/timestamp"
 	"eigenshare/internal/user"
 
 	"github.com/google/uuid"
@@ -29,17 +28,17 @@ func (v Visibility) Valid() bool {
 }
 
 type Share struct {
-	ID             string               `json:"id"`
-	Handle         string               `json:"handle"`
-	Visibility     Visibility           `json:"visibility"`
-	Owners         []string             `json:"owners"`
-	Files          []File               `json:"files"`
-	UploadRequests []UploadRequest      `json:"uploadRequests"`
-	PasswordHash   string               `json:"-"`
-	CreatedAt      timestamp.Timestamp  `json:"createdAt"`
-	ExpiresAt      *timestamp.Timestamp `json:"expiresAt"`
-	TrashedAt      *timestamp.Timestamp `json:"trashedAt"`
-	Version        int64                `json:"-"`
+	ID             string          `json:"id"`
+	Handle         string          `json:"handle"`
+	Visibility     Visibility      `json:"visibility"`
+	Owners         []string        `json:"owners"`
+	Files          []File          `json:"files"`
+	UploadLinks   []UploadLink   `json:"uploadLinks"`
+	PasswordHash   string          `json:"-"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	ExpiresAt      *time.Time      `json:"expiresAt"`
+	TrashedAt      *time.Time      `json:"trashedAt"`
+	Version        int64           `json:"-"`
 }
 
 func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creatorID string) (*Share, error) {
@@ -59,7 +58,7 @@ func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creat
 		return nil, fmt.Errorf("visibility must be public or private: %w", ErrInvalidVisibility)
 	}
 
-	createdAt := timestamp.Now()
+	createdAt := time.Now().UTC()
 	s := &Share{
 		ID:         id,
 		Handle:     handle,
@@ -73,7 +72,7 @@ func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creat
 	}
 
 	if expiryMinutes > 0 {
-		expiresAt := timestamp.Timestamp(time.Time(createdAt).Add(time.Duration(expiryMinutes) * time.Minute))
+		expiresAt := createdAt.Add(time.Duration(expiryMinutes) * time.Minute)
 		s.ExpiresAt = &expiresAt
 	}
 
@@ -104,17 +103,15 @@ func (s *Share) RequiresPassword(u *user.User) bool {
 	return s.HasPassword() && !s.CanManage(u)
 }
 
-// UploadRequest returns the upload request with the given token.
-func (s *Share) UploadRequest(token string) (*UploadRequest, error) {
-	for i := range s.UploadRequests {
-		if s.UploadRequests[i].Token == token {
-			return &s.UploadRequests[i], nil
+func (s *Share) UploadLink(token string) (*UploadLink, error) {
+	for i := range s.UploadLinks {
+		if s.UploadLinks[i].Token == token {
+			return &s.UploadLinks[i], nil
 		}
 	}
-	return nil, ErrUploadRequestNotFound
+	return nil, ErrUploadLinkNotFound
 }
 
-// File returns the file with the given id.
 func (s *Share) File(fileID string) (*File, error) {
 	for i := range s.Files {
 		if s.Files[i].ID == fileID {
@@ -128,8 +125,6 @@ func (s *Share) UnlockMessage() string {
 	return s.ID + "\x00" + s.PasswordHash
 }
 
-// UnlockTTL is how long a password-unlocked share stays unlocked on a
-// client (i.e. the lifetime of the unlock cookie).
 const UnlockTTL = 7 * 24 * time.Hour
 
 type File struct {
@@ -138,7 +133,6 @@ type File struct {
 	ExpectedSize int64  `json:"expectedSize"`
 }
 
-// Complete reports whether the file has been fully written.
 func (f File) Complete(written int64) bool {
 	return written >= f.ExpectedSize
 }
@@ -164,24 +158,23 @@ type FileUploadState struct {
 	Locked  bool  `json:"locked"`
 }
 
-type UploadRequest struct {
-	ID        string               `json:"id"`
-	Token     string               `json:"token"`
-	MaxBytes  int64                `json:"maxBytes"`
-	BytesUsed int64                `json:"bytesUsed"`
-	ExpiresAt *timestamp.Timestamp `json:"expiresAt"`
-	CreatedAt timestamp.Timestamp  `json:"createdAt"`
+type UploadLink struct {
+	ID        string     `json:"id"`
+	Token     string     `json:"token"`
+	MaxBytes  int64      `json:"maxBytes"`
+	BytesUsed int64      `json:"bytesUsed"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+	CreatedAt time.Time  `json:"createdAt"`
 }
 
-// Remaining returns how many bytes of the quota are left.
-func (ur *UploadRequest) Remaining() int64 {
-	if remaining := ur.MaxBytes - ur.BytesUsed; remaining > 0 {
+func (ul *UploadLink) Remaining() int64 {
+	if remaining := ul.MaxBytes - ul.BytesUsed; remaining > 0 {
 		return remaining
 	}
 	return 0
 }
 
-func NewUploadRequest(req UploadRequestRequest) (*UploadRequest, error) {
+func NewUploadLink(req UploadLinkRequest) (*UploadLink, error) {
 	if req.ExpiryMinutes < 0 {
 		return nil, fmt.Errorf("expiry minutes must be non-negative: %w", ErrInvalidExpiry)
 	}
@@ -189,8 +182,8 @@ func NewUploadRequest(req UploadRequestRequest) (*UploadRequest, error) {
 		return nil, fmt.Errorf("max bytes must be non-negative: %w", ErrInvalidMaxBytes)
 	}
 
-	createdAt := timestamp.Now()
-	ur := &UploadRequest{
+	createdAt := time.Now().UTC()
+	ul := &UploadLink{
 		ID:        uuid.New().String(),
 		Token:     uuid.New().String(),
 		MaxBytes:  req.MaxBytes,
@@ -198,9 +191,9 @@ func NewUploadRequest(req UploadRequestRequest) (*UploadRequest, error) {
 	}
 
 	if req.ExpiryMinutes > 0 {
-		expiresAt := timestamp.Timestamp(time.Time(createdAt).Add(time.Duration(req.ExpiryMinutes) * time.Minute))
-		ur.ExpiresAt = &expiresAt
+		expiresAt := createdAt.Add(time.Duration(req.ExpiryMinutes) * time.Minute)
+		ul.ExpiresAt = &expiresAt
 	}
 
-	return ur, nil
+	return ul, nil
 }

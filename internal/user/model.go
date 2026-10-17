@@ -3,20 +3,20 @@ package user
 import (
 	"fmt"
 	"regexp"
+	"time"
 
 	"eigenshare/internal/security"
-	"eigenshare/internal/timestamp"
 )
 
 var validUsername = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,64}$`)
 
 type User struct {
-	ID           string              `json:"id"`
-	Username     string              `json:"username"`
-	PasswordHash string              `json:"-"`
-	IsAdmin      bool                `json:"isAdmin"`
-	CreatedAt    timestamp.Timestamp `json:"createdAt"`
-	Version      int64               `json:"-"`
+	ID           string    `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"-"`
+	IsAdmin      bool      `json:"isAdmin"`
+	CreatedAt    time.Time `json:"createdAt"`
+	Version      int64     `json:"-"`
 }
 
 func validateUsername(username string) error {
@@ -42,7 +42,7 @@ func NewUser(id, username, passwordHash string, isAdmin bool) (*User, error) {
 		Username:     username,
 		PasswordHash: passwordHash,
 		IsAdmin:      isAdmin,
-		CreatedAt:    timestamp.Now(),
+		CreatedAt:    time.Now().UTC(),
 		Version:      1,
 	}, nil
 }

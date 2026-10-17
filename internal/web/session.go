@@ -9,14 +9,12 @@ import (
 	"time"
 
 	"eigenshare/internal/security"
-	"eigenshare/internal/share"
 	"eigenshare/internal/user"
 )
 
 const (
-	CookieSession = "session_id"
-
-	sessionTTL = 7 * 24 * time.Hour
+	sessionCookie    = "session_id"
+	sessionCookieTTL = 7 * 24 * time.Hour
 )
 
 type userKey struct{}
@@ -26,14 +24,12 @@ func userFromContext(r *http.Request) *user.User {
 	return u
 }
 
-// SetSession stores the session cookie for the user.
 func SetSession(jar *cookies, w http.ResponseWriter, u *user.User) {
-	jar.write(w, CookieSession, fmt.Sprintf("%s:%s", u.ID, security.Fingerprint(u.PasswordHash)), "/", sessionTTL)
+	jar.write(w, sessionCookie, fmt.Sprintf("%s:%s", u.ID, security.Fingerprint(u.PasswordHash)), "/", sessionCookieTTL)
 }
 
-// GetSession returns the session cookie's user id and fingerprint.
 func GetSession(jar *cookies, r *http.Request) (id, fp string, ok bool) {
-	val, ok := jar.read(r, CookieSession)
+	val, ok := jar.read(r, sessionCookie)
 	if !ok {
 		return "", "", false
 	}
@@ -41,13 +37,10 @@ func GetSession(jar *cookies, r *http.Request) (id, fp string, ok bool) {
 	return id, fp, ok
 }
 
-// ClearSession removes the session cookie.
 func ClearSession(jar *cookies, w http.ResponseWriter) {
-	jar.write(w, CookieSession, "", "/", -1)
+	jar.write(w, sessionCookie, "", "/", -1)
 }
 
-// LoadSession loads the session user into the request context when a valid
-// session cookie is present.
 func LoadSession(jar *cookies, userSvc *user.UserService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +58,6 @@ func LoadSession(jar *cookies, userSvc *user.UserService) func(http.Handler) htt
 	}
 }
 
-// RequireSession requires an authenticated user, otherwise redirects to login.
 var RequireSession middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		if userFromContext(r) == nil {
@@ -76,7 +68,6 @@ var RequireSession middleware = func(next handler) handler {
 	}
 }
 
-// RequireAdmin requires an authenticated admin user.
 var RequireAdmin middleware = func(next handler) handler {
 	return RequireSession(func(w http.ResponseWriter, r *http.Request) error {
 		if !userFromContext(r).IsAdmin {
@@ -97,7 +88,7 @@ func (c *Controller) LoginPage(w http.ResponseWriter, r *http.Request) error {
 
 func (c *Controller) LoginSubmit(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 
 	u, err := c.userSvc.GetUserByUsername(r.PostForm.Get("username"))

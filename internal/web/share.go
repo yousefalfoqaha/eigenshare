@@ -15,7 +15,7 @@ import (
 	"eigenshare/internal/share"
 )
 
-const CookieUnlockPrefix = "share_unlock_"
+const unlockShareCookiePrefix = "share_unlock_"
 
 type shareKey struct{}
 
@@ -24,14 +24,12 @@ func shareFromContext(r *http.Request) *share.Share {
 	return sh
 }
 
-// SetUnlock stores the unlock cookie for a password-protected share.
 func SetUnlock(jar *cookies, w http.ResponseWriter, sh *share.Share) {
-	jar.write(w, CookieUnlockPrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/", share.UnlockTTL)
+	jar.write(w, unlockShareCookiePrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/", share.UnlockTTL)
 }
 
-// GetUnlock returns the unlock cookie for the share.
 func GetUnlock(jar *cookies, r *http.Request, shareID string) (id, fp string, ok bool) {
-	val, ok := jar.read(r, CookieUnlockPrefix+shareID)
+	val, ok := jar.read(r, unlockShareCookiePrefix+shareID)
 	if !ok {
 		return "", "", false
 	}
@@ -39,14 +37,10 @@ func GetUnlock(jar *cookies, r *http.Request, shareID string) (id, fp string, ok
 	return id, fp, ok
 }
 
-// ClearUnlock removes the unlock cookie for the share.
 func ClearUnlock(jar *cookies, w http.ResponseWriter, id string) {
-	jar.write(w, CookieUnlockPrefix+id, "", "/", -1)
+	jar.write(w, unlockShareCookiePrefix+id, "", "/", -1)
 }
 
-// LoadShare loads the share aggregate identified by the {handle} or {id}
-// path value into the request context. Shares that cannot be found are left
-// nil so guards can decide how to respond.
 func LoadShare(shareSvc *share.ShareService) middleware {
 	return func(next handler) handler {
 		return func(w http.ResponseWriter, r *http.Request) error {
@@ -75,7 +69,6 @@ func LoadShare(shareSvc *share.ShareService) middleware {
 	}
 }
 
-// RequireViewableShare requires the loaded share to be viewable.
 var RequireViewableShare middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		sh := shareFromContext(r)
@@ -86,7 +79,6 @@ var RequireViewableShare middleware = func(next handler) handler {
 	}
 }
 
-// RequireManageable requires the loaded share to be manageable.
 var RequireManageable middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		sh := shareFromContext(r)
@@ -97,9 +89,6 @@ var RequireManageable middleware = func(next handler) handler {
 	}
 }
 
-// RequireUnlockedShare requires a password-protected share to be unlocked,
-// otherwise redirects to the unlock page preserving the original URL.
-// Visibility is not checked here; routes that need it compose RequireShare.
 func RequireUnlockedShare(jar *cookies) middleware {
 	return func(next handler) handler {
 		return func(w http.ResponseWriter, r *http.Request) error {
@@ -164,7 +153,7 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 
 	if !security.VerifyPassword(sh.PasswordHash, r.PostForm.Get("password")) {
@@ -177,8 +166,6 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// redirectAfterUnlock returns a safe same-site path to return to after
-// unlocking, defaulting to the share page.
 func redirectAfterUnlock(redirect string, sh *share.Share) string {
 	if redirect == "" || !strings.HasPrefix(redirect, "/") || strings.HasPrefix(redirect, "//") {
 		return "/s/" + sh.Handle
@@ -246,7 +233,7 @@ func (c *Controller) NewSharePage(w http.ResponseWriter, r *http.Request) error 
 
 func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 
 	expiryMinutes, _ := strconv.Atoi(r.PostForm.Get("expiryMinutes"))
@@ -347,7 +334,7 @@ func (c *Controller) RestoreShare(w http.ResponseWriter, r *http.Request) error 
 
 func (c *Controller) DeleteShares(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 	if err := c.shareSvc.Delete(userFromContext(r), r.PostForm["shareID"]...); err != nil {
 		return err
@@ -370,7 +357,7 @@ func (c *Controller) DeleteFile(w http.ResponseWriter, r *http.Request) error {
 func (c *Controller) AddOwner(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 	if err := c.shareSvc.AddOwner(sh, r.PostForm.Get("userID")); err != nil {
 		return err
@@ -393,7 +380,7 @@ func (c *Controller) RemoveOwner(w http.ResponseWriter, r *http.Request) error {
 func (c *Controller) UpdateShareSecurity(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 	if err := c.shareSvc.SetPassword(sh, r.PostForm.Get("password"), r.PostForm.Get("removePassword") == "on"); err != nil {
 		return err
@@ -407,7 +394,7 @@ func (c *Controller) SetVisibility(w http.ResponseWriter, r *http.Request) error
 	sh := shareFromContext(r)
 
 	if err := r.ParseForm(); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 	if err := c.shareSvc.SetVisibility(sh, share.Visibility(r.PostForm.Get("visibility"))); err != nil {
 		return err
@@ -422,7 +409,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 		Files []share.FileRequest `json:"files"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 
 	newFiles, err := c.shareSvc.UploadFiles(shareFromContext(r), req.Files, nil)
@@ -458,7 +445,7 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 
 	offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
 	if err != nil {
-		return share.ErrInvalidRequest
+		return ErrInvalidRequest
 	}
 
 	bytesWritten, err := c.shareSvc.StreamFile(sh, f.ID, offset, r.Body)

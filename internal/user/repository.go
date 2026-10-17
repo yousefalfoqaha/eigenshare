@@ -18,7 +18,7 @@ func NewUserRepository(db *database.Database) *UserRepository {
 func (r *UserRepository) Save(u User) error {
 	_, err := r.db.DB.Exec(
 		"INSERT INTO users (id, username, password_hash, is_admin, created_at, version) VALUES (?, ?, ?, ?, ?, ?)",
-		u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.CreatedAt.String(), u.Version,
+		u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.CreatedAt, u.Version,
 	)
 	return err
 }
@@ -56,6 +56,7 @@ func (r *UserRepository) GetByUsername(username string) (*User, error) {
 		}
 		return nil, err
 	}
+	u.CreatedAt = u.CreatedAt.UTC()
 	return &u, nil
 }
 
@@ -71,6 +72,7 @@ func (r *UserRepository) Get(id string) (*User, error) {
 		}
 		return nil, err
 	}
+	u.CreatedAt = u.CreatedAt.UTC()
 	return &u, nil
 }
 
@@ -89,6 +91,7 @@ func (r *UserRepository) GetAll() ([]*User, error) {
 		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt, &u.Version); err != nil {
 			return nil, err
 		}
+		u.CreatedAt = u.CreatedAt.UTC()
 		users = append(users, &u)
 	}
 	return users, rows.Err()
