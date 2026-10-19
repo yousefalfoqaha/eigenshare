@@ -8,9 +8,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed schema.sql
-var schemaSQL string
-
 type Database struct {
 	DB *sql.DB
 }
@@ -29,15 +26,5 @@ func NewDatabase(dbPath string) *Database {
 		log.Fatal(err)
 	}
 
-	db := &Database{DB: sqlDB}
-	if _, err := db.DB.Exec(schemaSQL); err != nil {
-		log.Fatal(err.Error())
-	}
-
-	log.Println("initialized database schema")
-
-	return db
-}
-
-func initSchema(s *Database) {
+	return &Database{DB: sqlDB}
 }

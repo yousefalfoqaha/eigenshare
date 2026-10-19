@@ -32,7 +32,7 @@
 {{$u := .Content.Upload}}{{$done := uploadedFiles $u .Content.Share.Files}}
 <p>
   {{len $done}} file(s){{if lt (len $done) (len .Content.Share.Files)}} (uploading){{end}} ·
-  {{formatSize (uploadedSize $done)}} ·
+  {{formatSize (uploadedSize $done)}}{{if gt .Content.Share.MaxBytes 0}} / {{formatSize .Content.Share.MaxBytes}}{{end}} ·
   {{formatOwners .Content.Share.Owners $.Users}} ·
   {{.Content.Share.Visibility}} ·
   expires {{expiresIn .Content.Share.ExpiresAt}}

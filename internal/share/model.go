@@ -28,20 +28,21 @@ func (v Visibility) Valid() bool {
 }
 
 type Share struct {
-	ID             string          `json:"id"`
-	Handle         string          `json:"handle"`
-	Visibility     Visibility      `json:"visibility"`
-	Owners         []string        `json:"owners"`
-	Files          []File          `json:"files"`
-	UploadLinks   []UploadLink   `json:"uploadLinks"`
-	PasswordHash   string          `json:"-"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	ExpiresAt      *time.Time      `json:"expiresAt"`
-	TrashedAt      *time.Time      `json:"trashedAt"`
-	Version        int64           `json:"-"`
+	ID           string       `json:"id"`
+	Handle       string       `json:"handle"`
+	Visibility   Visibility   `json:"visibility"`
+	Owners       []string     `json:"owners"`
+	Files        []File       `json:"files"`
+	UploadLinks  []UploadLink `json:"uploadLinks"`
+	PasswordHash string       `json:"-"`
+	MaxBytes     int64        `json:"maxBytes"`
+	CreatedAt    time.Time    `json:"createdAt"`
+	ExpiresAt    *time.Time   `json:"expiresAt"`
+	TrashedAt    *time.Time   `json:"trashedAt"`
+	Version      int64        `json:"-"`
 }
 
-func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creatorID string) (*Share, error) {
+func NewShare(id, handle string, expiryMinutes int, maxBytes int64, visibility Visibility, creatorID string) (*Share, error) {
 	if handle == "" {
 		return nil, fmt.Errorf("share handle is required: %w", ErrInvalidHandle)
 	}
@@ -50,6 +51,9 @@ func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creat
 	}
 	if expiryMinutes < 0 {
 		return nil, fmt.Errorf("expiry minutes must be non-negative: %w", ErrInvalidExpiry)
+	}
+	if maxBytes < 0 {
+		return nil, fmt.Errorf("max bytes must be non-negative: %w", ErrInvalidMaxBytes)
 	}
 	if visibility == "" {
 		visibility = VisibilityPrivate
@@ -64,6 +68,7 @@ func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creat
 		Handle:     handle,
 		Visibility: visibility,
 		Owners:     []string{},
+		MaxBytes:   maxBytes,
 		CreatedAt:  createdAt,
 	}
 
@@ -81,6 +86,16 @@ func NewShare(id, handle string, expiryMinutes int, visibility Visibility, creat
 
 func (s *Share) Trashed() bool {
 	return s.TrashedAt != nil
+}
+
+// UploadedSize returns the total declared size of the share's files,
+// including files that are still uploading.
+func (s *Share) UploadedSize() int64 {
+	var total int64
+	for _, f := range s.Files {
+		total += f.ExpectedSize
+	}
+	return total
 }
 
 func (s *Share) IsOwner(u *user.User) bool {
@@ -124,8 +139,6 @@ func (s *Share) File(fileID string) (*File, error) {
 func (s *Share) UnlockMessage() string {
 	return s.ID + "\x00" + s.PasswordHash
 }
-
-const UnlockTTL = 7 * 24 * time.Hour
 
 type File struct {
 	ID           string `json:"id"`

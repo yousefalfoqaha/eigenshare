@@ -60,7 +60,7 @@ func (s *ShareService) RequestShare(req ShareRequest, u *user.User) (*Share, err
 	if u != nil {
 		creatorID = u.ID
 	}
-	sh, err := NewShare("", req.Handle, req.ExpiryMinutes, req.Visibility, creatorID)
+	sh, err := NewShare("", req.Handle, req.ExpiryMinutes, req.MaxBytes, req.Visibility, creatorID)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +86,14 @@ func (s *ShareService) UploadFiles(sh *Share, fileReqs []FileRequest, link *Uplo
 		if link.MaxBytes > 0 && link.BytesUsed+total > link.MaxBytes {
 			return nil, ErrUploadLinkLimit
 		}
+	}
+
+	var newTotal int64
+	for _, f := range fileReqs {
+		newTotal += f.ExpectedSize
+	}
+	if sh.MaxBytes > 0 && newTotal > sh.MaxBytes-sh.UploadedSize() {
+		return nil, ErrShareLimit
 	}
 
 	var newFiles []File

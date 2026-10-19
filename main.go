@@ -21,6 +21,8 @@ func main() {
 	cfg := config.Load()
 
 	db := database.NewDatabase("./data.db")
+	db.Migrate()
+
 	userRepo := user.NewUserRepository(db)
 	userSvc := user.NewUserService(userRepo)
 	shareRepo := share.NewShareRepository(db)
@@ -37,10 +39,14 @@ func main() {
 	}
 
 	contr := web.NewController(userSvc, shareSvc, cfg.Secret, cfg.SecureCookies)
+	rateLimiter := web.NewRateLimiter(cfg.RateLimit, cfg.BurstLimit, 3*time.Minute, cfg.TrustProxy)
+
+	doneChan := make(chan struct{}, 1)
+	rateLimiter.StartCleanup(doneChan)
 
 	server := http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
-		Handler: contr.Handler(),
+		Handler: rateLimiter.Limit(contr.Handler()),
 	}
 
 	go func() {
@@ -50,6 +56,7 @@ func main() {
 		fmt.Println("shutting down...")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
+		close(doneChan)
 
 		server.Shutdown(shutdownCtx)
 	}()

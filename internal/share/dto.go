@@ -8,6 +8,7 @@ type FileRequest struct {
 type ShareRequest struct {
 	Handle        string     `json:"handle"`
 	ExpiryMinutes int        `json:"expiryMinutes"`
+	MaxBytes      int64      `json:"maxBytes"`
 	Visibility    Visibility `json:"visibility"`
 	Password      string     `json:"password"`
 }

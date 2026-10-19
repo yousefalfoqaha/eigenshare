@@ -5,40 +5,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"eigenshare/internal/security"
 	"eigenshare/internal/share"
 )
 
-const unlockShareCookiePrefix = "share_unlock_"
+const (
+	unlockShareCookiePrefix = "share_unlock_"
+	shareUnlockTTL          = 1 * 24 * time.Hour
+)
 
 type shareKey struct{}
 
 func shareFromContext(r *http.Request) *share.Share {
 	sh, _ := r.Context().Value(shareKey{}).(*share.Share)
 	return sh
-}
-
-func SetUnlock(jar *cookies, w http.ResponseWriter, sh *share.Share) {
-	jar.write(w, unlockShareCookiePrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/", share.UnlockTTL)
-}
-
-func GetUnlock(jar *cookies, r *http.Request, shareID string) (id, fp string, ok bool) {
-	val, ok := jar.read(r, unlockShareCookiePrefix+shareID)
-	if !ok {
-		return "", "", false
-	}
-	id, fp, ok = strings.Cut(val, ":")
-	return id, fp, ok
-}
-
-func ClearUnlock(jar *cookies, w http.ResponseWriter, id string) {
-	jar.write(w, unlockShareCookiePrefix+id, "", "/", -1)
 }
 
 func LoadShare(shareSvc *share.ShareService) middleware {
@@ -79,7 +67,7 @@ var RequireViewableShare middleware = func(next handler) handler {
 	}
 }
 
-var RequireManageable middleware = func(next handler) handler {
+var RequireManageableShare middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		sh := shareFromContext(r)
 		if sh == nil || !sh.CanManage(userFromContext(r)) {
@@ -100,13 +88,14 @@ func RequireUnlockedShare(jar *cookies) middleware {
 				return next(w, r)
 			}
 
-			id, fp, ok := GetUnlock(jar, r, sh.ID)
+			val, ok := jar.read(r, unlockShareCookiePrefix+sh.ID)
+			id, fp, ok := strings.Cut(val, ":")
 			if ok && id == sh.ID && fp == security.Fingerprint(sh.PasswordHash) {
 				return next(w, r)
 			}
 
 			if ok {
-				ClearUnlock(jar, w, sh.ID)
+				jar.write(w, unlockShareCookiePrefix+id, "", "/", -1)
 			}
 
 			http.Redirect(w, r, "/s/"+sh.Handle+"/unlock?redirect="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
@@ -160,7 +149,7 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 		return security.ErrWrongPassword
 	}
 
-	SetUnlock(c.cookies, w, sh)
+	c.cookies.write(w, unlockShareCookiePrefix+sh.ID, fmt.Sprintf("%s:%s", sh.ID, security.Fingerprint(sh.PasswordHash)), "/", shareUnlockTTL)
 	c.cookies.SetFlash(w, "success", "share unlocked")
 	http.Redirect(w, r, redirectAfterUnlock(r.PostForm.Get("redirect"), sh), http.StatusSeeOther)
 	return nil
@@ -237,10 +226,15 @@ func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	expiryMinutes, _ := strconv.Atoi(r.PostForm.Get("expiryMinutes"))
+	maxSizeMB, _ := strconv.ParseInt(r.PostForm.Get("maxSizeMB"), 10, 64)
+	if maxSizeMB < 0 || maxSizeMB > math.MaxInt64/(1024*1024) {
+		return share.ErrInvalidMaxBytes
+	}
 
 	req := share.ShareRequest{
 		Handle:        r.PostForm.Get("handle"),
 		ExpiryMinutes: expiryMinutes,
+		MaxBytes:      maxSizeMB * 1024 * 1024,
 		Visibility:    share.Visibility(r.PostForm.Get("visibility")),
 		Password:      r.PostForm.Get("password"),
 	}

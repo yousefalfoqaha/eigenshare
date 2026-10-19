@@ -24,5 +24,6 @@ var (
 	ErrLastOwner              = errors.New("cannot remove the last owner of a share")
 	ErrOwnerExists            = errors.New("user is already an owner of this share")
 	ErrUploadLinkLimit        = errors.New("upload link size limit reached")
+	ErrShareLimit             = errors.New("share size limit reached")
 	ErrUploadInProgress       = errors.New("an upload is already in progress for this file")
 )

@@ -70,7 +70,7 @@ func (c *Controller) HTMLRoutes() http.Handler {
 	protectedChain := RequireSession
 	adminChain := RequireAdmin
 
-	editShareChain := compose(RequireSession, LoadShare(c.shareSvc), RequireManageable)
+	editShareChain := compose(RequireSession, LoadShare(c.shareSvc), RequireManageableShare)
 
 	pub := http.NewServeMux()
 	pub.Handle("GET /login", c.handle(c.LoginPage))
@@ -120,7 +120,7 @@ func (c *Controller) HTMLRoutes() http.Handler {
 func (c *Controller) APIRoutes() http.Handler {
 	mux := http.NewServeMux()
 
-	editShareChain := compose(RequireSession, LoadShare(c.shareSvc), RequireManageable)
+	editShareChain := compose(RequireSession, LoadShare(c.shareSvc), RequireManageableShare)
 	uploadLinkChain := compose(LoadShare(c.shareSvc), RequireUnlockedShare(c.cookies), LoadUploadLink, RequireUploadLink)
 
 	mux.Handle("POST /api/shares/{id}/files", c.handle(editShareChain(c.AddFilesToShare)))
@@ -205,6 +205,7 @@ func mapError(err error) (int, string) {
 		errors.Is(err, share.ErrLastOwner),
 		errors.Is(err, share.ErrOwnerExists),
 		errors.Is(err, share.ErrUploadLinkLimit),
+		errors.Is(err, share.ErrShareLimit),
 		errors.Is(err, user.ErrUsernameTaken),
 		errors.Is(err, user.ErrVersionConflict),
 		errors.Is(err, user.ErrCannotDeleteSelf),
