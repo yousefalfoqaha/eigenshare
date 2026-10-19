@@ -14,12 +14,12 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		Port:          8080,
-		DataPath:      "data",
-		SecureCookies: false,
-		Secret:        []byte("haha12"),
-		TrustProxy:    true,
-		RateLimit:     5,
-		BurstLimit:    10,
+		Secret:        []byte(requireEnv("SECRET")),
+		SecureCookies: parseBool(requireEnv("APP_SECURE_COOKIES")),
+		Port:          parseInt(getEnv("PORT", "8080")),
+		DataPath:      getEnv("DATA_PATH", "data"),
+		TrustProxy:    parseBool(getEnv("TRUST_PROXY", "false")),
+		RateLimit:     rate.Limit(parseFloat(getEnv("RATE_LIMIT", "5"))),
+		BurstLimit:    parseInt(getEnv("BURST_LIMIT", "10")),
 	}
 }
