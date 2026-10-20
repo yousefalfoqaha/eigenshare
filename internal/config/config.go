@@ -15,7 +15,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		Secret:        []byte(requireEnv("SECRET")),
-		SecureCookies: parseBool(requireEnv("APP_SECURE_COOKIES")),
+		SecureCookies: parseBool(requireEnv("SECURE_COOKIES")),
 		Port:          parseInt(getEnv("PORT", "8080")),
 		DataPath:      getEnv("DATA_PATH", "data"),
 		TrustProxy:    parseBool(getEnv("TRUST_PROXY", "false")),

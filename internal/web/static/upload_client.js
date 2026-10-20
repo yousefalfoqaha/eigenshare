@@ -19,6 +19,12 @@ async function registerFiles(url, files) {
         files: files.map((f) => ({ name: f.name, expectedSize: f.size })),
       }),
     });
+
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("Retry-After"), 10) || 1;
+      return { status: "rate_limit", retryAfter };
+    }
+
     if (!res.ok) throw new Error(await errorMessage(res));
 
     return { status: "success", entries: (await res.json()) || [] };
@@ -54,6 +60,12 @@ async function getUploadState(url, signal) {
       method: "HEAD",
       signal,
     });
+
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("Retry-After"), 10) || 1;
+      return { status: "rate_limit", retryAfter };
+    }
+
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const header = res.headers.get("Upload-Offset");
@@ -71,7 +83,7 @@ async function getUploadState(url, signal) {
   }
 }
 
-function uploadChunk(url, fileID, file, offset, onProgress, signal) {
+function uploadChunk(url, file, offset, onProgress, signal) {
   if (signal.aborted) return Promise.resolve({ status: "aborted" });
   if (offset >= file.size) return Promise.resolve({ status: "complete" });
 
@@ -91,6 +103,12 @@ function uploadChunk(url, fileID, file, offset, onProgress, signal) {
     xhr.onload = () => {
       if (xhr.status === 423) {
         return resolve({ status: "locked", offset });
+      }
+
+      if (xhr.status === 429) {
+        const retryAfter =
+          parseInt(xhr.getResponseHeader("Retry-After"), 10) || 1;
+        return resolve({ status: "rate_limit", retryAfter });
       }
 
       if (xhr.status === 204 || xhr.status === 409) {
@@ -129,8 +147,9 @@ function uploadChunk(url, fileID, file, offset, onProgress, signal) {
   });
 }
 
-async function uploadFile(url, fileID, file, onProgress, signal) {
+async function uploadFile(url, file, onProgress, signal) {
   const state = await getUploadState(url, signal);
+  if (state.status === "rate_limit") return state;
   if (state.status !== "success") return state;
 
   let offset = state.offset;
@@ -139,19 +158,11 @@ async function uploadFile(url, fileID, file, onProgress, signal) {
   onProgress(offset);
 
   while (true) {
-    const result = await uploadChunk(
-      url,
-      fileID,
-      file,
-      offset,
-      onProgress,
-      signal,
-    );
-
+    const result = await uploadChunk(url, file, offset, onProgress, signal);
+    if (result.status === "rate_limit") return result;
     if (result.status === "complete" || result.status === "aborted") {
       return result;
     }
-
     if (result.status === "success") {
       offset = result.offset;
       attempts = 0;
@@ -159,18 +170,17 @@ async function uploadFile(url, fileID, file, onProgress, signal) {
       onProgress(offset);
       continue;
     }
-
     if (result.status === "error") {
       if (
         result.code >= 400 &&
         result.code < 500 &&
         result.code !== 423 &&
-        result.code !== 409
+        result.code !== 409 &&
+        result.code !== 429
       ) {
         return result;
       }
     }
-
     if (++attempts > 3) return result;
     await new Promise((r) => setTimeout(r, 1000));
   }
@@ -362,7 +372,6 @@ class UploadClient {
       try {
         const outcome = await uploadFile(
           this.#url(`/files/${uploadingTask.id}/stream`),
-          uploadingTask.id,
           uploadingTask.file,
           (bytes) => {
             uploadingTask.loaded = bytes;
@@ -396,6 +405,20 @@ class UploadClient {
             break;
 
           case "aborted":
+            break;
+
+          case "rate_limit":
+            await new Promise((r) =>
+              setTimeout(r, outcome.retryAfter * 1000 + 500),
+            );
+            this.#transition(
+              uploadingTask.id,
+              this.PENDING(
+                uploadingTask.id,
+                uploadingTask.file,
+                uploadingTask.loaded,
+              ),
+            );
             break;
 
           case "error":
