@@ -29,7 +29,7 @@ func shareFromContext(r *http.Request) *share.Share {
 	return sh
 }
 
-func LoadShare(shareSvc *share.ShareService) middleware {
+func loadShare(shareSvc *share.ShareService) middleware {
 	return func(next handler) handler {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			var (
@@ -57,7 +57,7 @@ func LoadShare(shareSvc *share.ShareService) middleware {
 	}
 }
 
-var RequireViewableShare middleware = func(next handler) handler {
+var requireViewableShare middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		sh := shareFromContext(r)
 		if sh == nil || !sh.CanView(userFromContext(r)) {
@@ -67,7 +67,7 @@ var RequireViewableShare middleware = func(next handler) handler {
 	}
 }
 
-var RequireManageableShare middleware = func(next handler) handler {
+var requireManageableShare middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		sh := shareFromContext(r)
 		if sh == nil || !sh.CanManage(userFromContext(r)) {
@@ -77,7 +77,7 @@ var RequireManageableShare middleware = func(next handler) handler {
 	}
 }
 
-func RequireUnlockedShare(jar *cookies) middleware {
+func requireUnlockedShare(jar *cookies) middleware {
 	return func(next handler) handler {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			sh := shareFromContext(r)
@@ -104,7 +104,7 @@ func RequireUnlockedShare(jar *cookies) middleware {
 	}
 }
 
-func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) sharePage(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 
 	states, err := c.shareSvc.GetShareUploadState(sh)
@@ -118,7 +118,7 @@ func (c *Controller) SharePage(w http.ResponseWriter, r *http.Request) error {
 	}{sh, states})
 }
 
-func (c *Controller) UnlockPage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) unlockPage(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if sh == nil {
 		return share.ErrShareNotFound
@@ -129,7 +129,7 @@ func (c *Controller) UnlockPage(w http.ResponseWriter, r *http.Request) error {
 	}{sh.Handle, r.URL.Query().Get("redirect")})
 }
 
-func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) unlockShare(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if sh == nil {
 		return share.ErrShareNotFound
@@ -142,7 +142,7 @@ func (c *Controller) UnlockShare(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 
 	if !security.VerifyPassword(sh.PasswordHash, r.PostForm.Get("password")) {
@@ -166,7 +166,7 @@ func contentDisposition(filename string) string {
 	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
 }
 
-func (c *Controller) DownloadAll(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) downloadAll(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 
 	w.Header().Set("Content-Type", "application/zip")
@@ -174,7 +174,7 @@ func (c *Controller) DownloadAll(w http.ResponseWriter, r *http.Request) error {
 	return c.shareSvc.DownloadAll(sh, w)
 }
 
-func (c *Controller) DownloadFile(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) downloadFile(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 
 	file, filePath, err := c.shareSvc.DownloadFile(sh, r.PathValue("fileID"))
@@ -187,7 +187,7 @@ func (c *Controller) DownloadFile(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
-func (c *Controller) SharesPage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) sharesPage(w http.ResponseWriter, r *http.Request) error {
 	actor := userFromContext(r)
 
 	shares, err := c.shareSvc.GetShares(actor)
@@ -216,13 +216,13 @@ func (c *Controller) SharesPage(w http.ResponseWriter, r *http.Request) error {
 	}{rows})
 }
 
-func (c *Controller) NewSharePage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) newSharePage(w http.ResponseWriter, r *http.Request) error {
 	return c.templs.renderPage(w, r, http.StatusOK, "new_share.html", nil)
 }
 
-func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) createShare(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 
 	expiryMinutes, _ := strconv.Atoi(r.PostForm.Get("expiryMinutes"))
@@ -249,7 +249,7 @@ func (c *Controller) CreateShare(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) trashPage(w http.ResponseWriter, r *http.Request) error {
 	actor := userFromContext(r)
 
 	shares, err := c.shareSvc.GetTrashedShares(actor)
@@ -278,7 +278,7 @@ func (c *Controller) TrashPage(w http.ResponseWriter, r *http.Request) error {
 	}{rows})
 }
 
-func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) editSharePage(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 
 	states, err := c.shareSvc.GetShareUploadState(sh)
@@ -300,7 +300,7 @@ func (c *Controller) EditSharePage(w http.ResponseWriter, r *http.Request) error
 	}{sh, states, tab})
 }
 
-func (c *Controller) TrashShare(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) trashShare(w http.ResponseWriter, r *http.Request) error {
 	if err := c.shareSvc.TrashShare(shareFromContext(r)); err != nil {
 		return err
 	}
@@ -309,7 +309,7 @@ func (c *Controller) TrashShare(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) RestoreShare(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) restoreShare(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	toEdit := r.PostFormValue("redirect") == "edit"
 
@@ -326,9 +326,9 @@ func (c *Controller) RestoreShare(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
-func (c *Controller) DeleteShares(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) deleteShares(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 	if err := c.shareSvc.Delete(userFromContext(r), r.PostForm["shareID"]...); err != nil {
 		return err
@@ -338,7 +338,7 @@ func (c *Controller) DeleteShares(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
-func (c *Controller) DeleteFile(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) deleteFile(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if err := c.shareSvc.DeleteFile(sh, r.PathValue("fileID")); err != nil {
 		return err
@@ -348,10 +348,10 @@ func (c *Controller) DeleteFile(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) AddOwner(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) addOwner(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 	if err := c.shareSvc.AddOwner(sh, r.PostForm.Get("userID")); err != nil {
 		return err
@@ -361,7 +361,7 @@ func (c *Controller) AddOwner(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) RemoveOwner(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) removeOwner(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if err := c.shareSvc.RemoveOwner(sh, r.PathValue("ownerID")); err != nil {
 		return err
@@ -371,10 +371,10 @@ func (c *Controller) RemoveOwner(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) UpdateShareSecurity(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) updateShareSecurity(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 	if err := c.shareSvc.SetPassword(sh, r.PostForm.Get("password"), r.PostForm.Get("removePassword") == "on"); err != nil {
 		return err
@@ -384,11 +384,11 @@ func (c *Controller) UpdateShareSecurity(w http.ResponseWriter, r *http.Request)
 	return nil
 }
 
-func (c *Controller) SetVisibility(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) setVisibility(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 	if err := c.shareSvc.SetVisibility(sh, share.Visibility(r.PostForm.Get("visibility"))); err != nil {
 		return err
@@ -398,12 +398,12 @@ func (c *Controller) SetVisibility(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) addFilesToShare(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Files []share.FileRequest `json:"files"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 
 	newFiles, err := c.shareSvc.UploadFiles(shareFromContext(r), req.Files, nil)
@@ -416,7 +416,7 @@ func (c *Controller) AddFilesToShare(w http.ResponseWriter, r *http.Request) err
 	return json.NewEncoder(w).Encode(newFiles)
 }
 
-func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) getUploadOffset(w http.ResponseWriter, r *http.Request) error {
 	state, err := c.shareSvc.GetFileUploadState(shareFromContext(r), r.PathValue("fileID"))
 	if err != nil {
 		return err
@@ -430,7 +430,7 @@ func (c *Controller) GetUploadOffset(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) streamFile(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	f, err := sh.File(r.PathValue("fileID"))
 	if err != nil {
@@ -439,7 +439,7 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 
 	offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
 	if err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 
 	bytesWritten, err := c.shareSvc.StreamFile(sh, f.ID, offset, r.Body)
@@ -459,7 +459,7 @@ func (c *Controller) StreamFile(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) DeleteShareFile(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) deleteShareFile(w http.ResponseWriter, r *http.Request) error {
 	if err := c.shareSvc.DeleteFile(shareFromContext(r), r.PathValue("fileID")); err != nil {
 		return err
 	}

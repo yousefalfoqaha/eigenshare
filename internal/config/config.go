@@ -10,6 +10,8 @@ type Config struct {
 	TrustProxy    bool
 	RateLimit     rate.Limit
 	BurstLimit    int
+	APIRateLimit  rate.Limit
+	APIBurstLimit int
 }
 
 func Load() Config {
@@ -21,5 +23,7 @@ func Load() Config {
 		TrustProxy:    parseBool(getEnv("TRUST_PROXY", "false")),
 		RateLimit:     rate.Limit(parseFloat(getEnv("RATE_LIMIT", "5"))),
 		BurstLimit:    parseInt(getEnv("BURST_LIMIT", "10")),
+		APIRateLimit:  rate.Limit(parseFloat(getEnv("API_RATE_LIMIT", "10"))),
+		APIBurstLimit: parseInt(getEnv("API_BURST_LIMIT", "30")),
 	}
 }

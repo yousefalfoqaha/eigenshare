@@ -12,7 +12,7 @@ import (
 	"eigenshare/internal/security"
 )
 
-const CookieFlash = "flash"
+const cookieFlash = "flash"
 
 type cookies struct {
 	secure bool
@@ -24,15 +24,15 @@ func newCookies(secure bool, secret []byte) *cookies {
 }
 
 func (c *cookies) SetFlash(w http.ResponseWriter, kind, message string) {
-	c.write(w, CookieFlash, kind+":"+message, "/", 5*time.Minute)
+	c.write(w, cookieFlash, kind+":"+message, "/", 5*time.Minute)
 }
 
 func (c *cookies) GetFlash(r *http.Request, w http.ResponseWriter) (kind, message string, ok bool) {
-	raw, ok := c.read(r, CookieFlash)
+	raw, ok := c.read(r, cookieFlash)
 	if !ok {
 		return "", "", false
 	}
-	c.write(w, CookieFlash, "", "/", -1)
+	c.write(w, cookieFlash, "", "/", -1)
 	return strings.Cut(raw, ":")
 }
 

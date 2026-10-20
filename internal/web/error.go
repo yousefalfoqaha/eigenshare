@@ -3,7 +3,7 @@ package web
 import "errors"
 
 var (
-	ErrInvalidRequest     = errors.New("invalid request")
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrForbidden          = errors.New("insufficient permission")
+	errInvalidRequest     = errors.New("invalid request")
+	errInvalidCredentials = errors.New("invalid credentials")
+	errForbidden          = errors.New("insufficient permission")
 )

@@ -39,14 +39,21 @@ func main() {
 	}
 
 	contr := web.NewController(userSvc, shareSvc, cfg.Secret, cfg.SecureCookies)
-	rateLimiter := web.NewRateLimiter(cfg.RateLimit, cfg.BurstLimit, 3*time.Minute, cfg.TrustProxy)
+
+	pageLimiter := web.NewRateLimiter(cfg.RateLimit, cfg.BurstLimit, 3*time.Minute, cfg.TrustProxy)
+	apiLimiter := web.NewRateLimiter(cfg.APIRateLimit, cfg.APIBurstLimit, 3*time.Minute, cfg.TrustProxy)
 
 	doneChan := make(chan struct{}, 1)
-	rateLimiter.StartCleanup(doneChan)
+	pageLimiter.StartCleanup(doneChan)
+	apiLimiter.StartCleanup(doneChan)
+
+	mux := http.NewServeMux()
+	mux.Handle("/api/", apiLimiter.Limit(contr.APIRoutes()))
+	mux.Handle("/", pageLimiter.Limit(contr.HTMLRoutes()))
 
 	server := http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
-		Handler: rateLimiter.Limit(contr.Handler()),
+		Handler: web.Logger(mux),
 	}
 
 	go func() {

@@ -3,8 +3,11 @@
   id="upload-form"
   data-upload-client
   data-upload-base="{{.UploadBase}}"
-  {{if .UploadToken}}data-upload-token="{{.UploadToken}}"{{end}}
-  {{if .ReloadOnDrain}}data-reload-on-drain{{end}}
+  {{if
+  .UploadToken}}data-upload-token="{{.UploadToken}}"
+  {{end}}
+  {{if
+  .ReloadOnDrain}}data-reload-on-drain{{end}}
 >
   <fieldset data-file-picker>
     <legend>upload files</legend>

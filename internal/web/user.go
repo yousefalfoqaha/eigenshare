@@ -6,17 +6,17 @@ import (
 	"eigenshare/internal/user"
 )
 
-func (c *Controller) UsersPage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) usersPage(w http.ResponseWriter, r *http.Request) error {
 	return c.templs.renderPage(w, r, http.StatusOK, "users.html", nil)
 }
 
-func (c *Controller) NewUserPage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) newUserPage(w http.ResponseWriter, r *http.Request) error {
 	return c.templs.renderPage(w, r, http.StatusOK, "user_form.html", nil)
 }
 
-func (c *Controller) CreateUser(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) createUser(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 	req := user.CreateRequest{
 		Username: r.PostForm.Get("username"),
@@ -31,7 +31,7 @@ func (c *Controller) CreateUser(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) EditUserPage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) editUserPage(w http.ResponseWriter, r *http.Request) error {
 	u, err := c.userSvc.GetUser(r.PathValue("id"))
 	if err != nil {
 		return err
@@ -39,9 +39,9 @@ func (c *Controller) EditUserPage(w http.ResponseWriter, r *http.Request) error 
 	return c.templs.renderPage(w, r, http.StatusOK, "user_form.html", u)
 }
 
-func (c *Controller) UpdateUser(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) updateUser(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 	req := user.UpdateRequest{
 		Username: r.PostForm.Get("username"),
@@ -56,7 +56,7 @@ func (c *Controller) UpdateUser(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (c *Controller) DeleteUser(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) deleteUser(w http.ResponseWriter, r *http.Request) error {
 	if err := c.userSvc.DeleteUser(r.PathValue("id"), userFromContext(r).ID); err != nil {
 		return err
 	}

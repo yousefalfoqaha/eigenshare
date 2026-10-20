@@ -23,7 +23,7 @@ func formatUploadFileCookie(linkID, fileID string) string {
 	return uploadFileCookiePrefix + linkID + "_" + fileID
 }
 
-func SetUploadFile(jar *cookies, w http.ResponseWriter, link *share.UploadLink, fileID string) {
+func setUploadFile(jar *cookies, w http.ResponseWriter, link *share.UploadLink, fileID string) {
 	ttl := uploadFileCookieTTL
 	if link.ExpiresAt != nil {
 		if remaining := time.Until(*link.ExpiresAt); remaining > 0 {
@@ -34,11 +34,11 @@ func SetUploadFile(jar *cookies, w http.ResponseWriter, link *share.UploadLink, 
 	jar.write(w, formatUploadFileCookie(link.ID, fileID), "1", "/", ttl)
 }
 
-func ClearUploadFile(jar *cookies, w http.ResponseWriter, link *share.UploadLink, fileID string) {
+func clearUploadFile(jar *cookies, w http.ResponseWriter, link *share.UploadLink, fileID string) {
 	jar.write(w, formatUploadFileCookie(link.ID, fileID), "", "/", -1)
 }
 
-func GetUploadFileIDs(jar *cookies, r *http.Request, linkID string) []string {
+func getUploadFileIDs(jar *cookies, r *http.Request, linkID string) []string {
 	prefix := uploadFileCookiePrefix + linkID + "_"
 
 	var fileIDs []string
@@ -66,7 +66,7 @@ func uploadLinkFromContext(r *http.Request) *share.UploadLink {
 	return link
 }
 
-var LoadUploadLink middleware = func(next handler) handler {
+var loadUploadLink middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		if sh := shareFromContext(r); sh != nil {
 			if link, err := sh.UploadLink(r.URL.Query().Get("token")); err == nil {
@@ -79,7 +79,7 @@ var LoadUploadLink middleware = func(next handler) handler {
 	}
 }
 
-var RequireUploadLink middleware = func(next handler) handler {
+var requireUploadLink middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		link := uploadLinkFromContext(r)
 		if link == nil {
@@ -92,7 +92,7 @@ var RequireUploadLink middleware = func(next handler) handler {
 	}
 }
 
-func (c *Controller) UploadLinkPage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) uploadLinkPage(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	link := uploadLinkFromContext(r)
 
@@ -102,7 +102,7 @@ func (c *Controller) UploadLinkPage(w http.ResponseWriter, r *http.Request) erro
 	}
 
 	var seedFiles []share.File
-	fileIDs := GetUploadFileIDs(c.cookies, r, link.ID)
+	fileIDs := getUploadFileIDs(c.cookies, r, link.ID)
 	fileIDSet := make(map[string]bool, len(fileIDs))
 	for _, id := range fileIDs {
 		fileIDSet[id] = true
@@ -112,14 +112,14 @@ func (c *Controller) UploadLinkPage(w http.ResponseWriter, r *http.Request) erro
 			continue
 		}
 		if f.Complete(states[f.ID].Written) {
-			ClearUploadFile(c.cookies, w, link, f.ID)
+			clearUploadFile(c.cookies, w, link, f.ID)
 			continue
 		}
 		seedFiles = append(seedFiles, f)
 	}
 	for id := range fileIDSet {
 		if _, err := sh.File(id); err != nil {
-			ClearUploadFile(c.cookies, w, link, id)
+			clearUploadFile(c.cookies, w, link, id)
 		}
 	}
 
@@ -134,10 +134,10 @@ func (c *Controller) UploadLinkPage(w http.ResponseWriter, r *http.Request) erro
 	}{sh, link, states, seedFiles, remaining})
 }
 
-func (c *Controller) CreateUploadLink(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) createUploadLink(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 
 	expiryMinutes, _ := strconv.Atoi(r.PostForm.Get("expiryMinutes"))
@@ -160,7 +160,7 @@ func (c *Controller) CreateUploadLink(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-func (c *Controller) RevokeUploadLink(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) revokeUploadLink(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	if err := c.shareSvc.RevokeUploadLink(sh, r.PathValue("linkID")); err != nil {
 		return err
@@ -170,7 +170,7 @@ func (c *Controller) RevokeUploadLink(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
-func (c *Controller) AddFilesViaUploadLink(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) addFilesViaUploadLink(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	link := uploadLinkFromContext(r)
 
@@ -178,7 +178,7 @@ func (c *Controller) AddFilesViaUploadLink(w http.ResponseWriter, r *http.Reques
 		Files []share.FileRequest `json:"files"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 
 	newFiles, err := c.shareSvc.UploadFiles(sh, body.Files, link)
@@ -187,7 +187,7 @@ func (c *Controller) AddFilesViaUploadLink(w http.ResponseWriter, r *http.Reques
 	}
 
 	for _, f := range newFiles {
-		SetUploadFile(c.cookies, w, link, f.ID)
+		setUploadFile(c.cookies, w, link, f.ID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -195,7 +195,7 @@ func (c *Controller) AddFilesViaUploadLink(w http.ResponseWriter, r *http.Reques
 	return json.NewEncoder(w).Encode(newFiles)
 }
 
-func (c *Controller) GetUploadLinkFileOffset(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) getUploadLinkFileOffset(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	link := uploadLinkFromContext(r)
 
@@ -203,7 +203,7 @@ func (c *Controller) GetUploadLinkFileOffset(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(GetUploadFileIDs(c.cookies, r, link.ID), f.ID) {
+	if !slices.Contains(getUploadFileIDs(c.cookies, r, link.ID), f.ID) {
 		return share.ErrFileNotFound
 	}
 
@@ -220,7 +220,7 @@ func (c *Controller) GetUploadLinkFileOffset(w http.ResponseWriter, r *http.Requ
 	return nil
 }
 
-func (c *Controller) StreamUploadLinkFile(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) streamUploadLinkFile(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	link := uploadLinkFromContext(r)
 
@@ -228,13 +228,13 @@ func (c *Controller) StreamUploadLinkFile(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(GetUploadFileIDs(c.cookies, r, link.ID), f.ID) {
+	if !slices.Contains(getUploadFileIDs(c.cookies, r, link.ID), f.ID) {
 		return share.ErrFileNotFound
 	}
 
 	offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
 	if err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 
 	bytesWritten, err := c.shareSvc.StreamFile(sh, f.ID, offset, r.Body)
@@ -247,7 +247,7 @@ func (c *Controller) StreamUploadLinkFile(w http.ResponseWriter, r *http.Request
 
 	if f.Complete(bytesWritten) {
 		c.cookies.SetFlash(w, "success", "files uploaded")
-		ClearUploadFile(c.cookies, w, link, f.ID)
+		clearUploadFile(c.cookies, w, link, f.ID)
 	}
 
 	w.Header().Set("Upload-Offset", strconv.FormatInt(bytesWritten, 10))
@@ -255,7 +255,7 @@ func (c *Controller) StreamUploadLinkFile(w http.ResponseWriter, r *http.Request
 	return nil
 }
 
-func (c *Controller) DeleteUploadLinkFile(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) deleteUploadLinkFile(w http.ResponseWriter, r *http.Request) error {
 	sh := shareFromContext(r)
 	link := uploadLinkFromContext(r)
 
@@ -263,7 +263,7 @@ func (c *Controller) DeleteUploadLinkFile(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(GetUploadFileIDs(c.cookies, r, link.ID), f.ID) {
+	if !slices.Contains(getUploadFileIDs(c.cookies, r, link.ID), f.ID) {
 		return share.ErrFileNotFound
 	}
 
@@ -271,7 +271,7 @@ func (c *Controller) DeleteUploadLinkFile(w http.ResponseWriter, r *http.Request
 		return err
 	}
 
-	ClearUploadFile(c.cookies, w, link, f.ID)
+	clearUploadFile(c.cookies, w, link, f.ID)
 
 	w.WriteHeader(http.StatusNoContent)
 	return nil

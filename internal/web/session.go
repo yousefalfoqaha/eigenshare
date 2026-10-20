@@ -24,11 +24,11 @@ func userFromContext(r *http.Request) *user.User {
 	return u
 }
 
-func SetSession(jar *cookies, w http.ResponseWriter, u *user.User) {
+func setSession(jar *cookies, w http.ResponseWriter, u *user.User) {
 	jar.write(w, sessionCookie, fmt.Sprintf("%s:%s", u.ID, security.Fingerprint(u.PasswordHash)), "/", sessionCookieTTL)
 }
 
-func GetSession(jar *cookies, r *http.Request) (id, fp string, ok bool) {
+func getSession(jar *cookies, r *http.Request) (id, fp string, ok bool) {
 	val, ok := jar.read(r, sessionCookie)
 	if !ok {
 		return "", "", false
@@ -37,20 +37,20 @@ func GetSession(jar *cookies, r *http.Request) (id, fp string, ok bool) {
 	return id, fp, ok
 }
 
-func ClearSession(jar *cookies, w http.ResponseWriter) {
+func clearSession(jar *cookies, w http.ResponseWriter) {
 	jar.write(w, sessionCookie, "", "/", -1)
 }
 
-func LoadSession(jar *cookies, userSvc *user.UserService) func(http.Handler) http.Handler {
+func loadSession(jar *cookies, userSvc *user.UserService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if id, fp, ok := GetSession(jar, r); ok {
+			if id, fp, ok := getSession(jar, r); ok {
 				if u, err := userSvc.GetUser(id); err == nil && fp == security.Fingerprint(u.PasswordHash) {
 					ctx := context.WithValue(r.Context(), userKey{}, u)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
-				ClearSession(jar, w)
+				clearSession(jar, w)
 			}
 
 			next.ServeHTTP(w, r)
@@ -58,7 +58,7 @@ func LoadSession(jar *cookies, userSvc *user.UserService) func(http.Handler) htt
 	}
 }
 
-var RequireSession middleware = func(next handler) handler {
+var requireSession middleware = func(next handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		if userFromContext(r) == nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -68,49 +68,49 @@ var RequireSession middleware = func(next handler) handler {
 	}
 }
 
-var RequireAdmin middleware = func(next handler) handler {
-	return RequireSession(func(w http.ResponseWriter, r *http.Request) error {
+var requireAdmin middleware = func(next handler) handler {
+	return requireSession(func(w http.ResponseWriter, r *http.Request) error {
 		if !userFromContext(r).IsAdmin {
-			return ErrForbidden
+			return errForbidden
 		}
 		return next(w, r)
 	})
 }
 
-func (c *Controller) Index(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) index(w http.ResponseWriter, r *http.Request) error {
 	http.Redirect(w, r, "/shares", http.StatusFound)
 	return nil
 }
 
-func (c *Controller) LoginPage(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) loginPage(w http.ResponseWriter, r *http.Request) error {
 	return c.templs.renderPage(w, r, http.StatusOK, "login.html", nil)
 }
 
-func (c *Controller) LoginSubmit(w http.ResponseWriter, r *http.Request) error {
+func (c *Controller) loginSubmit(w http.ResponseWriter, r *http.Request) error {
 	if err := r.ParseForm(); err != nil {
-		return ErrInvalidRequest
+		return errInvalidRequest
 	}
 
 	u, err := c.userSvc.GetUserByUsername(r.PostForm.Get("username"))
 	if err != nil {
 		if errors.Is(err, user.ErrUserNotFound) {
-			return ErrInvalidCredentials
+			return errInvalidCredentials
 		}
 		return err
 	}
 
 	if !security.VerifyPassword(u.PasswordHash, r.PostForm.Get("password")) {
-		return ErrInvalidCredentials
+		return errInvalidCredentials
 	}
 
-	SetSession(c.cookies, w, u)
+	setSession(c.cookies, w, u)
 	c.cookies.SetFlash(w, "success", "logged in")
 	http.Redirect(w, r, "/shares", http.StatusSeeOther)
 	return nil
 }
 
-func (c *Controller) Logout(w http.ResponseWriter, r *http.Request) error {
-	ClearSession(c.cookies, w)
+func (c *Controller) logout(w http.ResponseWriter, r *http.Request) error {
+	clearSession(c.cookies, w)
 	c.cookies.SetFlash(w, "success", "logged out")
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 
