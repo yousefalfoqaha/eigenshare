@@ -52,7 +52,7 @@ func NewController(
 	}
 }
 
-func (c *Controller) HTMLRoutes() http.Handler {
+func (c *Controller) PageRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", c.templs.static)
 

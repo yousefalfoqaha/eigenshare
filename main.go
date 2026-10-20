@@ -49,7 +49,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiLimiter.Limit(contr.APIRoutes()))
-	mux.Handle("/", pageLimiter.Limit(contr.HTMLRoutes()))
+	mux.Handle("/", pageLimiter.Limit(contr.PageRoutes()))
 
 	server := http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
