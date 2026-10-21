@@ -15,11 +15,12 @@ type Config struct {
 }
 
 func Load() Config {
+	dataPath := getEnv("DATA_PATH", "data")
 	return Config{
-		Secret:        []byte(requireEnv("SECRET")),
+		Secret:        resolveSecret(dataPath),
 		SecureCookies: parseBool(requireEnv("SECURE_COOKIES")),
 		Port:          parseInt(getEnv("PORT", "8080")),
-		DataPath:      getEnv("DATA_PATH", "data"),
+		DataPath:      dataPath,
 		TrustProxy:    parseBool(getEnv("TRUST_PROXY", "false")),
 		RateLimit:     rate.Limit(parseFloat(getEnv("RATE_LIMIT", "5"))),
 		BurstLimit:    parseInt(getEnv("BURST_LIMIT", "10")),

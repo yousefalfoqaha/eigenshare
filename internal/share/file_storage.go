@@ -14,13 +14,32 @@ type FileStorage struct {
 	locks   sync.Map
 }
 
+type fileLock struct {
+	mu sync.Mutex
+}
+
 func NewFileStorage(dataDir string) *FileStorage {
 	return &FileStorage{dataDir: dataDir}
 }
 
-func (s *FileStorage) lockFor(fileID string) *sync.Mutex {
-	l, _ := s.locks.LoadOrStore(fileID, &sync.Mutex{})
-	return l.(*sync.Mutex)
+func (s *FileStorage) tryLockFor(fileID string) (func(), bool) {
+	for {
+		flAny, _ := s.locks.LoadOrStore(fileID, &fileLock{})
+		fl := flAny.(*fileLock)
+
+		if !fl.mu.TryLock() {
+			return nil, false
+		}
+
+		if actual, _ := s.locks.Load(fileID); actual == fl {
+			return func() {
+				s.locks.CompareAndDelete(fileID, fl)
+				fl.mu.Unlock()
+			}, true
+		}
+
+		fl.mu.Unlock()
+	}
 }
 
 func (s *FileStorage) FileUploadState(shareID, fileID string) (FileUploadState, error) {
@@ -32,10 +51,13 @@ func (s *FileStorage) FileUploadState(shareID, fileID string) (FileUploadState, 
 		return FileUploadState{}, err
 	}
 
-	lock := s.lockFor(fileID)
-	locked := !lock.TryLock()
-	if !locked {
-		lock.Unlock()
+	locked := false
+	if l, ok := s.locks.Load(fileID); ok {
+		fl := l.(*fileLock)
+		locked = !fl.mu.TryLock()
+		if !locked {
+			fl.mu.Unlock()
+		}
 	}
 
 	return FileUploadState{
@@ -119,11 +141,11 @@ func (s *FileStorage) RemoveFile(shareID, fileID string) error {
 }
 
 func (s *FileStorage) WriteFileStream(shareID string, fileID string, expectedSize int64, offset int64, fileReader io.Reader) (int64, error) {
-	lock := s.lockFor(fileID)
-	if !lock.TryLock() {
+	unlock, ok := s.tryLockFor(fileID)
+	if !ok {
 		return 0, ErrUploadInProgress
 	}
-	defer lock.Unlock()
+	defer unlock()
 
 	if err := os.MkdirAll(filepath.Join(s.dataDir, shareID), 0o755); err != nil {
 		return 0, err

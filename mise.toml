@@ -7,5 +7,4 @@ dir = "{{config_root}}"
 description = "Run the eigenshare server on :8080"
 
 [env]
-SECRET = "haha123"
 SECURE_COOKIES = "false"

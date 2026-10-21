@@ -14,7 +14,7 @@ import (
 )
 
 //go:embed migrations/*.sql
-var migrationFS embed.FS
+var migrationsFS embed.FS
 
 type migration struct {
 	Version   int64
@@ -24,7 +24,7 @@ type migration struct {
 
 func (db *Database) Migrate() {
 	_, err := db.DB.Exec(`
-		CREATE TABLE IF NOT EXISTS migrations (
+		CREATE TABLE IF NOT EXISTS migration (
 			version BIGINT PRIMARY KEY,
 			name TEXT NOT NULL,
 			applied_at DATETIME NOT NULL
@@ -34,7 +34,7 @@ func (db *Database) Migrate() {
 		panic(err)
 	}
 
-	rows, err := db.DB.Query("SELECT version, name, applied_at FROM migrations")
+	rows, err := db.DB.Query("SELECT version, name, applied_at FROM migration")
 	if err != nil {
 		panic(err)
 	}
@@ -53,7 +53,7 @@ func (db *Database) Migrate() {
 		panic(err)
 	}
 
-	files, err := fs.Glob(migrationFS, "migrations/*.sql")
+	files, err := fs.Glob(migrationsFS, "migrations/*.sql")
 	if err != nil {
 		panic(err)
 	}
@@ -97,14 +97,14 @@ func (db *Database) Migrate() {
 
 		hasUnapplied = true
 		filePath := fmt.Sprintf("migrations/V%03d_%s.sql", m.Version, m.Name)
-		sqlBytes, err := migrationFS.ReadFile(filePath)
+		sqlBytes, err := migrationsFS.ReadFile(filePath)
 		if err != nil {
 			panic(err)
 		}
 		if _, err := tx.Exec(string(sqlBytes)); err != nil {
 			panic(fmt.Sprintf("failed %s: %v", filePath, err))
 		}
-		if _, err := tx.Exec("INSERT INTO migrations (version, name, applied_at) VALUES (?, ?, ?)", m.Version, m.Name, m.AppliedAt); err != nil {
+		if _, err := tx.Exec("INSERT INTO migration (version, name, applied_at) VALUES (?, ?, ?)", m.Version, m.Name, m.AppliedAt); err != nil {
 			panic(err)
 		}
 

@@ -39,8 +39,6 @@ CREATE TABLE IF NOT EXISTS users (
     version INTEGER NOT NULL DEFAULT 1
 );
 
-DROP TABLE IF EXISTS sessions;
-
 CREATE TABLE IF NOT EXISTS share_owner (
     share_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
