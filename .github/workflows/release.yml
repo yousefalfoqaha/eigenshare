@@ -32,5 +32,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ env.GITHUB_REPOSITORY }}:latest
-            ghcr.io/${{ env.GITHUB_REPOSITORY }}:${{ env.VERSION }}
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ env.VERSION }}
