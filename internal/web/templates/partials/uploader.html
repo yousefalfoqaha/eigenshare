@@ -8,6 +8,9 @@
   {{end}}
   {{if
   .ReloadOnDrain}}data-reload-on-drain{{end}}
+  {{if
+  .ChunkSizeMB}}data-chunk-size-mb="{{.ChunkSizeMB}}"
+  {{end}}
 >
   <fieldset data-file-picker>
     <legend>upload files</legend>
@@ -26,6 +29,7 @@
     const base = root.dataset.uploadBase;
     const token = root.dataset.uploadToken || "";
     const reloadOnDrain = root.hasAttribute("data-reload-on-drain");
+    const chunkSizeMB = parseInt(root.dataset.chunkSizeMb, 10) || 5;
 
     const fileInput = root.querySelector("[data-file-input]");
     const fileSelectBtn = root.querySelector("[data-file-select]");
@@ -119,7 +123,7 @@
         rows.forEach((li) => li.remove());
         rows.clear();
       },
-    }, token);
+    }, token, chunkSizeMB);
 
     queue.seed({{jsonify .SeedFiles}}, {{jsonify .SeedStates}});
 

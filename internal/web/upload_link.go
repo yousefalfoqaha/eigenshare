@@ -126,12 +126,13 @@ func (c *Controller) uploadLinkPage(w http.ResponseWriter, r *http.Request) erro
 	remaining := link.Remaining()
 
 	return c.templs.renderPage(w, r, http.StatusOK, "upload_link.html", &struct {
-		Share     *share.Share
-		Link      *share.UploadLink
-		Upload    map[string]share.FileUploadState
-		SeedFiles []share.File
-		Remaining int64
-	}{sh, link, states, seedFiles, remaining})
+		Share       *share.Share
+		Link        *share.UploadLink
+		Upload      map[string]share.FileUploadState
+		SeedFiles   []share.File
+		Remaining   int64
+		ChunkSizeMB int
+	}{sh, link, states, seedFiles, remaining, c.chunkSizeMB})
 }
 
 func (c *Controller) createUploadLink(w http.ResponseWriter, r *http.Request) error {

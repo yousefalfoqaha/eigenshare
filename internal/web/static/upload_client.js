@@ -83,12 +83,11 @@ async function getUploadState(url, signal) {
   }
 }
 
-function uploadChunk(url, file, offset, onProgress, signal) {
+function uploadChunk(url, file, offset, chunkSize, onProgress, signal) {
   if (signal.aborted) return Promise.resolve({ status: "aborted" });
   if (offset >= file.size) return Promise.resolve({ status: "complete" });
 
   return new Promise((resolve) => {
-    const chunkSize = 50 * 1024 * 1024;
     const data = file.slice(offset, offset + chunkSize);
 
     const xhr = new XMLHttpRequest();
@@ -147,7 +146,7 @@ function uploadChunk(url, file, offset, onProgress, signal) {
   });
 }
 
-async function uploadFile(url, file, onProgress, signal) {
+async function uploadFile(url, file, chunkSize, onProgress, signal) {
   const state = await getUploadState(url, signal);
   if (state.status === "rate_limit") return state;
   if (state.status !== "success") return state;
@@ -158,7 +157,14 @@ async function uploadFile(url, file, onProgress, signal) {
   onProgress(offset);
 
   while (true) {
-    const result = await uploadChunk(url, file, offset, onProgress, signal);
+    const result = await uploadChunk(
+      url,
+      file,
+      offset,
+      chunkSize,
+      onProgress,
+      signal,
+    );
     if (result.status === "rate_limit") return result;
     if (result.status === "complete" || result.status === "aborted") {
       return result;
@@ -187,11 +193,12 @@ async function uploadFile(url, file, onProgress, signal) {
 }
 
 class UploadClient {
-  constructor(basePath, handlers, token = "") {
+  constructor(basePath, handlers, token = "", chunkSizeMB = 5) {
     this.basePath = basePath;
     this.token = token;
     this.on = handlers;
     this.tasks = new Map();
+    this.chunkSize = chunkSizeMB * 1024 * 1024;
   }
 
   #url(suffix) {
@@ -373,6 +380,7 @@ class UploadClient {
         const outcome = await uploadFile(
           this.#url(`/files/${uploadingTask.id}/stream`),
           uploadingTask.file,
+          this.chunkSize,
           (bytes) => {
             uploadingTask.loaded = bytes;
             this.on.onProgress?.(uploadingTask);

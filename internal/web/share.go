@@ -294,10 +294,11 @@ func (c *Controller) editSharePage(w http.ResponseWriter, r *http.Request) error
 	}
 
 	return c.templs.renderPage(w, r, http.StatusOK, "edit_share.html", &struct {
-		Share  *share.Share
-		Upload map[string]share.FileUploadState
-		Tab    string
-	}{sh, states, tab})
+		Share       *share.Share
+		Upload      map[string]share.FileUploadState
+		Tab         string
+		ChunkSizeMB int
+	}{sh, states, tab, c.chunkSizeMB})
 }
 
 func (c *Controller) trashShare(w http.ResponseWriter, r *http.Request) error {

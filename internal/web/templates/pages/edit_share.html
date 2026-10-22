@@ -69,8 +69,7 @@
   </table>
 </div>
 
-{{template "uploader" dict "UploadBase" (printf "/api/shares/%s" .Content.Share.ID) "SeedFiles" .Content.Share.Files "SeedStates" .Content.Upload "ReloadOnDrain" true}}
-{{end}}
+{{template "uploader" dict "UploadBase" (printf "/api/shares/%s" .Content.Share.ID) "SeedFiles" .Content.Share.Files "SeedStates" .Content.Upload "ReloadOnDrain" true "ChunkSizeMB" .Content.ChunkSizeMB}}{{end}}
 
 {{if eq .Content.Tab "uploads"}}
 <div class="scrollable">

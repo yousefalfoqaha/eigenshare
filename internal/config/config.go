@@ -12,6 +12,7 @@ type Config struct {
 	BurstLimit    int
 	APIRateLimit  rate.Limit
 	APIBurstLimit int
+	ChunkSizeMB   int
 }
 
 func Load() Config {
@@ -26,5 +27,6 @@ func Load() Config {
 		BurstLimit:    parseInt(getEnv("BURST_LIMIT", "10")),
 		APIRateLimit:  rate.Limit(parseFloat(getEnv("API_RATE_LIMIT", "10"))),
 		APIBurstLimit: parseInt(getEnv("API_BURST_LIMIT", "30")),
+		ChunkSizeMB:   parseInt(getEnv("CHUNK_SIZE_MB", "5")),
 	}
 }

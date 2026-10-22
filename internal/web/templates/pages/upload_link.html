@@ -1,16 +1,20 @@
-{{define "title"}}upload to {{.Content.Share.Handle}}{{end}}
-{{define "content"}}
+{{define "title"}}upload to {{.Content.Share.Handle}}{{end}} {{define
+"content"}}
 
 <section class="title">
   <h1>upload to {{.Content.Share.Handle}}</h1>
 </section>
 
 <p>
-  {{if gt .Content.Link.MaxBytes 0}}{{formatSize .Content.Remaining}} left{{else}}unlimited size{{end}}
-  · expires {{expiresIn .Content.Link.ExpiresAt}}
+  {{if gt .Content.Link.MaxBytes 0}}{{formatSize .Content.Remaining}}
+  left{{else}}unlimited size{{end}} · expires {{expiresIn
+  .Content.Link.ExpiresAt}}
 </p>
 
-{{template "uploader" dict "UploadBase" (printf "/api/s/%s/uploads" .Content.Share.Handle) "UploadToken" .Content.Link.Token "SeedFiles" .Content.SeedFiles "SeedStates" .Content.Upload "ReloadOnDrain" true}}
+{{template "uploader" dict "UploadBase" (printf "/api/s/%s/uploads"
+.Content.Share.Handle) "UploadToken" .Content.Link.Token "SeedFiles"
+.Content.SeedFiles "SeedStates" .Content.Upload "ReloadOnDrain" true
+"ChunkSizeMB" .Content.ChunkSizeMB}}
 
 <p><a href="/s/{{.Content.Share.Handle}}">view share</a></p>
 

@@ -29,10 +29,11 @@ func compose(mws ...middleware) middleware {
 }
 
 type Controller struct {
-	userSvc  *user.UserService
-	shareSvc *share.ShareService
-	cookies  *cookies
-	templs   *templates
+	userSvc     *user.UserService
+	shareSvc    *share.ShareService
+	cookies     *cookies
+	templs      *templates
+	chunkSizeMB int
 }
 
 func NewController(
@@ -40,15 +41,17 @@ func NewController(
 	shareSvc *share.ShareService,
 	secret []byte,
 	secureCookies bool,
+	chunkSizeMB int,
 ) *Controller {
 	cookies := newCookies(secureCookies, secret)
 	templs := newTemplates(cookies, userSvc)
 
 	return &Controller{
-		userSvc:  userSvc,
-		shareSvc: shareSvc,
-		cookies:  cookies,
-		templs:   templs,
+		userSvc:     userSvc,
+		shareSvc:    shareSvc,
+		cookies:     cookies,
+		templs:      templs,
+		chunkSizeMB: chunkSizeMB,
 	}
 }
 

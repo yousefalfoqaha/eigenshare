@@ -44,7 +44,7 @@ func main() {
 		log.Printf("failed to seed admin: %v\n", err)
 	}
 
-	contr := web.NewController(userSvc, shareSvc, cfg.Secret, cfg.SecureCookies)
+	contr := web.NewController(userSvc, shareSvc, cfg.Secret, cfg.SecureCookies, cfg.ChunkSizeMB)
 	pageLimiter := web.NewRateLimiter(cfg.RateLimit, cfg.BurstLimit, 3*time.Minute, cfg.TrustProxy)
 	apiLimiter := web.NewRateLimiter(cfg.APIRateLimit, cfg.APIBurstLimit, 3*time.Minute, cfg.TrustProxy)
 
