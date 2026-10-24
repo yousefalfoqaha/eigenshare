@@ -45,7 +45,7 @@ Eigenshare is now listening on `http://localhost:8080` in the browser, enjoy!
 
 # Configuration
 
-| Environment Variable | Default          | Description                                                                                                                                                                                                           |
+| Environment variable | Default          | Description                                                                                                                                                                                                           |
 | -------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`               | `8080`           | The port the application listens on.                                                                                                                                                                                  |
 | `DATA_PATH`          | `data`           | The directory path where application data is stored.                                                                                                                                                                  |
