@@ -1,6 +1,8 @@
 # <div align="center">Eigenshare</div>
 
-Eigenshare is a lightweight self-hosted file sharing platform with fast, resumable uploads.
+Eigenshare is a lightweight self-hosted file sharing platform with resumable uploads.
+
+<span>&#8594;</span> Try out the [demo](https://eigenshare-demo.alfoqaha.me)
 
 ![eigenshare](assets/eigenshare.png)
 
