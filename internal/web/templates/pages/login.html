@@ -1,10 +1,28 @@
 {{define "title"}}login{{end}} {{define "content"}}
 <h1>login</h1>
+{{if .Demo}}
+<p class="banner" data-info>demo: log in with <strong>guest</strong> / <strong>guest</strong></p>
+{{end}}
 <form method="post" action="/login">
   <label
-    >username <input type="text" name="username" autofocus required
-  /></label>
-  <label>password <input type="password" name="password" required /></label>
+    >username
+    <input
+      type="text"
+      name="username"
+      autofocus
+      required
+      {{if .Demo}}value="guest"{{end}}
+    />
+  </label>
+  <label
+    >password
+    <input
+      type="password"
+      name="password"
+      required
+      {{if .Demo}}value="guest"{{end}}
+    />
+  </label>
   <button type="submit" class="submit">login</button>
 </form>
 {{end}}

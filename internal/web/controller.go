@@ -42,9 +42,10 @@ func NewController(
 	secret []byte,
 	secureCookies bool,
 	chunkSizeMB int,
+	demo bool,
 ) *Controller {
 	cookies := newCookies(secureCookies, secret)
-	templs := newTemplates(cookies, userSvc)
+	templs := newTemplates(cookies, userSvc, demo)
 
 	return &Controller{
 		userSvc:     userSvc,

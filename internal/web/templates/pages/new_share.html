@@ -1,5 +1,8 @@
 {{define "title"}}new share{{end}} {{define "content"}}
 <h1>new share</h1>
+{{if .Demo}}
+<p class="banner" data-info>demo: shares are limited to 1 MB and expire after 5 minutes</p>
+{{end}}
 <form method="post" action="/shares">
   <label
     >handle
@@ -17,12 +20,20 @@
 
   <label
     >expiry (minutes, 0 = permanent)
+    {{if .Demo}}
+    <input type="number" name="expiryMinutes" value="5" readonly />
+    {{else}}
     <input type="number" name="expiryMinutes" value="60" min="0" />
+    {{end}}
   </label>
 
   <label
     >max size (MB, 0 = unlimited)
+    {{if .Demo}}
+    <input type="number" name="maxSizeMB" value="1" readonly />
+    {{else}}
     <input type="number" name="maxSizeMB" value="0" min="0" />
+    {{end}}
   </label>
 
   <label

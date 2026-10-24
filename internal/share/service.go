@@ -17,13 +17,20 @@ type ShareService struct {
 	repo  *ShareRepository
 	store *FileStorage
 	users *user.UserService
+	demo  bool
 }
 
-func NewShareService(repo *ShareRepository, fs *FileStorage, users *user.UserService) *ShareService {
+const (
+	demoMaxBytes      = 1 << 20 // 1 MB
+	demoExpiryMinutes = 5
+)
+
+func NewShareService(repo *ShareRepository, fs *FileStorage, users *user.UserService, demo bool) *ShareService {
 	return &ShareService{
 		repo:  repo,
 		store: fs,
 		users: users,
+		demo:  demo,
 	}
 }
 
@@ -56,6 +63,8 @@ func (s *ShareService) StreamFile(sh *Share, fileID string, offset int64, stream
 }
 
 func (s *ShareService) RequestShare(req ShareRequest, u *user.User) (*Share, error) {
+	s.applyDemoLimits(&req.ExpiryMinutes, &req.MaxBytes)
+
 	var creatorID string
 	if u != nil {
 		creatorID = u.ID
@@ -83,7 +92,11 @@ func (s *ShareService) UploadFiles(sh *Share, fileReqs []FileRequest, link *Uplo
 		for _, f := range fileReqs {
 			total += f.ExpectedSize
 		}
-		if link.MaxBytes > 0 && link.BytesUsed+total > link.MaxBytes {
+		linkLimit := link.MaxBytes
+		if s.demo && (linkLimit == 0 || linkLimit > demoMaxBytes) {
+			linkLimit = demoMaxBytes
+		}
+		if linkLimit > 0 && link.BytesUsed+total > linkLimit {
 			return nil, ErrUploadLinkLimit
 		}
 	}
@@ -92,7 +105,11 @@ func (s *ShareService) UploadFiles(sh *Share, fileReqs []FileRequest, link *Uplo
 	for _, f := range fileReqs {
 		newTotal += f.ExpectedSize
 	}
-	if sh.MaxBytes > 0 && newTotal > sh.MaxBytes-sh.UploadedSize() {
+	shareLimit := sh.MaxBytes
+	if s.demo && (shareLimit == 0 || shareLimit > demoMaxBytes) {
+		shareLimit = demoMaxBytes
+	}
+	if shareLimit > 0 && newTotal > shareLimit-sh.UploadedSize() {
 		return nil, ErrShareLimit
 	}
 
@@ -122,6 +139,8 @@ func (s *ShareService) CreateUploadLink(sh *Share, req UploadLinkRequest) (*Uplo
 	if sh.Trashed() {
 		return nil, ErrShareTrashed
 	}
+
+	s.applyDemoLimits(&req.ExpiryMinutes, &req.MaxBytes)
 
 	ul, err := NewUploadLink(req)
 	if err != nil {
@@ -385,6 +404,16 @@ func (s *ShareService) SetPassword(sh *Share, raw string, remove bool) error {
 	_, err := s.repo.Save(sh)
 
 	return err
+}
+
+func (s *ShareService) applyDemoLimits(expiryMinutes *int, maxBytes *int64) {
+	if !s.demo {
+		return
+	}
+	*expiryMinutes = demoExpiryMinutes
+	if *maxBytes == 0 || *maxBytes > demoMaxBytes {
+		*maxBytes = demoMaxBytes
+	}
 }
 
 func hashSharePassword(raw string) (string, error) {

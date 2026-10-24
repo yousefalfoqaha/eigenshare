@@ -28,6 +28,7 @@ type page struct {
 	Banner        *banner
 	CurrentUserID string
 	Users         []*user.User
+	Demo          bool
 	Content       any
 }
 
@@ -48,9 +49,10 @@ type templates struct {
 	static  http.Handler
 	cookies *cookies
 	userSvc *user.UserService
+	demo    bool
 }
 
-func newTemplates(cookies *cookies, userSvc *user.UserService) *templates {
+func newTemplates(cookies *cookies, userSvc *user.UserService, demo bool) *templates {
 	funcs := template.FuncMap{
 		"uploadedFiles": uploadedFiles,
 		"uploadedSize":  uploadedSize,
@@ -93,12 +95,14 @@ func newTemplates(cookies *cookies, userSvc *user.UserService) *templates {
 		static:  http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))),
 		cookies: cookies,
 		userSvc: userSvc,
+		demo:    demo,
 	}
 }
 
 func (t *templates) renderPage(w http.ResponseWriter, r *http.Request, status int, tmpl string, content any) error {
 	pg := page{
 		Content: content,
+		Demo:    t.demo,
 	}
 
 	if kind, message, ok := t.cookies.GetFlash(r, w); ok {

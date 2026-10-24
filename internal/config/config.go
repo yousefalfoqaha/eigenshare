@@ -8,6 +8,7 @@ type Config struct {
 	SecureCookies bool
 	Secret        []byte
 	TrustProxy    bool
+	Demo          bool
 	RateLimit     rate.Limit
 	BurstLimit    int
 	APIRateLimit  rate.Limit
@@ -23,6 +24,7 @@ func Load() Config {
 		Port:          parseInt(getEnv("PORT", "8080")),
 		DataPath:      dataPath,
 		TrustProxy:    parseBool(getEnv("TRUST_PROXY", "false")),
+		Demo:          parseBool(getEnv("DEMO", "false")),
 		RateLimit:     rate.Limit(parseFloat(getEnv("RATE_LIMIT", "5"))),
 		BurstLimit:    parseInt(getEnv("BURST_LIMIT", "10")),
 		APIRateLimit:  rate.Limit(parseFloat(getEnv("API_RATE_LIMIT", "10"))),

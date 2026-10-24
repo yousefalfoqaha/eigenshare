@@ -137,7 +137,7 @@ func (s *UserService) CountUsers() (int, error) {
 	return s.userRepo.Count()
 }
 
-func (s *UserService) SeedAdmin() error {
+func (s *UserService) SeedUser(username, password string, isAdmin bool) error {
 	count, err := s.userRepo.Count()
 	if err != nil {
 		return err
@@ -146,12 +146,12 @@ func (s *UserService) SeedAdmin() error {
 		return nil
 	}
 
-	hash, err := security.HashPassword("admin")
+	hash, err := security.HashPassword(password)
 	if err != nil {
 		return err
 	}
 
-	u, err := NewUser(uuid.New().String(), "admin", hash, true)
+	u, err := NewUser(uuid.New().String(), username, hash, isAdmin)
 	if err != nil {
 		return err
 	}

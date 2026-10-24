@@ -107,6 +107,17 @@
 <form method="post" action="/shares/{{.Content.Share.ID}}/uploads">
     <fieldset>
         <legend>create link</legend>
+  {{if $.Demo}}
+  <p class="banner" data-info>demo: upload links are limited to 1 MB and expire after 5 minutes</p>
+  <label
+    >expiry (minutes, 0 = permanent)
+    <input type="number" name="expiryMinutes" value="5" readonly />
+  </label>
+  <label
+    >max size (MB, 0 = unlimited)
+    <input type="number" name="maxSizeMB" value="1" readonly />
+  </label>
+  {{else}}
   <label
     >expiry (minutes, 0 = permanent)
     <input type="number" name="expiryMinutes" value="60" min="0" />
@@ -115,6 +126,7 @@
     >max size (MB, 0 = unlimited)
     <input type="number" name="maxSizeMB" value="0" min="0" />
   </label>
+  {{end}}
   <button type="submit" class="submit">create</button>
     </fieldset>
 </form>

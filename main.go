@@ -35,16 +35,22 @@ func main() {
 	userSvc := user.NewUserService(userRepo)
 	shareRepo := share.NewShareRepository(db)
 	fileStore := share.NewFileStorage(cfg.DataPath)
-	shareSvc := share.NewShareService(shareRepo, fileStore, userSvc)
+	shareSvc := share.NewShareService(shareRepo, fileStore, userSvc, cfg.Demo)
 
 	shareCleaner := share.NewShareCleaner(shareRepo, fileStore)
 	go shareCleaner.Run(ctx, 1*time.Minute)
 
-	if err := userSvc.SeedAdmin(); err != nil {
-		log.Printf("failed to seed admin: %v\n", err)
+	if cfg.Demo {
+		if err := userSvc.SeedUser("guest", "guest", false); err != nil {
+			log.Printf("failed to seed guest user: %v\n", err)
+		}
+	} else {
+		if err := userSvc.SeedUser("admin", "admin", true); err != nil {
+			log.Printf("failed to seed admin user: %v\n", err)
+		}
 	}
 
-	contr := web.NewController(userSvc, shareSvc, cfg.Secret, cfg.SecureCookies, cfg.ChunkSizeMB)
+	contr := web.NewController(userSvc, shareSvc, cfg.Secret, cfg.SecureCookies, cfg.ChunkSizeMB, cfg.Demo)
 	pageLimiter := web.NewRateLimiter(cfg.RateLimit, cfg.BurstLimit, 3*time.Minute, cfg.TrustProxy)
 	apiLimiter := web.NewRateLimiter(cfg.APIRateLimit, cfg.APIBurstLimit, 3*time.Minute, cfg.TrustProxy)
 
