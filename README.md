@@ -41,7 +41,9 @@ services:
 
 2. Run `docker compose up -d`
 
-Eigenshare is now listening on `http://localhost:8080` in the browser (the username and password is admin/admin), enjoy!
+Eigenshare is now listening on `http://localhost:8080` in the browser, enjoy!
+
+> LOGIN: the username and password is admin/admin
 
 # Environment variables
 
