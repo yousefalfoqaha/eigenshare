@@ -1,6 +1,6 @@
 # <div align="center">Eigenshare</div>
 
-Eigenshare is a lightweight self-hosted file sharing platform with resumable uploads.
+Eigenshare is a tiny self-hosted platform for sharing massive files with chunked, resumable uploads.
 
 <span>&#8594;</span> Try out the [demo](https://eigenshare-demo.alfoqaha.me)
 
@@ -9,7 +9,7 @@ Eigenshare is a lightweight self-hosted file sharing platform with resumable upl
 # Features
 
 - Share files using a link
-- Upload files of any size with resumability
+- Upload massive files with chunked resumability
 - Upload links for uploading without an account
 - Set an expiry date for shares
 - Security with passwords and size limits
